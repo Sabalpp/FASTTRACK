@@ -20,7 +20,9 @@ Create `.env.local` locally. Do not commit it.
 ```bash
 NEXT_PUBLIC_DEMO_MODE=false
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_BROWSER_KEY
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=YOUR_BROWSER_KEY
+# Optional legacy fallback. Leave blank if using the publishable key above.
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVER_ONLY_SERVICE_ROLE_OR_SECRET_KEY
 NEXT_PUBLIC_ENABLE_GOOGLE_AUTH=true
 NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=
@@ -31,7 +33,7 @@ INVOICE_FROM_EMAIL=invoices@fasttrackdmv.org
 
 Notes:
 
-- The browser key can be Supabase's anon key or newer publishable key, depending on the project dashboard.
+- New Supabase projects show `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The app also supports the older `NEXT_PUBLIC_SUPABASE_ANON_KEY` name as a fallback.
 - `SUPABASE_SERVICE_ROLE_KEY` is server-only. Never expose it in React/client code.
 - Keep demo mode false for real Supabase testing.
 
@@ -56,6 +58,14 @@ Notes:
    - `job-photos`
    - `invoices`
 7. Confirm RLS is enabled on all app tables.
+
+Current project URL supplied during setup:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://ktoiuukldiulasymxdzi.supabase.co
+```
+
+Do not commit the publishable/browser key or service role key to the repo. Put them in `.env.local` locally and Vercel Environment Variables.
 
 ## Real Users And Roles
 
