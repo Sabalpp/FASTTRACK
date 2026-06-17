@@ -39,6 +39,8 @@ Notes:
 
 ## Supabase SQL Setup
 
+Fastest path for today's setup:
+
 1. Open Supabase project dashboard.
 2. Go to SQL Editor.
 3. Run `supabase/schema.sql`.
@@ -58,6 +60,13 @@ Notes:
    - `job-photos`
    - `invoices`
 7. Confirm RLS is enabled on all app tables.
+
+GitHub/migration path:
+
+- The same initial schema is also stored at `supabase/migrations/20260617141654_initial_fasttrack_schema.sql`.
+- Use that migration file as the canonical source for future schema history.
+- If Supabase dashboard still shows `Last migration: No migrations`, it means the SQL has not been applied through the dashboard/CLI yet. The GitHub connection alone does not create tables.
+- After the first manual SQL Editor run, future schema changes should be added as new timestamped files under `supabase/migrations/`.
 
 Current project URL supplied during setup:
 
