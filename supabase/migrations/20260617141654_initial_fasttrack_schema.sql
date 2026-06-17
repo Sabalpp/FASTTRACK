@@ -435,14 +435,8 @@ on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('invoices', 'invoices', false)
 on conflict (id) do nothing;
 
--- Seed users and common parts for the first demo.
-insert into public.allowed_users (id, email, role, display_name, active) values
-  ('11111111-1111-1111-1111-111111111111', 'owner@fasttrack.test', 'owner', 'Jordan Owner', true),
-  ('22222222-2222-2222-2222-222222222222', 'tech@fasttrack.test', 'tech', 'Maya Tech', true),
-  ('33333333-3333-3333-3333-333333333333', 'tech2@fasttrack.test', 'tech', 'Carlos Tech', true),
-  ('44444444-4444-4444-4444-444444444444', 'calls@fasttrack.test', 'call_center', 'Priya Call Center', true)
-on conflict (email) do nothing;
-
+-- Seed common parts for first production testing. Real users must be added to
+-- public.allowed_users manually or through the owner-only Users page.
 insert into public.parts (name, sku, category, default_price, unit, active) values
   ('Diagnostic Visit', 'DIAG', 'Service', 89.00, 'visit', true),
   ('Labor Hour', 'LABOR-HR', 'Labor', 125.00, 'hour', true),
