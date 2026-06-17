@@ -265,6 +265,26 @@ alter table public.invoices enable row level security;
 alter table public.call_logs enable row level security;
 alter table public.call_log_events enable row level security;
 
+drop policy if exists "active users read allowed users" on public.allowed_users;
+drop policy if exists "owner manages allowed users" on public.allowed_users;
+drop policy if exists "role reads permitted customers" on public.customers;
+drop policy if exists "owner call center tech create customers" on public.customers;
+drop policy if exists "owner call center update customers" on public.customers;
+drop policy if exists "read permitted jobs" on public.jobs;
+drop policy if exists "owner and call center create jobs" on public.jobs;
+drop policy if exists "owner call center tech update jobs" on public.jobs;
+drop policy if exists "owner tech assigned read photos" on public.job_photos;
+drop policy if exists "owner tech assigned write photos" on public.job_photos;
+drop policy if exists "owner and tech read active parts" on public.parts;
+drop policy if exists "owner manages parts" on public.parts;
+drop policy if exists "owner tech assigned read line items" on public.job_line_items;
+drop policy if exists "owner tech assigned write line items" on public.job_line_items;
+drop policy if exists "owner tech assigned read invoices" on public.invoices;
+drop policy if exists "owner tech assigned create invoice drafts" on public.invoices;
+drop policy if exists "owner or assigned tech updates invoice drafts" on public.invoices;
+drop policy if exists "read permitted call logs" on public.call_logs;
+drop policy if exists "owner reads call events" on public.call_log_events;
+
 -- allowed_users
 create policy "active users read allowed users" on public.allowed_users for select using (
   public.is_owner()
