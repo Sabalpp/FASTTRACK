@@ -9,6 +9,7 @@ import { demoMode } from "@/lib/runtime";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import {
   allowedUserFromRow,
+  allowedUserPatchToRow,
   allowedUserToRow,
   callLogEventFromRow,
   callLogFromRow,
@@ -74,6 +75,7 @@ type AppDataContextValue = AppState & {
   updateInvoice: (id: string, input: Partial<Invoice>) => void;
   sendInvoice: (id: string, email: string) => void;
   createAllowedUser: (input: NewAllowedUserInput) => AllowedUser;
+  updateAllowedUser: (id: string, input: Partial<AllowedUser>) => void;
 };
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -454,6 +456,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       return allowedUser;
     }
 
+    function updateAllowedUser(id: string, input: Partial<AllowedUser>) {
+      setState((current) => ({
+        ...current,
+        allowedUsers: current.allowedUsers.map((user) => (user.id === id ? { ...user, ...input } : user))
+      }));
+      persistSupabase("allowed user update", async () => {
+        const { error } = await supabase!.from("allowed_users").update(allowedUserPatchToRow(input)).eq("id", id);
+        if (error) throw error;
+      });
+    }
+
     return {
       ...state,
       loaded,
@@ -473,7 +486,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       createOrUpdateInvoiceDraft,
       updateInvoice,
       sendInvoice,
-      createAllowedUser
+      createAllowedUser,
+      updateAllowedUser
     };
   }, [state, loaded, lastError, supabase]);
 

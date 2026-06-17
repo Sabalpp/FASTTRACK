@@ -2,6 +2,7 @@
 
 import {
   BriefcaseBusiness,
+  CircleUserRound,
   FileText,
   Home,
   LogOut,
@@ -34,15 +35,36 @@ const navItems: NavItem[] = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, signOut, isAuthenticated, isDemoMode, authReady } = useAuth();
+  const { currentUser, signOut, isAuthenticated, isDemoMode, authReady, authError } = useAuth();
   const { resetDemoData } = useAppData();
   const isLogin = pathname === "/";
+  const loadingAuth = !isDemoMode && !authReady && !isLogin;
+  const blockedAuth = !isDemoMode && authReady && !isAuthenticated && !isLogin;
 
   useEffect(() => {
-    if (!isDemoMode && authReady && !isAuthenticated && !isLogin) {
+    if (blockedAuth) {
       router.push("/");
     }
-  }, [authReady, isAuthenticated, isDemoMode, isLogin, router]);
+  }, [blockedAuth, router]);
+
+  if (loadingAuth || blockedAuth) {
+    return (
+      <main className="auth-screen">
+        <div className="auth-stars" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+        <section className="auth-card auth-status-card">
+          <div className="auth-mark" aria-hidden="true">
+            <CircleUserRound size={22} />
+          </div>
+          <h1>{loadingAuth ? "Checking access" : "Access required"}</h1>
+          <p className={authError ? "error-message" : "muted"}>{authError ?? "Redirecting to sign in."}</p>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <>
@@ -67,6 +89,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
           <div className="header-actions">
             {isDemoMode ? <RoleSwitcher /> : null}
+            {!isDemoMode ? (
+              <div className="profile-chip" title={currentUser.email || currentUser.displayName}>
+                <CircleUserRound size={17} aria-hidden="true" />
+                <span>
+                  <strong>{currentUser.displayName || currentUser.email}</strong>
+                  <small>{currentUser.role.replace("_", " ")}</small>
+                </span>
+              </div>
+            ) : null}
             {isDemoMode ? (
               <button className="text-button icon-text-button" type="button" onClick={resetDemoData}>
                 <RotateCcw size={15} aria-hidden="true" />

@@ -82,6 +82,8 @@ Do not commit the publishable/browser key or service role key to the repo. Put t
 
 Production access is controlled by `allowed_users`.
 
+Google Auth only proves who the person is. It does not decide whether that Google account belongs in Fast Track. The app must resolve the signed-in email against `public.allowed_users`, and Supabase RLS must continue using the same table for database access. A Google account that is not active in `allowed_users` can complete the Google OAuth popup, but it must not reach the dashboard or read/write app records.
+
 Use real emails:
 
 ```sql
@@ -102,6 +104,14 @@ Role behavior:
 - `tech`: assigned jobs, job photos, line items, invoice draft work.
 - `call_center`: customers and jobs, no photos/parts/invoices/money.
 
+Owner user management:
+
+- Owners open `/admin/users`.
+- Add the person's real Google email before they try to use the app.
+- Change role there when someone moves between owner, tech, and call-center access.
+- Deactivate a user instead of deleting them when access should be revoked.
+- Do not change or deactivate the currently signed-in owner from the UI.
+
 ## Auth Setup
 
 Fastest production path:
@@ -113,6 +123,13 @@ Fastest production path:
    - `https://YOUR_VERCEL_DOMAIN/dashboard`
 4. In Google Cloud OAuth settings, add authorized origins/redirects required by Supabase.
 5. Confirm a signed-in user's email exists in `allowed_users`.
+
+Expected login behavior:
+
+- Listed active email: reaches `/dashboard` with the role from `allowed_users`.
+- Listed inactive email: redirected back to sign-in with an allowlist error.
+- Unlisted email: redirected back to sign-in with an allowlist error.
+- The Google button should always prompt account selection so a user can switch accounts cleanly.
 
 If the client does not want Google:
 

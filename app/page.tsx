@@ -17,7 +17,7 @@ const roleIconMap: Record<Role, typeof Users> = {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { signInAsRole, signInWithGoogle, verifyMfa, isDemoMode, isAuthenticated, authReady, authError, currentUser, mfaRequired } = useAuth();
+  const { signInAsRole, signInWithGoogle, verifyMfa, signOut, isDemoMode, isAuthenticated, authReady, authError, currentUser, mfaRequired } = useAuth();
   const [mfaCode, setMfaCode] = useState("");
 
   return (
@@ -79,6 +79,11 @@ export default function LoginPage() {
                 <span>{authReady ? "Continue with Google" : "Checking session..."}</span>
               </button>
             )}
+            {authError && currentUser.email ? (
+              <button className="auth-secondary-link" type="button" onClick={signOut}>
+                Use a different Google account
+              </button>
+            ) : null}
           </>
         ) : null}
       </section>

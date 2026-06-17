@@ -183,10 +183,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const authError = useMemo(() => {
     if (demoMode) return undefined;
     if (explicitAuthError) return explicitAuthError;
-      if (dataError) return dataError;
-      if (sessionEmail && dataLoaded && !productionUser.active) {
-        return `${sessionEmail} is not active in allowed_users.`;
-      }
+    if (dataError) return dataError;
+    if (sessionEmail && dataLoaded && !productionUser.active) {
+      return `${sessionEmail} is not on the Fast Track allowlist. Ask an owner to add or reactivate this account.`;
+    }
     return undefined;
   }, [dataError, dataLoaded, explicitAuthError, productionUser.active, sessionEmail]);
 
@@ -216,7 +216,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/dashboard`
+          redirectTo: `${window.location.origin}/dashboard`,
+          queryParams: {
+            prompt: "select_account"
+          }
         }
       });
       if (error) setExplicitAuthError(error.message);
