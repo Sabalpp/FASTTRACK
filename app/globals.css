@@ -3307,7 +3307,8 @@ label {
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  pointer-events: none;
+  background: #000;
+  pointer-events: auto;
 }
 
 .paper-shader-background::after {
@@ -3315,19 +3316,43 @@ label {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(5, 7, 13, 0.22), transparent 28%, transparent 72%, rgba(5, 7, 13, 0.22)),
-    linear-gradient(180deg, rgba(5, 7, 13, 0.18), transparent 40%, rgba(5, 7, 13, 0.52));
+    radial-gradient(circle at 50% 48%, transparent 0 18%, rgba(0, 0, 0, 0.2) 42%, rgba(0, 0, 0, 0.72) 100%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.36), transparent 26%, transparent 74%, rgba(0, 0, 0, 0.36)),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.18), transparent 38%, rgba(0, 0, 0, 0.58));
+  pointer-events: none;
 }
 
-.paper-shader-background canvas {
+.paper-mesh-gradient,
+.paper-dot-orbit,
+.paper-shader-lighting {
+  position: absolute;
+  inset: 0;
   width: 100% !important;
   height: 100% !important;
-  opacity: 0.92;
+}
+
+.paper-mesh-gradient {
+  opacity: 0.86;
+}
+
+.paper-dot-orbit {
+  mix-blend-mode: screen;
+  opacity: 0.24;
+}
+
+.paper-shader-lighting {
+  background:
+    radial-gradient(circle at 35% 26%, rgba(255, 255, 255, 0.08), transparent 15%),
+    radial-gradient(circle at 68% 74%, rgba(196, 93, 42, 0.08), transparent 17%),
+    radial-gradient(circle at 52% 55%, rgba(255, 255, 255, 0.08), transparent 20%);
+  filter: blur(12px);
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .paper-shader-background canvas {
-    opacity: 0.82;
+  .paper-mesh-gradient,
+  .paper-dot-orbit {
+    opacity: 0.46;
   }
 }
 
