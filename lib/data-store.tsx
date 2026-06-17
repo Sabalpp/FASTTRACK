@@ -275,11 +275,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     function addPhoto(input: NewPhotoInput) {
+      const photoId = crypto.randomUUID();
       const uploadedAt = new Date().toISOString();
-      const storagePath = !demoMode && input.file ? `${input.jobId}/${Date.now()}_${safeStorageName(input.file.name)}` : input.storagePath;
+      const storagePath = !demoMode && input.file ? `${input.jobId}/${photoId}${safeFileExtension(input.file.name)}` : input.storagePath;
       const previewPath = !demoMode && input.file ? URL.createObjectURL(input.file) : input.storagePath;
       const photo: JobPhoto = {
-        id: crypto.randomUUID(),
+        id: photoId,
         jobId: input.jobId,
         storagePath: previewPath,
         kind: input.kind,
@@ -610,6 +611,12 @@ function mergeCustomers(state: AppState, customers: Customer[]) {
 
 function safeStorageName(fileName: string) {
   return fileName.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "photo.jpg";
+}
+
+function safeFileExtension(fileName: string) {
+  const safeName = safeStorageName(fileName);
+  const extension = safeName.match(/\.[a-z0-9]+$/)?.[0];
+  return extension ?? ".jpg";
 }
 
 function throwIfError(label: string, error: { message: string } | null) {

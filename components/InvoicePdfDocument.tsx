@@ -36,6 +36,7 @@ export function InvoicePdfDocument({
             <Text style={styles.small}>{branding.address}</Text>
             <Text style={styles.small}>{branding.phone}</Text>
             <Text style={styles.small}>{branding.email}</Text>
+            <Text style={styles.small}>{branding.website}</Text>
             <Text style={styles.small}>{branding.licenseNumber}</Text>
           </View>
           <View style={styles.invoiceBox}>

@@ -1,12 +1,13 @@
 export const branding = {
-  businessName: "Fast Track Mechanical",
-  tagline: "HVAC + Plumbing made simple",
+  businessName: "Fast Track Repair Service",
+  tagline: "Appliance repair service",
   primaryColor: "#164e63",
   accentColor: "#f97316",
-  phone: "(703) 555-0198",
-  email: "invoices@example.com",
+  phone: "(703) 899-5615",
+  email: "info@fasttrackdmv.org",
+  website: "www.fasttrackdmv.org",
   licenseNumber: "VA License #PLACEHOLDER",
-  address: "Northern Virginia",
+  address: "13817 Fount Beattie Ct., Centreville, VA 20121",
   logoPlaceholder: "/logo-placeholder.svg",
   taxRate: 0.06
 };

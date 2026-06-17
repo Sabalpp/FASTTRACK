@@ -1,6 +1,6 @@
-# HVAC + Plumbing MVP
+# Fast Track Repair Service MVP
 
-Initial working starter for a Northern Virginia HVAC + Plumbing independent contractor.
+Production-track starter for Fast Track Repair Service, a Northern Virginia/DC/MD appliance repair business moving from a paper service/invoice sheet into a Supabase-backed field app.
 
 The product is deliberately simple: **Inspect → Charge → Case → Secure → Invoice → Email**. Every major screen maps to one of those verbs. The first version avoids Housecall-Pro-style complexity and focuses on the smallest useful workflow: customers, jobs, photos, parts, Good/Better/Best line items, invoice drafts, owner send, and a CallRail Phase 2 scaffold.
 
@@ -21,6 +21,15 @@ The product is deliberately simple: **Inspect → Charge → Case → Secure →
 - Admin allowlist screen
 - Supabase SQL schema with tables, indexes, RLS policies, storage buckets, and seed parts
 - `/api/webhooks/callrail` POST scaffold for Phase 2 CallRail events
+
+## Current production context
+
+Read these before changing backend, invoice, or production workflow behavior:
+
+- `docs/PAPER_FORM_FIELD_MAP.md` — extraction from the current Fast Track paper service/invoice sheet and the field map for automating it.
+- `docs/PRODUCTION_SUPABASE_RUNBOOK.md` — Supabase, auth, storage, Vercel, and smoke-test steps.
+- `docs/EXECUTION_SHEET.md` — product direction, UI rules, and implementation constraints.
+- `docs/CODEX_MASTER_PROMPT.md` — agent handoff instructions.
 
 ## What is intentionally excluded from MVP
 
@@ -54,18 +63,21 @@ Use the role switcher in the header to test access differences.
 
 ## Supabase setup
 
-1. Create a Supabase project.
+1. Create or open the Supabase project.
 2. Open the Supabase SQL editor.
 3. Run `supabase/schema.sql`.
-4. Copy `.env.example` to `.env.local` and fill in:
+4. Copy `.env.example` to `.env.local`.
+5. Set demo mode false and fill in:
 
 ```bash
+NEXT_PUBLIC_DEMO_MODE=false
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_ENABLE_GOOGLE_AUTH=true
 ```
 
-The current UI uses a localStorage demo store. The SQL and API route are ready for wiring the data layer to live Supabase queries as the next implementation step.
+See `docs/PRODUCTION_SUPABASE_RUNBOOK.md` for the full production setup and smoke test.
 
 ## Production auth path
 
@@ -107,6 +119,8 @@ Edit `lib/branding.ts` for:
 - Address
 - Logo placeholder
 - Default tax rate
+
+Current extracted paper-sheet details are in `docs/PAPER_FORM_FIELD_MAP.md`. Confirm the exact street spelling, license number, tax rules, and legal name before final client launch.
 
 
 ## Framer UI upgrade

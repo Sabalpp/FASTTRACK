@@ -14,3 +14,11 @@ Build result:
 Notes:
 - Framer code component is stored as framer/FramerMVPPrototype.tsx.txt so it does not affect the Next.js compile.
 - Paste that file into Framer's code editor to create a standalone clickable demo component.
+
+2026-06-17 production-context update verification:
+- npm run build passed.
+- npm run typecheck passed after Next generated .next/types.
+- Updated Fast Track paper-form field map and Supabase production runbook.
+- Updated branding from the paper sheet.
+- Updated production photo storage paths to include job photo UUIDs.
+- Added invoice PDF storage write/update/delete policies to supabase/schema.sql.

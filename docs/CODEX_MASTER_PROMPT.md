@@ -6,6 +6,8 @@ Goal: convert the existing clickable/localStorage MVP into a Supabase-backed wor
 
 Read first:
 - `docs/EXECUTION_SHEET.md`
+- `docs/PAPER_FORM_FIELD_MAP.md`
+- `docs/PRODUCTION_SUPABASE_RUNBOOK.md`
 
 Hard requirements:
 - Use Supabase, not Firebase.
@@ -18,6 +20,8 @@ Hard requirements:
 - Never expose `SUPABASE_SERVICE_ROLE_KEY` in client code.
 - Keep CallRail as Phase 2 scaffold only.
 - For invoice work, use `@react-pdf/renderer` in this app or the `landforge-main` `@pdfme/generator` pattern as the reference. Do not leave invoice output as only a visual card.
+- The real paper form is the source of truth for missing production fields. Extracted fields live in `docs/PAPER_FORM_FIELD_MAP.md`.
+- Do not store raw card numbers, CVV, or card zip from the paper form. Use a PCI-compliant payment provider.
 
 Files to inspect first:
 - `lib/data-store.tsx`
@@ -37,6 +41,7 @@ Implementation tasks:
    - Ensure `search_customers` RPC exists.
    - Ensure private buckets exist: `job-photos`, `invoices`.
    - Ensure storage policies exist for job photos.
+   - Ensure invoice PDF storage has owner write/update/delete policies.
 
 2. Add environment flags.
    - `NEXT_PUBLIC_DEMO_MODE=true|false`
@@ -62,7 +67,7 @@ Implementation tasks:
 
 6. Photo uploads.
    - In production mode, upload files to Supabase Storage bucket `job-photos`.
-   - Path format: `${jobId}/${Date.now()}_${safeFileName}`.
+   - Path format: `${jobId}/${photoId}.${extension}` so storage objects can be traced back to `job_photos.id`.
    - Insert metadata row into `job_photos`.
    - Display previews using signed URLs or authenticated URLs.
 
@@ -90,3 +95,10 @@ Acceptance test:
 - Add line items and invoice draft as tech.
 - Login as owner: invoice draft appears and can be marked sent.
 - Login as call center: invoices and parts are inaccessible.
+
+Next production schema pass:
+- Add multiple equipment/appliance records per job.
+- Add jurisdiction: DC, MD, VA.
+- Separate service request, diagnosis, and work performed.
+- Add authorization/completion signature records.
+- Add payment/deposit tracking without storing card data.

@@ -35,6 +35,7 @@ export function InvoicePreview({
           <h2>{branding.businessName}</h2>
           <p>{branding.address}</p>
           <p>{branding.phone} · {branding.email}</p>
+          <p>{branding.website}</p>
           <p>{branding.licenseNumber}</p>
         </div>
         <div className="invoice-number">

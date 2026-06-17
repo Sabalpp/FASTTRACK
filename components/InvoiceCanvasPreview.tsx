@@ -74,7 +74,8 @@ function drawInvoicePage(
   text(context, branding.address, 56, 98, "14px Inter, Arial, sans-serif", "#4b5563");
   text(context, branding.phone, 56, 119, "14px Inter, Arial, sans-serif", "#4b5563");
   text(context, branding.email, 56, 140, "14px Inter, Arial, sans-serif", "#4b5563");
-  text(context, branding.licenseNumber, 56, 161, "14px Inter, Arial, sans-serif", "#4b5563");
+  text(context, branding.website, 56, 161, "14px Inter, Arial, sans-serif", "#4b5563");
+  text(context, branding.licenseNumber, 56, 182, "14px Inter, Arial, sans-serif", "#4b5563");
 
   text(context, "Invoice", 665, 68, "700 13px Inter, Arial, sans-serif", "#64748b", "right");
   text(context, invoice.invoiceNumber, 760, 98, "700 22px Inter, Arial, sans-serif", "#17202a", "right");

@@ -483,3 +483,31 @@ using (
     )
   )
 );
+
+drop policy if exists "invoice pdfs insert by owner" on storage.objects;
+create policy "invoice pdfs insert by owner"
+on storage.objects for insert to authenticated
+with check (
+  bucket_id = 'invoices'
+  and public.is_owner()
+);
+
+drop policy if exists "invoice pdfs update by owner" on storage.objects;
+create policy "invoice pdfs update by owner"
+on storage.objects for update to authenticated
+using (
+  bucket_id = 'invoices'
+  and public.is_owner()
+)
+with check (
+  bucket_id = 'invoices'
+  and public.is_owner()
+);
+
+drop policy if exists "invoice pdfs delete by owner" on storage.objects;
+create policy "invoice pdfs delete by owner"
+on storage.objects for delete to authenticated
+using (
+  bucket_id = 'invoices'
+  and public.is_owner()
+);

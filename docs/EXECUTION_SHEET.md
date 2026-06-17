@@ -6,6 +6,8 @@ This sheet captures the current product direction, the cleanup logic used in the
 
 This is a field-service operating app, not a demo website. Most real use will happen on an iPad or phone by a tech who is standing in a house, moving between jobs, taking photos, calling customers, adding items, and preparing an invoice. The interface should feel calm, fast, and operational.
 
+The app is replacing the company's current paper Fast Track Repair Service service/invoice sheet. The extracted paper fields and missing production data model are captured in `docs/PAPER_FORM_FIELD_MAP.md`.
+
 The app should use the screen for work. Avoid wide blank areas, repeated headings, decorative cards, and marketing text. Every visible element should answer one of these questions:
 
 - What needs attention?
@@ -95,6 +97,21 @@ The invoice system should become:
 5. PDF is stored in Supabase Storage `invoices`.
 6. Invoice row stores `pdf_storage_path`, `status`, `sent_to_email`, and `sent_at`.
 7. Email sends the PDF as attachment or signed link.
+
+The paper sheet adds these invoice requirements:
+
+- Invoice number and date.
+- DC/MD/VA jurisdiction.
+- Customer/job address and unit.
+- One or more appliance/equipment blocks.
+- Nature of service request.
+- Description.
+- Service performed/diagnosis.
+- Estimate authorization and completion acknowledgement.
+- Deposit, subtotal, tax, total, and amount due.
+- Warranty month/year when applicable.
+- Revised estimate, approved by, and technician.
+- Payment tracking, but without storing card number/CVV in the app.
 
 The customer-facing document should include:
 
