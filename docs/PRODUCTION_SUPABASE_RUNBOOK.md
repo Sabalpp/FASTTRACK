@@ -137,6 +137,8 @@ NEXT_PUBLIC_REQUIRE_OWNER_MFA=false
 6. Add the final Vercel URL to Supabase Auth redirects.
 7. Redeploy if auth/env settings changed.
 
+If the deployed app shows `Owner`, `Tech`, and `Desk` buttons, it is still running in demo mode. Production login should show `Continue with Google`. Check Vercel environment variables and redeploy the latest `main` branch.
+
 ## Production Smoke Test
 
 Run this after every schema/env/deploy change:
