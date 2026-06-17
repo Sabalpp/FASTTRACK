@@ -25,6 +25,7 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=YOUR_BROWSER_KEY
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVER_ONLY_SERVICE_ROLE_OR_SECRET_KEY
 NEXT_PUBLIC_ENABLE_GOOGLE_AUTH=true
+NEXT_PUBLIC_REQUIRE_OWNER_MFA=false
 NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=
 CALLRAIL_WEBHOOK_SECRET=
 RESEND_API_KEY=
@@ -36,6 +37,7 @@ Notes:
 - New Supabase projects show `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The app also supports the older `NEXT_PUBLIC_SUPABASE_ANON_KEY` name as a fallback.
 - `SUPABASE_SERVICE_ROLE_KEY` is server-only. Never expose it in React/client code.
 - Keep demo mode false for real Supabase testing.
+- Keep `NEXT_PUBLIC_REQUIRE_OWNER_MFA=false` for first production testing. Turn it on only after the owner has enrolled a TOTP/authenticator factor in Supabase Auth.
 
 ## Supabase SQL Setup
 
@@ -128,6 +130,7 @@ If the client does not want Google:
 ```bash
 NEXT_PUBLIC_DEMO_MODE=false
 NEXT_PUBLIC_ENABLE_GOOGLE_AUTH=true
+NEXT_PUBLIC_REQUIRE_OWNER_MFA=false
 ```
 
 5. Deploy.

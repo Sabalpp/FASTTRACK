@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppData } from "@/lib/data-store";
-import { demoMode, googleAuthEnabled } from "@/lib/runtime";
+import { demoMode, googleAuthEnabled, ownerMfaRequired } from "@/lib/runtime";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { AllowedUser, Role } from "@/lib/types";
 
@@ -127,7 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (productionUser.role !== "owner") {
+    if (!ownerMfaRequired || productionUser.role !== "owner") {
       setMfaRequired(false);
       setMfaFactorId(undefined);
       setMfaChecked(true);
