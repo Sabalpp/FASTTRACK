@@ -139,6 +139,8 @@ NEXT_PUBLIC_REQUIRE_OWNER_MFA=false
 
 If the deployed app shows `Owner`, `Tech`, and `Desk` buttons, it is still running in demo mode. Production login should show `Continue with Google`. Check Vercel environment variables and redeploy the latest `main` branch.
 
+Production builds intentionally do not allow the demo role picker. Local dev can still use demo mode, but Vercel production should always route through real auth. If production cannot find Supabase env vars, it should show a Supabase configuration/auth error instead of fake role buttons.
+
 ## Production Smoke Test
 
 Run this after every schema/env/deploy change:
