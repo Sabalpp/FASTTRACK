@@ -2375,7 +2375,9 @@ label {
 }
 
 .auth-card {
-  width: min(420px, 100%);
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 36px));
+  max-width: 100%;
   display: grid;
   justify-items: center;
   gap: 18px;
@@ -2391,6 +2393,8 @@ label {
   text-align: center;
   font-size: 1.55rem;
   line-height: 1.15;
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 
 .auth-mark {
@@ -2514,7 +2518,18 @@ label {
 
 @media (max-width: 760px) {
   .auth-card {
-    width: 100%;
+    width: min(420px, calc(100vw - 36px));
+    padding: 24px 18px;
+  }
+
+  .auth-card h1 {
+    font-size: 1.28rem;
+    line-height: 1.18;
+    text-wrap: balance;
+  }
+
+  .google-auth-button {
+    max-width: 100%;
   }
 
   .contact-action-grid {
@@ -2536,6 +2551,16 @@ label {
 
   .line-item-edit-grid input:first-child {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 520px) {
+  .auth-card {
+    width: min(260px, calc(100vw - 48px));
+  }
+
+  .auth-card h1 {
+    font-size: 1.12rem;
   }
 }
 
@@ -3266,7 +3291,10 @@ label {
 .auth-screen {
   position: relative;
   overflow: hidden;
-  background: #05070d;
+  isolation: isolate;
+  background:
+    linear-gradient(180deg, rgba(5, 7, 13, 0.78), rgba(5, 7, 13, 0.96)),
+    #05070d;
 }
 
 .auth-card {
@@ -3274,43 +3302,32 @@ label {
   z-index: 2;
 }
 
-.auth-stars {
+.paper-shader-background {
   position: absolute;
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 120%, rgba(255, 122, 26, 0.22), transparent 38%);
+  pointer-events: none;
 }
 
-.auth-stars span {
+.paper-shader-background::after {
+  content: "";
   position: absolute;
-  inset: -20%;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.95) 1px, transparent 1px);
-  background-size: 74px 74px;
-  opacity: 0.38;
-  animation: star-drift 44s linear infinite;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(5, 7, 13, 0.22), transparent 28%, transparent 72%, rgba(5, 7, 13, 0.22)),
+    linear-gradient(180deg, rgba(5, 7, 13, 0.18), transparent 40%, rgba(5, 7, 13, 0.52));
 }
 
-.auth-stars span:nth-child(2) {
-  background-size: 118px 118px;
-  opacity: 0.28;
-  animation-duration: 72s;
-  transform: rotate(11deg);
+.paper-shader-background canvas {
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 0.92;
 }
 
-.auth-stars span:nth-child(3) {
-  background-size: 168px 168px;
-  opacity: 0.2;
-  animation-duration: 96s;
-  transform: rotate(-8deg);
-}
-
-@keyframes star-drift {
-  from {
-    translate: 0 0;
-  }
-  to {
-    translate: -90px 90px;
+@media (prefers-reduced-motion: reduce) {
+  .paper-shader-background canvas {
+    opacity: 0.82;
   }
 }
 

@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { branding } from "@/lib/branding";
 import { roleLabels, roleOptions } from "@/lib/data-store";
 import { Button } from "@/components/ui";
+import { BackgroundPaperShaders } from "@/components/ui/background-paper-shaders";
 import type { Role } from "@/lib/types";
 
 const roleIconMap: Record<Role, typeof Users> = {
@@ -22,11 +23,7 @@ export default function LoginPage() {
 
   return (
     <main className="auth-screen">
-      <div className="auth-stars" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
+      <BackgroundPaperShaders />
       <section className="auth-card">
         <div className="auth-mark" aria-hidden="true">
           <LockKeyhole size={22} />

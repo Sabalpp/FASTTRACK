@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { RoleSwitcher } from "@/components/RoleSwitcher";
+import { BackgroundPaperShaders } from "@/components/ui/background-paper-shaders";
 import type { Role } from "@/lib/types";
 import type { LucideIcon } from "lucide-react";
 
@@ -50,11 +51,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (loadingAuth || blockedAuth) {
     return (
       <main className="auth-screen">
-        <div className="auth-stars" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
+        <BackgroundPaperShaders />
         <section className="auth-card auth-status-card">
           <div className="auth-mark" aria-hidden="true">
             <CircleUserRound size={22} />
