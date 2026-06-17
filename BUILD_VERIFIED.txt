@@ -1,0 +1,16 @@
+Framer UI upgrade verification
+
+Verified in sandbox:
+- npm install --ignore-scripts --no-audit --no-fund
+- npm run typecheck
+- NEXT_TELEMETRY_DISABLED=1 npm run build
+
+Build result:
+- TypeScript passed.
+- Next.js production build completed successfully.
+- /framer route added as the polished Framer-style showroom.
+- /api/webhooks/callrail route remains scaffolded.
+
+Notes:
+- Framer code component is stored as framer/FramerMVPPrototype.tsx.txt so it does not affect the Next.js compile.
+- Paste that file into Framer's code editor to create a standalone clickable demo component.

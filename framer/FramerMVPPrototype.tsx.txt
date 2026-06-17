@@ -1,0 +1,129 @@
+// Paste this into Framer as a Code Component.
+// It is intentionally self-contained and React-18-compatible for Framer's editor.
+// Keep the real app in Next/Supabase; use this as the high-polish clickable demo layer.
+
+import * as React from "react"
+import { addPropertyControls, ControlType } from "framer"
+
+type Role = "owner" | "tech" | "call_center"
+type Verb = "Inspect" | "Charge" | "Case" | "Secure" | "Invoice" | "Email"
+
+const roles: { id: Role; label: string; promise: string }[] = [
+  { id: "owner", label: "Owner", promise: "Reviews every invoice and sees the whole business." },
+  { id: "tech", label: "Tech", promise: "Assigned jobs only: photos, notes, line items, drafts." },
+  { id: "call_center", label: "Call Center", promise: "Searches, creates, schedules — no photos or money." },
+]
+
+const verbs: { id: Verb; caption: string; body: string }[] = [
+  { id: "Inspect", caption: "Diagnose", body: "Open the job and see customer, status, service address, notes, and schedule." },
+  { id: "Charge", caption: "Add work", body: "Add diagnostic, parts, labor, or manual charges in plain language." },
+  { id: "Case", caption: "Document", body: "Attach before/after photos to the case so the owner sees the full story." },
+  { id: "Secure", caption: "Options", body: "Present Good / Better / Best options without rebuilding a quote." },
+  { id: "Invoice", caption: "Draft", body: "Totals calculate by tier and create a draft for owner review." },
+  { id: "Email", caption: "Send", body: "Owner selects the tier and sends the invoice PDF." },
+]
+
+export default function HVACMVPPrototype(props) {
+  const [role, setRole] = React.useState<Role>(props.defaultRole)
+  const [verb, setVerb] = React.useState<Verb>("Inspect")
+  const activeRole = roles.find((r) => r.id === role) || roles[0]
+  const activeVerb = verbs.find((v) => v.id === verb) || verbs[0]
+
+  const brand = props.primaryColor
+  const accent = props.accentColor
+  const bg = `linear-gradient(135deg, ${brand} 0%, #07131a 100%)`
+
+  return (
+    <div style={{ ...styles.shell, background: bg, color: "white", fontFamily: props.fontFamily }}>
+      <section style={styles.hero}>
+        <div>
+          <div style={{ ...styles.badge, background: accent }}>Framer MVP Demo</div>
+          <h1 style={styles.h1}>HVAC + Plumbing app that a field tech understands instantly.</h1>
+          <p style={styles.lede}>Six verbs. Three roles. One clean job page. Built to feel premium without becoming Housecall Pro.</p>
+        </div>
+        <div style={styles.device}>
+          <div style={styles.deviceTop}><strong>{props.businessName}</strong><span>{activeRole.label}</span></div>
+          <div style={styles.deviceScreen}>
+            <div style={styles.miniCard}>
+              <small style={styles.eyebrow}>Live job</small>
+              <h2 style={styles.h2}>Sarah Whitman</h2>
+              <p style={styles.muted}>No-cool upstairs · Ashburn, VA · 2:30 PM</p>
+            </div>
+            <div style={styles.tiers}>
+              {[
+                ["Good", "$286"],
+                ["Better", "$642"],
+                ["Best", "$1,248"],
+              ].map(([name, price]) => (
+                <div key={name} style={styles.tier}><small>{name}</small><strong>{role === "call_center" ? "Locked" : price}</strong></div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section style={styles.grid}>
+        <div style={styles.panel}>
+          <small style={styles.eyebrow}>Role</small>
+          {roles.map((r) => (
+            <button key={r.id} onClick={() => setRole(r.id)} style={{ ...styles.roleButton, borderColor: role === r.id ? accent : "rgba(255,255,255,.18)" }}>
+              <strong>{r.label}</strong><span>{r.promise}</span>
+            </button>
+          ))}
+        </div>
+
+        <div style={styles.panel}>
+          <small style={styles.eyebrow}>Workflow</small>
+          <div style={styles.verbGrid}>
+            {verbs.map((v, i) => (
+              <button key={v.id} onClick={() => setVerb(v.id)} style={{ ...styles.verbButton, background: verb === v.id ? "white" : "rgba(255,255,255,.08)", color: verb === v.id ? brand : "white" }}>
+                <span style={{ ...styles.number, background: verb === v.id ? accent : "rgba(255,255,255,.14)" }}>{i + 1}</span>
+                <strong>{v.id}</strong>
+                <small>{v.caption}</small>
+              </button>
+            ))}
+          </div>
+          <div style={styles.story}>
+            <small style={{ ...styles.eyebrow, color: accent }}>{activeVerb.id}</small>
+            <h2 style={{ ...styles.h2, color: "#0b1220" }}>{activeVerb.caption}</h2>
+            <p style={{ color: "#64748b" }}>{activeVerb.body}</p>
+            <button style={{ ...styles.cta, background: accent }}>{role === "call_center" && ["Charge", "Case", "Invoice", "Email"].includes(verb) ? "Access locked" : `Continue: ${activeVerb.id}`}</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  shell: { width: "100%", minHeight: 900, borderRadius: 36, padding: 36, boxSizing: "border-box", overflow: "hidden" },
+  hero: { display: "grid", gridTemplateColumns: "1.1fr .7fr", gap: 32, alignItems: "center" },
+  badge: { display: "inline-flex", padding: "9px 13px", borderRadius: 999, fontWeight: 900, textTransform: "uppercase", letterSpacing: ".08em", fontSize: 12 },
+  h1: { fontSize: 62, lineHeight: .92, letterSpacing: "-0.06em", margin: "18px 0" },
+  lede: { fontSize: 20, lineHeight: 1.45, color: "rgba(255,255,255,.75)", maxWidth: 740 },
+  device: { border: "1px solid rgba(255,255,255,.22)", borderRadius: 34, padding: 12, background: "rgba(255,255,255,.1)", boxShadow: "0 40px 120px rgba(0,0,0,.34)" },
+  deviceTop: { display: "flex", justifyContent: "space-between", padding: 14, color: "white" },
+  deviceScreen: { display: "grid", gap: 14, minHeight: 360, borderRadius: 26, background: "#f8fbfc", color: "#0b1220", padding: 18 },
+  miniCard: { background: "white", borderRadius: 24, padding: 22, boxShadow: "0 18px 44px rgba(15,23,42,.10)" },
+  h2: { fontSize: 32, lineHeight: 1, letterSpacing: "-.04em", margin: "10px 0" },
+  muted: { color: "#64748b" },
+  tiers: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 },
+  tier: { background: "#eef7f8", borderRadius: 18, padding: 16, display: "grid", gap: 6 },
+  grid: { display: "grid", gridTemplateColumns: ".34fr 1fr", gap: 18, marginTop: 28 },
+  panel: { border: "1px solid rgba(255,255,255,.18)", borderRadius: 30, padding: 22, background: "rgba(255,255,255,.10)", backdropFilter: "blur(20px)" },
+  eyebrow: { display: "block", color: "rgba(255,255,255,.66)", fontWeight: 900, textTransform: "uppercase", letterSpacing: ".12em", marginBottom: 10 },
+  roleButton: { width: "100%", display: "grid", gap: 5, marginTop: 10, textAlign: "left", border: "1px solid", borderRadius: 20, padding: 16, background: "rgba(255,255,255,.09)", color: "white", cursor: "pointer" },
+  verbGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 },
+  verbButton: { display: "grid", gap: 6, textAlign: "left", border: "1px solid rgba(255,255,255,.18)", borderRadius: 20, padding: 14, cursor: "pointer" },
+  number: { display: "grid", placeItems: "center", width: 32, height: 32, borderRadius: 999, color: "white", fontWeight: 900 },
+  story: { marginTop: 14, background: "white", borderRadius: 26, padding: 24 },
+  cta: { minHeight: 50, border: 0, borderRadius: 16, color: "white", fontWeight: 900, padding: "0 18px", cursor: "pointer" },
+}
+
+addPropertyControls(HVACMVPPrototype, {
+  businessName: { type: ControlType.String, title: "Business", defaultValue: "Fast Track HVAC" },
+  defaultRole: { type: ControlType.Enum, title: "Default Role", options: ["owner", "tech", "call_center"], optionTitles: ["Owner", "Tech", "Call Center"], defaultValue: "owner" },
+  primaryColor: { type: ControlType.Color, title: "Primary", defaultValue: "#063f4f" },
+  accentColor: { type: ControlType.Color, title: "Accent", defaultValue: "#ff7a1a" },
+  fontFamily: { type: ControlType.String, title: "Font", defaultValue: "Inter, system-ui, sans-serif" },
+})
