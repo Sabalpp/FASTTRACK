@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CalendarPlus } from "lucide-react";
 import { useMemo } from "react";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
@@ -13,19 +14,16 @@ import { OperationsChart } from "@/components/OperationsChart";
 
 const roleActions = {
   owner: [
-    { title: "New job", body: "Schedule work.", href: "/jobs/new" },
     { title: "Parts", body: "Catalog pricing.", href: "/parts" },
     { title: "Users", body: "Allowed access.", href: "/admin/users" }
   ],
   tech: [
-    { title: "New job", body: "Field intake.", href: "/jobs/new" },
     { title: "Customer", body: "Create record.", href: "/customers/new?next=job" },
     { title: "Assigned", body: "Open work.", href: "/jobs" }
   ],
   call_center: [
     { title: "Customers", body: "Find records.", href: "/customers" },
-    { title: "New", body: "Create customer.", href: "/customers/new" },
-    { title: "Schedule", body: "Create job.", href: "/jobs/new" }
+    { title: "New", body: "Create customer.", href: "/customers/new" }
   ]
 };
 
@@ -47,8 +45,19 @@ export default function DashboardPage() {
     <main className="page-shell dashboard-page">
       <PageHeader
         title={dashboardTitle}
-        action={canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new">New job</ButtonLink> : undefined}
       />
+
+      {canScheduleJobs(currentUser.role) ? (
+        <Link href="/jobs/new" className="primary-job-action">
+          <span className="primary-job-icon" aria-hidden="true">
+            <CalendarPlus size={22} />
+          </span>
+          <span>
+            <strong>New job</strong>
+            <small>Create the customer, service address, schedule, and assigned tech in one flow.</small>
+          </span>
+        </Link>
+      ) : null}
 
       <section className="ops-strip" aria-label="Operations summary">
         <div className="ops-stat">
@@ -72,7 +81,7 @@ export default function DashboardPage() {
               <h2>Workload</h2>
               <p className="subtle-copy">Scheduled work and completed jobs.</p>
             </div>
-            <StatusPill tone="info">live</StatusPill>
+            <StatusPill tone="neutral">schedule</StatusPill>
           </div>
           <OperationsChart
             jobs={visibleJobs}

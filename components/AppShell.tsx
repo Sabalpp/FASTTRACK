@@ -16,7 +16,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
-import { GlobalSearch } from "@/components/GlobalSearch";
 import { RoleSwitcher } from "@/components/RoleSwitcher";
 import { BackgroundPaperShaders } from "@/components/ui/background-paper-shaders";
 import type { Role } from "@/lib/types";
@@ -67,13 +66,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <>
       {!isLogin ? (
         <header className="app-header">
-          <Link href="/dashboard" className="brand-block">
-            <span>
-              <strong>Fast Track</strong>
-              <small>{currentUser.role.replace("_", " ")}</small>
-            </span>
-          </Link>
-          <GlobalSearch compact />
           <nav className="main-nav">
             {navItems
               .filter((item) => item.roles.includes(currentUser.role))
@@ -85,16 +77,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ))}
           </nav>
           <div className="header-actions">
+            <div className="profile-chip" title={currentUser.email || currentUser.displayName}>
+              <CircleUserRound size={17} aria-hidden="true" />
+              <span>
+                <strong>{currentUser.displayName || currentUser.email}</strong>
+              </span>
+            </div>
             {isDemoMode ? <RoleSwitcher /> : null}
-            {!isDemoMode ? (
-              <div className="profile-chip" title={currentUser.email || currentUser.displayName}>
-                <CircleUserRound size={17} aria-hidden="true" />
-                <span>
-                  <strong>{currentUser.displayName || currentUser.email}</strong>
-                  <small>{currentUser.role.replace("_", " ")}</small>
-                </span>
-              </div>
-            ) : null}
             {isDemoMode ? (
               <button className="text-button icon-text-button" type="button" onClick={resetDemoData}>
                 <RotateCcw size={15} aria-hidden="true" />

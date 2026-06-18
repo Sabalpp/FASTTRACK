@@ -55,6 +55,23 @@ function startOfWeek(date: Date) {
   return next;
 }
 
+function buildWeekRows(firstDay: Date) {
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(firstDay);
+    date.setDate(firstDay.getDate() + index);
+    return {
+      key: dayKey(date),
+      day: dayLabel(date),
+      date: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date),
+      total: 0,
+      scheduled: 0,
+      in_progress: 0,
+      complete: 0,
+      cancelled: 0
+    };
+  });
+}
+
 function invoiceAmount(invoice: Invoice) {
   if (invoice.selectedTier === "good") return invoice.totalGood;
   if (invoice.selectedTier === "better") return invoice.totalBetter;
@@ -75,22 +92,13 @@ export function OperationsChart({
   const invoiceRef = useRef<HTMLCanvasElement | null>(null);
 
   const metrics = useMemo(() => {
-    const firstDay = startOfWeek(new Date());
-
-    const days = Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(firstDay);
-      date.setDate(firstDay.getDate() + index);
-      return {
-        key: dayKey(date),
-        day: dayLabel(date),
-        date: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date),
-        total: 0,
-        scheduled: 0,
-        in_progress: 0,
-        complete: 0,
-        cancelled: 0
-      };
-    });
+    const currentWeekStart = startOfWeek(new Date());
+    const currentWeekKeys = new Set(buildWeekRows(currentWeekStart).map((day) => day.key));
+    const hasCurrentWeekWork = jobs.some((job) => currentWeekKeys.has(dayKey(new Date(job.scheduledAt))));
+    const firstScheduledJob = [...jobs].sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())[0];
+    const firstDay = hasCurrentWeekWork || !firstScheduledJob ? currentWeekStart : startOfWeek(new Date(firstScheduledJob.scheduledAt));
+    const days = buildWeekRows(firstDay);
+    const periodLabel = hasCurrentWeekWork || !firstScheduledJob ? "This week" : "Job window";
 
     const byKey = new Map(days.map((day) => [day.key, day]));
     const statusCounts: Record<JobStatus, number> = {
@@ -157,7 +165,8 @@ export function OperationsChart({
         completionRate,
         activeInvoiceTotal,
         paidInvoiceTotal: invoiceTotals.paid,
-        nextJob
+        nextJob,
+        periodLabel
       }
     };
   }, [jobs, invoices]);
@@ -289,7 +298,7 @@ export function OperationsChart({
       <div className="chart-frame workload-chart" aria-label="Weekly job workload">
         <div className="workload-chart-head">
           <div>
-            <strong>This week</strong>
+            <strong>{metrics.summary.periodLabel}</strong>
             <span>{weekRange}</span>
           </div>
           <div className="workload-total">

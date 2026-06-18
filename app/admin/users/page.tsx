@@ -29,11 +29,11 @@ export default function AdminUsersPage() {
 
   return (
     <RoleGate allowed={["owner"]}>
-      <main className="page-shell">
+      <main className="page-shell users-page">
         <PageHeader eyebrow="Owner only" title="Users" description="Control which Google accounts can access the app and what role they receive." />
         <ThreeColumn>
           {roleOptions.map((role) => (
-            <Card key={role}>
+            <Card key={role} className="user-role-card">
               <p className="eyebrow">{roleLabels[role]}</p>
               <h2>{data.allowedUsers.filter((user) => user.role === role && user.active).length}</h2>
               <p className="muted">Active users</p>
@@ -55,9 +55,9 @@ export default function AdminUsersPage() {
             <Button type="submit">Add to allowlist</Button>
           </form>
         </Card>
-        <div className="stack">
+        <div className="stack user-card-list">
           {data.allowedUsers.map((user) => (
-            <Card key={user.id}>
+            <Card key={user.id} className="user-card">
               <div className="section-head">
                 <div>
                   <strong>{user.displayName}</strong>

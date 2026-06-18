@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { PackageOpen } from "lucide-react";
 import { RoleGate } from "@/components/RoleGate";
 import { useAppData } from "@/lib/data-store";
 import { money } from "@/lib/money";
@@ -21,21 +21,26 @@ export default function PartsPage() {
           {data.parts.length === 0 ? (
             <EmptyState title="No parts yet" description="Add diagnostic, labor, HVAC, and plumbing items." />
           ) : (
-            data.parts.map((part) => (
-              <Link key={part.id} href="/parts" className="record-row part-row">
-                <div className="record-main">
-                  <strong>{part.name}</strong>
-                  <span>{part.category}</span>
-                </div>
-                <div className="record-meta">
-                  <span>{money(part.defaultPrice)} / {part.unit}</span>
-                  <small>{part.sku ?? "No SKU"}</small>
-                </div>
-                <div className="record-side">
-                  <StatusPill tone={part.active ? "good" : "neutral"}>{part.active ? "active" : "inactive"}</StatusPill>
-                </div>
-              </Link>
-            ))
+            <div className="part-card-grid">
+              {data.parts.map((part) => (
+                <article key={part.id} className="part-card">
+                  <div className="part-thumb" aria-hidden="true">
+                    <PackageOpen size={24} />
+                  </div>
+                  <div className="part-card-main">
+                    <div>
+                      <strong>{part.name}</strong>
+                      <span>{part.category}</span>
+                    </div>
+                    <StatusPill tone={part.active ? "good" : "neutral"}>{part.active ? "active" : "inactive"}</StatusPill>
+                  </div>
+                  <div className="part-card-meta">
+                    <span>{money(part.defaultPrice)} / {part.unit}</span>
+                    <small>{part.sku ?? "No SKU"}</small>
+                  </div>
+                </article>
+              ))}
+            </div>
           )}
         </div>
       </main>

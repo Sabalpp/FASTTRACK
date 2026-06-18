@@ -5,6 +5,7 @@ import { Suspense, useState, type FormEvent } from "react";
 import { flushSync } from "react-dom";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
+import { formatPhoneInput } from "@/lib/phone";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { Button, Card, Field, PageHeader, TwoColumn } from "@/components/ui";
 import type { Customer } from "@/lib/types";
@@ -66,7 +67,15 @@ function NewCustomerClient() {
         <form className="stack" onSubmit={submit}>
           <TwoColumn>
             <Field label="Customer name"><input required value={form.name} onChange={(event) => update("name", event.target.value)} /></Field>
-            <Field label="Phone"><input required value={form.phone} onChange={(event) => update("phone", event.target.value)} placeholder="(703) 555-1234" /></Field>
+            <Field label="Phone">
+              <input
+                required
+                inputMode="tel"
+                value={form.phone}
+                onChange={(event) => update("phone", formatPhoneInput(event.target.value))}
+                placeholder="(703) 555-1234"
+              />
+            </Field>
           </TwoColumn>
           <Field label="Email"><input type="email" value={form.email} onChange={(event) => update("email", event.target.value)} /></Field>
           <Field label="Street">

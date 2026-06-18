@@ -4147,3 +4147,342 @@ label {
     padding: 12px;
   }
 }
+
+/* Core product UI pass ------------------------------------------------------- */
+body {
+  font-family: "Inter", "SF Pro Text", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+h1,
+h2 {
+  letter-spacing: 0;
+}
+
+h1 {
+  font-size: clamp(1.65rem, 2vw, 2.35rem);
+  line-height: 1.08;
+}
+
+h2 {
+  font-size: clamp(1.1rem, 1.5vw, 1.45rem);
+  line-height: 1.16;
+}
+
+.app-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 10px 16px;
+}
+
+.main-nav {
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.main-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.main-nav a,
+.button,
+.text-button,
+.quick-action-card,
+.record-row,
+.part-card,
+.invoice-option-card,
+.address-suggestions button {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.main-nav a {
+  flex: 0 0 auto;
+  min-width: 92px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.main-nav a:hover,
+.main-nav a:focus-visible {
+  border-color: #dce3ea;
+  background: #f8fafc;
+  color: var(--brand-dark);
+}
+
+.header-actions {
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.profile-chip {
+  max-width: 180px;
+}
+
+.profile-chip small {
+  display: none;
+}
+
+.icon-text-button:hover,
+.icon-text-button:focus-visible,
+.button:hover,
+.button:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+.button-secondary:hover,
+.button-secondary:focus-visible {
+  background: #e2e8f0;
+}
+
+.primary-job-action {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  min-height: 86px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(38, 56, 70, 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(38, 56, 70, 0.96), rgba(15, 23, 42, 0.96)),
+    var(--brand-dark);
+  color: #fff;
+  padding: 16px 18px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.primary-job-action:hover,
+.primary-job-action:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.18);
+}
+
+.primary-job-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.primary-job-action strong,
+.primary-job-action small {
+  display: block;
+  min-width: 0;
+}
+
+.primary-job-action strong {
+  font-size: 1.14rem;
+  font-weight: 950;
+}
+
+.primary-job-action small {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 0.86rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.dashboard-overview-grid {
+  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.65fr);
+}
+
+.quick-action-grid-compact .quick-action-card {
+  min-height: 98px;
+}
+
+.quick-action-card:hover,
+.quick-action-card:focus-visible,
+.record-row:hover,
+.record-row:focus-visible,
+.part-card:hover {
+  border-color: rgba(38, 56, 70, 0.24);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
+  transform: translateY(-1px);
+}
+
+.part-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+  gap: 12px;
+}
+
+.part-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "thumb main"
+    "thumb meta";
+  gap: 10px 12px;
+  align-items: start;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.part-thumb {
+  grid-area: thumb;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border: 1px solid #dce3ea;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, #f8fafc, #eef2f7);
+  color: var(--brand-dark);
+}
+
+.part-card-main {
+  grid-area: main;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.part-card-main strong,
+.part-card-main span,
+.part-card-meta span,
+.part-card-meta small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.part-card-main strong {
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.part-card-main span,
+.part-card-meta small {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.part-card-meta {
+  grid-area: meta;
+  display: grid;
+  gap: 2px;
+}
+
+.part-card-meta span {
+  font-weight: 850;
+}
+
+.users-page .three-column {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.user-role-card {
+  display: grid;
+  gap: 4px;
+  min-height: 118px;
+}
+
+.user-role-card h2 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.user-card-list {
+  gap: 10px;
+}
+
+.user-card .section-head {
+  align-items: flex-start;
+}
+
+.user-card .section-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.user-admin-actions {
+  grid-template-columns: minmax(180px, 260px) auto minmax(0, 1fr);
+}
+
+@media (max-width: 1040px) {
+  .dashboard-overview-grid,
+  .users-page .three-column {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-action-grid-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .app-header {
+    grid-template-columns: 1fr;
+    padding: 8px;
+  }
+
+  .main-nav {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+  }
+
+  .main-nav a {
+    min-width: 78px;
+    padding: 8px 7px;
+  }
+
+  .header-actions {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .header-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .primary-job-action {
+    min-height: 78px;
+    padding: 13px;
+  }
+
+  .primary-job-icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .quick-action-grid-compact,
+  .part-card-grid,
+  .part-card,
+  .part-card-main,
+  .user-admin-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .part-card {
+    grid-template-areas:
+      "thumb"
+      "main"
+      "meta";
+  }
+
+  .part-card-main {
+    gap: 6px;
+  }
+}

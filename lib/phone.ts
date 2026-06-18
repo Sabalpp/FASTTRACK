@@ -11,3 +11,10 @@ export function formatPhone(input: string | null | undefined): string {
   }
   return input ?? "";
 }
+
+export function formatPhoneInput(input: string): string {
+  const digits = normalizePhone(input).slice(0, 10);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
