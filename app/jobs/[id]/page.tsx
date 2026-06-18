@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { tierOptions, useAppData } from "@/lib/data-store";
 import { canScheduleJobs, canSeeMoney, canSeePhotos, canViewJob } from "@/lib/access";
@@ -48,6 +48,12 @@ export default function JobDetailPage() {
   const items = data.jobLineItems.filter((item) => item.jobId === job.id).sort((a, b) => a.sortOrder - b.sortOrder);
   const invoice = data.invoices.find((candidate) => candidate.jobId === job.id);
   const jobId = job.id;
+  const jobNav = data.jobs
+    .filter((candidate) => canViewJob(currentUser, candidate))
+    .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt));
+  const jobIndex = jobNav.findIndex((candidate) => candidate.id === job.id);
+  const previousJob = jobIndex > 0 ? jobNav[jobIndex - 1] : undefined;
+  const nextJob = jobIndex >= 0 && jobIndex < jobNav.length - 1 ? jobNav[jobIndex + 1] : undefined;
 
   function saveInspect() {
     data.updateJob(jobId, {
@@ -75,7 +81,13 @@ export default function JobDetailPage() {
         eyebrow="Job"
         title={customer?.name ?? "Unknown customer"}
         description={jobDescription || job.description}
-        action={invoice ? <ButtonLink href={`/invoices/${invoice.id}`}>Open invoice</ButtonLink> : undefined}
+        action={
+          <div className="job-detail-nav">
+            <Link className={`button button-secondary ${previousJob ? "" : "disabled"}`} href={previousJob ? `/jobs/${previousJob.id}` : "#"} aria-disabled={!previousJob}>Previous</Link>
+            <Link className={`button button-secondary ${nextJob ? "" : "disabled"}`} href={nextJob ? `/jobs/${nextJob.id}` : "#"} aria-disabled={!nextJob}>Next</Link>
+            {invoice ? <ButtonLink href={`/invoices/${invoice.id}`}>Open invoice</ButtonLink> : null}
+          </div>
+        }
       />
 
       <section className="job-command-bar card-hero">
@@ -115,7 +127,11 @@ export default function JobDetailPage() {
         </TwoColumn>
         <div className="job-edit-grid">
           <Field label="Service call">
-            <input value={jobDescription} onChange={(event) => setJobDescription(event.target.value)} />
+            <textarea
+              className="compact-textarea"
+              value={jobDescription}
+              onChange={(event) => setJobDescription(event.target.value)}
+            />
           </Field>
           <Field label="Service address">
             <AddressAutocomplete
@@ -191,10 +207,10 @@ export default function JobDetailPage() {
           <Card>
             <div className="section-head">
               <div>
-                <p className="eyebrow">Charge</p>
+                <p className="eyebrow">Items</p>
                 <h2>Work items</h2>
               </div>
-              <p className="muted">Good: {tierCounts.good} · Better: {tierCounts.better} · Best: {tierCounts.best}</p>
+              <p className="muted">Good {tierCounts.good} · Better {tierCounts.better} · Best {tierCounts.best}</p>
             </div>
             <LineItemForm jobId={job.id} />
           </Card>
@@ -202,7 +218,7 @@ export default function JobDetailPage() {
           <Card>
             <div className="section-head">
               <div>
-                <p className="eyebrow">Secure</p>
+                <p className="eyebrow">Options</p>
                 <h2>Estimate options</h2>
               </div>
               <strong>{items.length} line items</strong>

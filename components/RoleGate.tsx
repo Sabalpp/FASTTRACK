@@ -13,7 +13,7 @@ export function RoleGate({ allowed, children }: { allowed: Role[]; children: Rea
       <Card>
         <p className="eyebrow">Access limited</p>
         <h1>This screen is not available for {currentUser.displayName}.</h1>
-        <p className="muted">This role cannot view money, photos, parts, or invoices.</p>
+        <p className="muted">This role does not have access to this workflow.</p>
         <Link href="/dashboard" className="button">Back home</Link>
       </Card>
     </main>

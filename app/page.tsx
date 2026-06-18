@@ -4,7 +4,6 @@ import { BriefcaseBusiness, FileText, LockKeyhole, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { branding } from "@/lib/branding";
 import { roleLabels, roleOptions } from "@/lib/data-store";
 import { Button } from "@/components/ui";
 import { BackgroundPaperShaders } from "@/components/ui/background-paper-shaders";
@@ -24,66 +23,72 @@ export default function LoginPage() {
   return (
     <main className="auth-screen">
       <BackgroundPaperShaders />
-      <section className="auth-card">
-        <div className="auth-mark" aria-hidden="true">
-          <LockKeyhole size={22} />
-        </div>
-        <h1>{branding.businessName}</h1>
-        {authError ? <p className="error-message">{authError}</p> : null}
+      <div className="auth-layout">
+        <section className="auth-card">
+          <div className="auth-mark" aria-hidden="true">
+            <LockKeyhole size={22} />
+          </div>
+          <div className="auth-card-copy">
+            <h1>Sign in</h1>
+            <p>Use your approved Fast Track account.</p>
+          </div>
+          {authError ? <p className="error-message">{authError}</p> : null}
 
-        {!isDemoMode && mfaRequired ? (
-          <form
-            className="auth-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void verifyMfa(mfaCode);
-            }}
-          >
-            <label className="field">
-              <span>Authenticator code</span>
-              <input
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                value={mfaCode}
-                onChange={(event) => setMfaCode(event.target.value)}
-              />
-            </label>
-            <Button type="submit" disabled={!mfaCode.trim()}>Verify</Button>
-          </form>
-        ) : null}
+          {!isDemoMode && mfaRequired ? (
+            <form
+              className="auth-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void verifyMfa(mfaCode);
+              }}
+            >
+              <label className="field">
+                <span>Authenticator code</span>
+                <input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={mfaCode}
+                  onChange={(event) => setMfaCode(event.target.value)}
+                />
+              </label>
+              <Button type="submit" disabled={!mfaCode.trim()}>Verify</Button>
+            </form>
+          ) : null}
 
-        {isDemoMode ? (
-          <>
-            <div className="role-login-grid role-login-grid-polished">
-              {roleOptions.map((role) => {
-                const Icon = roleIconMap[role];
-                return (
-                <button key={role} className={`role-login-button role-login-${role}`} onClick={() => signInAsRole(role)}>
-                  <Icon size={18} aria-hidden="true" />
-                  <strong>{role === "call_center" ? "Desk" : roleLabels[role]}</strong>
-                </button>
-                );
-              })}
+          {isDemoMode ? (
+            <div className="auth-demo-panel">
+              <p>Demo access</p>
+              <div className="role-login-grid role-login-grid-polished">
+                {roleOptions.map((role) => {
+                  const Icon = roleIconMap[role];
+                  return (
+                    <button key={role} className={`role-login-button role-login-${role}`} onClick={() => signInAsRole(role)}>
+                      <Icon size={18} aria-hidden="true" />
+                      <strong>{role === "call_center" ? "Desk" : roleLabels[role]}</strong>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </>
-        ) : !mfaRequired ? (
-          <>
-            {isAuthenticated ? (
-              <Button onClick={() => router.push("/dashboard")}>Open app</Button>
-            ) : (
-              <button className="google-auth-button" type="button" onClick={() => void signInWithGoogle()} disabled={!authReady}>
-                <GoogleIcon />
-                <span>{authReady ? "Continue with Google" : "Checking session..."}</span>
-              </button>
-            )}
-            {authError && currentUser.email ? (
-              <button className="auth-secondary-link" type="button" onClick={signOut}>
-                Use a different Google account
-              </button>
-            ) : null}
-          </>
-        ) : null}
-      </section>
+          ) : !mfaRequired ? (
+            <>
+              {isAuthenticated ? (
+                <Button onClick={() => router.push("/dashboard")}>Open app</Button>
+              ) : (
+                <button className="google-auth-button" type="button" onClick={() => void signInWithGoogle()} disabled={!authReady}>
+                  <GoogleIcon />
+                  <span>{authReady ? "Continue with Google" : "Checking session..."}</span>
+                </button>
+              )}
+              {authError && currentUser.email ? (
+                <button className="auth-secondary-link" type="button" onClick={signOut}>
+                  Use a different Google account
+                </button>
+              ) : null}
+            </>
+          ) : null}
+        </section>
+      </div>
     </main>
   );
 }

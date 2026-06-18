@@ -1,0 +1,1156 @@
+{
+  "document_title": "Fast Track Repair Service Invoice / HVAC Repair Work Order",
+  "source_images": [
+    "802459756.jpg",
+    "802459771.jpg"
+  ],
+  "source_note": "Extraction is based on two user-provided photos. The second image was clearer for most text. The PDF rebuild is a clean letter-size recreation, not a scan.",
+  "company_identity": {
+    "business_name": "FAST TRACK REPAIR SERVICE",
+    "address": "13817 Fount Beattie Ct.",
+    "city_state_zip": "CENTREVILLE, VA 20121",
+    "phone": "+1 7038995615",
+    "email": "Info@fasttrackdmv.org",
+    "website": "WWW.FASTTRACKDMV.ORG",
+    "logo_description": "House/roof icon above FAST TRACK with REPAIR SERVICE beneath."
+  },
+  "document_sections": [
+    "Header/company information/invoice number/date",
+    "Jurisdiction selector: DC / MD / VA",
+    "Customer and job details",
+    "Appliance 1 and Appliance 2 details",
+    "Nature of service request",
+    "Description",
+    "Hourly-rate notice/disclosure",
+    "Service performed / Diagnosis",
+    "Payment card/warranty/payment method/revised estimate approvals",
+    "Authorization of repair",
+    "Completion of work",
+    "Coupon/promo block",
+    "Cost summary"
+  ],
+  "static_text_blocks": [
+    {
+      "id": "authorization_text",
+      "text": "An estimate of $ __________ includes diagnosis/estimate, parts, and labor. I hereby authorize repairs and agree to pay for them upon completion of the job. If repairs require a part order, I agree to pay a deposit. I understand that the deposited amount will apply to the total for the trip to install parts. Company/technicians are not responsible for damages."
+    },
+    {
+      "id": "additional_repairs_notice",
+      "text": "If upon further analysis, additional repairs are found necessary, the customer will be contacted for the authorization of any additional charges. $35 Charge for return check."
+    },
+    {
+      "id": "completion_text",
+      "text": "I hearby acknowledge satisfactory performance of completion of repairs",
+      "note": "Original appears to use the misspelling 'hearby'."
+    },
+    {
+      "id": "hourly_rate_notice",
+      "text": "WE DO NOT USE HOURLY RATE, where parts or service are required as they are often unfair and misleading to both the consumers and technicians; whose technical skills, experience, and knowledge can not be measured on hourly scale. We find; however, ALL CONSUMERS WANT THE MOST HIGHLY QUALIFIED TECHNICIAN AVAILABLE. Our goal is to provide you with those technicians and the related parts and backup service necessary."
+    },
+    {
+      "id": "coupon",
+      "text": "$50 OFF\nON YOUR NEXT\nCOMPLETE REPAIR"
+    }
+  ],
+  "fields": [
+    {
+      "field_name": "invoice_no",
+      "section": "header",
+      "label": "INVOICE NO:",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 520,
+        "y": 707,
+        "width": 70,
+        "height": 18
+      }
+    },
+    {
+      "field_name": "date",
+      "section": "header",
+      "label": "DATE:",
+      "type": "date",
+      "coordinates_pt_letter": {
+        "x": 494,
+        "y": 674,
+        "width": 113,
+        "height": 18
+      },
+      "notes": "Original visual format is __/__/__"
+    },
+    {
+      "field_name": "customer_name",
+      "section": "customer_job_details",
+      "label": "CUSTOMER NAME:",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 124,
+        "y": 616,
+        "width": 153,
+        "height": 14
+      }
+    },
+    {
+      "field_name": "phone",
+      "section": "customer_job_details",
+      "label": "PHONE:",
+      "type": "phone",
+      "coordinates_pt_letter": {
+        "x": 355,
+        "y": 616,
+        "width": 21,
+        "height": 14
+      }
+    },
+    {
+      "field_name": "job_street",
+      "section": "customer_job_details",
+      "label": "JOB STREET",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 106,
+        "y": 598,
+        "width": 268,
+        "height": 14
+      }
+    },
+    {
+      "field_name": "unit_no",
+      "section": "customer_job_details",
+      "label": "UNIT NO.",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 91,
+        "y": 578,
+        "width": 32,
+        "height": 16
+      }
+    },
+    {
+      "field_name": "city",
+      "section": "customer_job_details",
+      "label": "CITY",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 161,
+        "y": 578,
+        "width": 74,
+        "height": 16
+      }
+    },
+    {
+      "field_name": "state",
+      "section": "customer_job_details",
+      "label": "STATE",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 274,
+        "y": 578,
+        "width": 12,
+        "height": 16
+      }
+    },
+    {
+      "field_name": "zip_code",
+      "section": "customer_job_details",
+      "label": "ZIP CODE",
+      "type": "zip",
+      "coordinates_pt_letter": {
+        "x": 338,
+        "y": 578,
+        "width": 36,
+        "height": 16
+      }
+    },
+    {
+      "field_name": "customer_email",
+      "section": "customer_job_details",
+      "label": "CUSTOMER EMAIL:",
+      "type": "email",
+      "coordinates_pt_letter": {
+        "x": 122,
+        "y": 560,
+        "width": 252,
+        "height": 14
+      }
+    },
+    {
+      "field_name": "appliance_1_type_brand",
+      "section": "appliance_details",
+      "label": "TYPE AND BRAND NAME OF APPLIANCE",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 133,
+        "y": 534,
+        "width": 242,
+        "height": 22
+      }
+    },
+    {
+      "field_name": "appliance_1_model_no",
+      "section": "appliance_details",
+      "label": "MODEL NO.",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 133,
+        "y": 515,
+        "width": 242,
+        "height": 15
+      }
+    },
+    {
+      "field_name": "appliance_1_serial_mfg_no",
+      "section": "appliance_details",
+      "label": "SERIAL NO./MFG. NO.",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 133,
+        "y": 496,
+        "width": 242,
+        "height": 15
+      }
+    },
+    {
+      "field_name": "appliance_2_type_brand",
+      "section": "appliance_details",
+      "label": "TYPE AND BRAND NAME OF APPLIANCE",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 133,
+        "y": 470,
+        "width": 242,
+        "height": 22
+      }
+    },
+    {
+      "field_name": "appliance_2_model_no",
+      "section": "appliance_details",
+      "label": "MODEL NO.",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 133,
+        "y": 451,
+        "width": 242,
+        "height": 15
+      }
+    },
+    {
+      "field_name": "appliance_2_serial_mfg_no",
+      "section": "appliance_details",
+      "label": "SERIAL NO./MFG. NO.",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 133,
+        "y": 432,
+        "width": 242,
+        "height": 15
+      }
+    },
+    {
+      "field_name": "nature_service_request",
+      "section": "service_request",
+      "label": "NATURE OF SERVICE REQUEST",
+      "type": "multiline_text",
+      "coordinates_pt_letter": {
+        "x": 39,
+        "y": 336,
+        "width": 336,
+        "height": 76
+      }
+    },
+    {
+      "field_name": "description",
+      "section": "description",
+      "label": "DESCRIPTION",
+      "type": "multiline_text",
+      "coordinates_pt_letter": {
+        "x": 39,
+        "y": 240,
+        "width": 336,
+        "height": 76
+      }
+    },
+    {
+      "field_name": "service_performed_diagnosis",
+      "section": "diagnosis",
+      "label": "Service performed / Diagnosis:",
+      "type": "multiline_text",
+      "coordinates_pt_letter": {
+        "x": 40,
+        "y": 137,
+        "width": 334,
+        "height": 20
+      }
+    },
+    {
+      "field_name": "card_no",
+      "section": "payment",
+      "label": "CARD NO.",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 91,
+        "y": 110,
+        "width": 150,
+        "height": 20
+      }
+    },
+    {
+      "field_name": "card_exp",
+      "section": "payment",
+      "label": "EXP.",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 271,
+        "y": 110,
+        "width": 25,
+        "height": 20
+      }
+    },
+    {
+      "field_name": "card_cvv",
+      "section": "payment",
+      "label": "CVV",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 318,
+        "y": 110,
+        "width": 25,
+        "height": 20
+      }
+    },
+    {
+      "field_name": "card_zip",
+      "section": "payment",
+      "label": "ZIP",
+      "type": "zip",
+      "coordinates_pt_letter": {
+        "x": 362,
+        "y": 110,
+        "width": 14,
+        "height": 20
+      }
+    },
+    {
+      "field_name": "warranty_month",
+      "section": "warranty",
+      "label": "Month:",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 118,
+        "y": 86,
+        "width": 70,
+        "height": 12
+      }
+    },
+    {
+      "field_name": "warranty_year",
+      "section": "warranty",
+      "label": "Year:",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 243,
+        "y": 86,
+        "width": 75,
+        "height": 12
+      }
+    },
+    {
+      "field_name": "approved",
+      "section": "warranty",
+      "label": "APPROVED;",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 340,
+        "y": 80,
+        "width": 34,
+        "height": 22
+      }
+    },
+    {
+      "field_name": "payment_cash",
+      "section": "payment",
+      "label": "CASH",
+      "type": "checkbox",
+      "coordinates_pt_letter": {
+        "x": 44,
+        "y": 56,
+        "width": 10.5,
+        "height": 10.5
+      }
+    },
+    {
+      "field_name": "payment_check",
+      "section": "payment",
+      "label": "CHECK",
+      "type": "checkbox",
+      "coordinates_pt_letter": {
+        "x": 84,
+        "y": 56,
+        "width": 10.5,
+        "height": 10.5
+      }
+    },
+    {
+      "field_name": "payment_cc",
+      "section": "payment",
+      "label": "CC",
+      "type": "checkbox",
+      "coordinates_pt_letter": {
+        "x": 234,
+        "y": 56,
+        "width": 10.5,
+        "height": 10.5
+      }
+    },
+    {
+      "field_name": "payment_other",
+      "section": "payment",
+      "label": "OTHER",
+      "type": "checkbox",
+      "coordinates_pt_letter": {
+        "x": 271,
+        "y": 56,
+        "width": 10.5,
+        "height": 10.5
+      }
+    },
+    {
+      "field_name": "check_no",
+      "section": "payment",
+      "label": "CHECK NO",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 148,
+        "y": 58,
+        "width": 65,
+        "height": 12
+      }
+    },
+    {
+      "field_name": "payment_other_text",
+      "section": "payment",
+      "label": "OTHER:",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 330,
+        "y": 58,
+        "width": 41,
+        "height": 12
+      }
+    },
+    {
+      "field_name": "revised_estimate",
+      "section": "approval",
+      "label": "REVISED ESTIMATE",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 39,
+        "y": 24,
+        "width": 120,
+        "height": 11
+      }
+    },
+    {
+      "field_name": "approved_by",
+      "section": "approval",
+      "label": "APPROVED BY",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 191,
+        "y": 24,
+        "width": 120,
+        "height": 11
+      }
+    },
+    {
+      "field_name": "technician",
+      "section": "approval",
+      "label": "TECHNICIAN",
+      "type": "text",
+      "coordinates_pt_letter": {
+        "x": 283,
+        "y": 24,
+        "width": 92,
+        "height": 11
+      }
+    },
+    {
+      "field_name": "jurisdiction_dc",
+      "section": "header_right",
+      "label": "DC",
+      "type": "checkbox",
+      "coordinates_pt_letter": {
+        "x": 412.67,
+        "y": 615,
+        "width": 10,
+        "height": 10
+      }
+    },
+    {
+      "field_name": "jurisdiction_md",
+      "section": "header_right",
+      "label": "MD",
+      "type": "checkbox",
+      "coordinates_pt_letter": {
+        "x": 476.0,
+        "y": 615,
+        "width": 10,
+        "height": 10
+      }
+    },
+    {
+      "field_name": "jurisdiction_va",
+      "section": "header_right",
+      "label": "VA",
+      "type": "checkbox",
+      "coordinates_pt_letter": {
+        "x": 539.33,
+        "y": 615,
+        "width": 10,
+        "height": 10
+      }
+    },
+    {
+      "field_name": "repair_estimate_amount",
+      "section": "authorization",
+      "label": "An estimate of $",
+      "type": "currency",
+      "coordinates_pt_letter": {
+        "x": 464,
+        "y": 541,
+        "width": 73,
+        "height": 13
+      }
+    },
+    {
+      "field_name": "authorization_customer_signature",
+      "section": "authorization",
+      "label": "CUSTOMER SIGNATURE",
+      "type": "signature",
+      "coordinates_pt_letter": {
+        "x": 434,
+        "y": 455,
+        "width": 115.0,
+        "height": 14
+      }
+    },
+    {
+      "field_name": "completion_customer_signature",
+      "section": "completion",
+      "label": "CUSTOMER SIGNATURE",
+      "type": "signature",
+      "coordinates_pt_letter": {
+        "x": 431,
+        "y": 302,
+        "width": 102.0,
+        "height": 14
+      }
+    },
+    {
+      "field_name": "completion_date",
+      "section": "completion",
+      "label": "DATE",
+      "type": "date",
+      "coordinates_pt_letter": {
+        "x": 536.0,
+        "y": 302,
+        "width": 35,
+        "height": 14
+      }
+    },
+    {
+      "field_name": "job_cost",
+      "section": "cost_summary",
+      "label": "JOB COST",
+      "type": "currency",
+      "coordinates_pt_letter": {
+        "x": 489,
+        "y": 151,
+        "width": 84.0,
+        "height": 17
+      }
+    },
+    {
+      "field_name": "service_call",
+      "section": "cost_summary",
+      "label": "SERVICE CALL",
+      "type": "currency",
+      "coordinates_pt_letter": {
+        "x": 489,
+        "y": 131,
+        "width": 84.0,
+        "height": 16
+      }
+    },
+    {
+      "field_name": "sub_total",
+      "section": "cost_summary",
+      "label": "SUB-TOTAL",
+      "type": "currency",
+      "coordinates_pt_letter": {
+        "x": 489,
+        "y": 111,
+        "width": 84.0,
+        "height": 16
+      }
+    },
+    {
+      "field_name": "total",
+      "section": "cost_summary",
+      "label": "TOTAL",
+      "type": "currency",
+      "coordinates_pt_letter": {
+        "x": 489,
+        "y": 91,
+        "width": 84.0,
+        "height": 16
+      }
+    },
+    {
+      "field_name": "tax",
+      "section": "cost_summary",
+      "label": "TAX",
+      "type": "currency",
+      "coordinates_pt_letter": {
+        "x": 489,
+        "y": 71,
+        "width": 84.0,
+        "height": 16
+      }
+    },
+    {
+      "field_name": "deposit",
+      "section": "cost_summary",
+      "label": "DEPOSIT",
+      "type": "currency",
+      "coordinates_pt_letter": {
+        "x": 489,
+        "y": 51,
+        "width": 84.0,
+        "height": 16
+      }
+    },
+    {
+      "field_name": "pay_this_amount",
+      "section": "cost_summary",
+      "label": "PAY THIS AMOUNT",
+      "type": "currency",
+      "coordinates_pt_letter": {
+        "x": 489,
+        "y": 24,
+        "width": 84.0,
+        "height": 23
+      }
+    }
+  ],
+  "components": [
+    {
+      "id": "logo",
+      "section": "header",
+      "type": "logo",
+      "label": "",
+      "text": "FAST TRACK - REPAIR SERVICE logo with house/roof icon",
+      "coordinates_pt_letter": {
+        "x": 49,
+        "y": 646,
+        "width": 142,
+        "height": 132
+      }
+    },
+    {
+      "id": "company_contact_block",
+      "section": "header",
+      "type": "static_text",
+      "label": "",
+      "text": "13817 Fount Beattie Ct.\nCENTREVILLE, VA 20121\nPHONE: +1 7038995615\nE-MAIL: Info@fasttrackdmv.org\nWEBSITE: WWW.FASTTRACKDMV.ORG",
+      "coordinates_pt_letter": {
+        "x": 205,
+        "y": 664,
+        "width": 210,
+        "height": 85
+      }
+    },
+    {
+      "id": "invoice_no_line",
+      "section": "header",
+      "type": "field_line",
+      "label": "INVOICE NO:",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 432,
+        "y": 707,
+        "width": 157,
+        "height": 22
+      }
+    },
+    {
+      "id": "date_line",
+      "section": "header",
+      "type": "date_field_line",
+      "label": "DATE:",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 432,
+        "y": 674,
+        "width": 180,
+        "height": 24
+      }
+    },
+    {
+      "id": "customer_name_label",
+      "section": "customer_job_details",
+      "type": "field_label",
+      "label": "CUSTOMER NAME:",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 614,
+        "width": 245,
+        "height": 18
+      }
+    },
+    {
+      "id": "phone_label",
+      "section": "customer_job_details",
+      "type": "field_label",
+      "label": "PHONE:",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 281,
+        "y": 614,
+        "width": 97,
+        "height": 18
+      }
+    },
+    {
+      "id": "job_street_label",
+      "section": "customer_job_details",
+      "type": "field_label",
+      "label": "JOB STREET",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 596,
+        "width": 342,
+        "height": 18
+      }
+    },
+    {
+      "id": "customer_email_label",
+      "section": "customer_job_details",
+      "type": "field_label",
+      "label": "CUSTOMER EMAIL:",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 558,
+        "width": 342,
+        "height": 18
+      }
+    },
+    {
+      "id": "appliance_1_type_brand_label",
+      "section": "appliance_details",
+      "type": "field_label",
+      "label": "TYPE AND BRAND NAME OF APPLIANCE",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 532,
+        "width": 94,
+        "height": 26
+      }
+    },
+    {
+      "id": "appliance_1_model_label",
+      "section": "appliance_details",
+      "type": "field_label",
+      "label": "MODEL NO.",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 513,
+        "width": 94,
+        "height": 19
+      }
+    },
+    {
+      "id": "appliance_1_serial_label",
+      "section": "appliance_details",
+      "type": "field_label",
+      "label": "SERIAL NO./MFG. NO.",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 494,
+        "width": 94,
+        "height": 19
+      }
+    },
+    {
+      "id": "appliance_2_type_brand_label",
+      "section": "appliance_details",
+      "type": "field_label",
+      "label": "TYPE AND BRAND NAME OF APPLIANCE",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 468,
+        "width": 94,
+        "height": 26
+      }
+    },
+    {
+      "id": "appliance_2_model_label",
+      "section": "appliance_details",
+      "type": "field_label",
+      "label": "MODEL NO.",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 449,
+        "width": 94,
+        "height": 19
+      }
+    },
+    {
+      "id": "appliance_2_serial_label",
+      "section": "appliance_details",
+      "type": "field_label",
+      "label": "SERIAL NO./MFG. NO.",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 430,
+        "width": 94,
+        "height": 19
+      }
+    },
+    {
+      "id": "nature_service_request_header",
+      "section": "service_request",
+      "type": "section_header",
+      "label": "",
+      "text": "NATURE OF SERVICE REQUEST",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 414,
+        "width": 342,
+        "height": 16
+      }
+    },
+    {
+      "id": "nature_service_request_lines",
+      "section": "service_request",
+      "type": "multi_line_input_area",
+      "label": "NATURE OF SERVICE REQUEST",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 334,
+        "width": 342,
+        "height": 80
+      }
+    },
+    {
+      "id": "description_header",
+      "section": "description",
+      "type": "section_header",
+      "label": "",
+      "text": "DESCRIPTION",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 318,
+        "width": 342,
+        "height": 16
+      }
+    },
+    {
+      "id": "description_lines",
+      "section": "description",
+      "type": "multi_line_input_area",
+      "label": "DESCRIPTION",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 238,
+        "width": 342,
+        "height": 80
+      }
+    },
+    {
+      "id": "hourly_rate_notice",
+      "section": "terms_notice",
+      "type": "static_text",
+      "label": "",
+      "text": "WE DO NOT USE HOURLY RATE, where parts or service are required as they are often unfair and misleading to both the consumers and technicians; whose technical skills, experience, and knowledge can not be measured on hourly scale. We find; however, ALL CONSUMERS WANT THE MOST HIGHLY QUALIFIED TECHNICIAN AVAILABLE. Our goal is to provide you with those technicians and the related parts and backup service necessary.",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 172,
+        "width": 342,
+        "height": 66
+      }
+    },
+    {
+      "id": "service_performed_diagnosis_label",
+      "section": "diagnosis",
+      "type": "field_label",
+      "label": "Service performed / Diagnosis:",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 36,
+        "y": 134,
+        "width": 342,
+        "height": 38
+      }
+    },
+    {
+      "id": "jurisdiction_bar",
+      "section": "header_right",
+      "type": "selector_bar",
+      "label": "",
+      "text": "DC     MD     VA",
+      "coordinates_pt_letter": {
+        "x": 386,
+        "y": 608,
+        "width": 190.0,
+        "height": 24
+      }
+    },
+    {
+      "id": "authorization_of_repair_header",
+      "section": "authorization",
+      "type": "section_header",
+      "label": "",
+      "text": "AUTHORIZATION OF REPAIR",
+      "coordinates_pt_letter": {
+        "x": 386,
+        "y": 569,
+        "width": 190.0,
+        "height": 29
+      }
+    },
+    {
+      "id": "authorization_of_repair_text",
+      "section": "authorization",
+      "type": "static_text",
+      "label": "",
+      "text": "An estimate of $ __________ includes diagnosis/estimate, parts, and labor. I hereby authorize repairs and agree to pay for them upon completion of the job. If repairs require a part order, I agree to pay a deposit. I understand that the deposited amount will apply to the total for the trip to install parts. Company/technicians are not responsible for damages.",
+      "coordinates_pt_letter": {
+        "x": 394,
+        "y": 435,
+        "width": 174.0,
+        "height": 139
+      }
+    },
+    {
+      "id": "additional_repairs_notice",
+      "section": "authorization",
+      "type": "static_text",
+      "label": "",
+      "text": "If upon further analysis, additional repairs are found necessary, the customer will be contacted for the authorization of any additional charges. $35 Charge for return check.",
+      "coordinates_pt_letter": {
+        "x": 392,
+        "y": 364,
+        "width": 178.0,
+        "height": 73
+      }
+    },
+    {
+      "id": "completion_of_work_header",
+      "section": "completion",
+      "type": "section_header",
+      "label": "",
+      "text": "COMPLETION OF WORK",
+      "coordinates_pt_letter": {
+        "x": 386,
+        "y": 342,
+        "width": 190.0,
+        "height": 18
+      }
+    },
+    {
+      "id": "completion_of_work_text",
+      "section": "completion",
+      "type": "static_text",
+      "label": "",
+      "text": "I hearby acknowledge satisfactory performance of completion of repairs",
+      "coordinates_pt_letter": {
+        "x": 392,
+        "y": 315,
+        "width": 178.0,
+        "height": 30
+      },
+      "notes": "The original form appears to spell this as \"hearby\"."
+    },
+    {
+      "id": "coupon",
+      "section": "coupon",
+      "type": "promotional_offer",
+      "label": "",
+      "text": "$50 OFF\nON YOUR NEXT\nCOMPLETE REPAIR",
+      "coordinates_pt_letter": {
+        "x": 386,
+        "y": 174,
+        "width": 190.0,
+        "height": 89
+      }
+    },
+    {
+      "id": "cost_row_job_cost",
+      "section": "cost_summary",
+      "type": "amount_row",
+      "label": "JOB COST",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 386,
+        "y": 149,
+        "width": 190.0,
+        "height": 21
+      }
+    },
+    {
+      "id": "cost_row_service_call",
+      "section": "cost_summary",
+      "type": "amount_row",
+      "label": "SERVICE CALL",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 386,
+        "y": 129,
+        "width": 190.0,
+        "height": 20
+      }
+    },
+    {
+      "id": "cost_row_sub_total",
+      "section": "cost_summary",
+      "type": "amount_row",
+      "label": "SUB-TOTAL",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 386,
+        "y": 109,
+        "width": 190.0,
+        "height": 20
+      }
+    },
+    {
+      "id": "cost_row_total",
+      "section": "cost_summary",
+      "type": "amount_row",
+      "label": "TOTAL",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 386,
+        "y": 89,
+        "width": 190.0,
+        "height": 20
+      }
+    },
+    {
+      "id": "cost_row_tax",
+      "section": "cost_summary",
+      "type": "amount_row",
+      "label": "TAX",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 386,
+        "y": 69,
+        "width": 190.0,
+        "height": 20
+      }
+    },
+    {
+      "id": "cost_row_deposit",
+      "section": "cost_summary",
+      "type": "amount_row",
+      "label": "DEPOSIT",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 386,
+        "y": 49,
+        "width": 190.0,
+        "height": 20
+      }
+    },
+    {
+      "id": "cost_row_pay_this_amount",
+      "section": "cost_summary",
+      "type": "amount_row",
+      "label": "PAY THIS AMOUNT",
+      "text": "",
+      "coordinates_pt_letter": {
+        "x": 386,
+        "y": 22,
+        "width": 190.0,
+        "height": 27
+      }
+    },
+    {
+      "id": "cost_summary_table",
+      "section": "cost_summary",
+      "type": "table",
+      "label": "",
+      "text": "Rows: JOB COST, SERVICE CALL, SUB-TOTAL, TOTAL, TAX, DEPOSIT, PAY THIS AMOUNT",
+      "coordinates_pt_letter": {
+        "x": 386,
+        "y": 22,
+        "width": 190.0,
+        "height": 148
+      }
+    }
+  ],
+  "software_schema_suggestion": {
+    "job_profile": [
+      "invoice_no",
+      "date",
+      "jurisdiction",
+      "customer_name",
+      "phone",
+      "job_street",
+      "unit_no",
+      "city",
+      "state",
+      "zip_code",
+      "customer_email",
+      "nature_service_request",
+      "description",
+      "service_performed_diagnosis",
+      "technician"
+    ],
+    "appliances": [
+      "appliance_1_type_brand",
+      "appliance_1_model_no",
+      "appliance_1_serial_mfg_no",
+      "appliance_2_type_brand",
+      "appliance_2_model_no",
+      "appliance_2_serial_mfg_no"
+    ],
+    "authorization": [
+      "repair_estimate_amount",
+      "authorization_customer_signature",
+      "completion_customer_signature",
+      "completion_date"
+    ],
+    "payment_and_cost": [
+      "card_no",
+      "card_exp",
+      "card_cvv",
+      "card_zip",
+      "payment_cash",
+      "payment_check",
+      "check_no",
+      "payment_cc",
+      "payment_other",
+      "payment_other_text",
+      "job_cost",
+      "service_call",
+      "sub_total",
+      "total",
+      "tax",
+      "deposit",
+      "pay_this_amount"
+    ]
+  }
+}

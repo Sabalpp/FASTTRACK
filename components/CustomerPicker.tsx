@@ -13,6 +13,7 @@ export function CustomerPicker({ onPick, selectedCustomer }: { onPick: (customer
   const { currentUser } = useAuth();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Customer[]>([]);
+  const [searching, setSearching] = useState(false);
 
   const visibleCustomers = useMemo(
     () => data.customers.filter((customer) => canViewCustomer(currentUser, customer, data.jobs)),
@@ -24,48 +25,62 @@ export function CustomerPicker({ onPick, selectedCustomer }: { onPick: (customer
     const trimmed = query.trim();
     if (trimmed.length < 2) {
       setResults([]);
+      setSearching(false);
       return;
     }
 
-    void data.searchCustomers(trimmed, visibleCustomers).then((customers) => {
-      if (active) setResults(customers.slice(0, 8));
-    });
+    setSearching(true);
+    const timeout = window.setTimeout(() => {
+      void data.searchCustomers(trimmed, visibleCustomers)
+        .then((customers) => {
+          if (active) setResults(customers.slice(0, 8));
+        })
+        .finally(() => {
+          if (active) setSearching(false);
+        });
+    }, 120);
 
     return () => {
       active = false;
+      window.clearTimeout(timeout);
     };
   }, [data, query, visibleCustomers]);
 
   return (
     <div className="customer-picker">
-      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find customer by name, phone, or address" />
+      <div className="customer-search-box">
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search caller name, phone, address"
+          autoComplete="off"
+        />
+        {searching ? <span className="customer-search-busy" aria-hidden="true" /> : null}
+        {query.trim().length >= 2 ? (
+          <div className="picker-results" role="listbox">
+            {results.length === 0 && !searching ? (
+              <div className="picker-empty">
+                <strong>No match</strong>
+                <span>Create the customer record, then schedule the call.</span>
+                <Link href="/customers/new?next=job" className="button button-secondary">Create customer</Link>
+              </div>
+            ) : (
+              results.map((customer) => (
+                <button key={customer.id} type="button" onClick={() => onPick(customer)}>
+                  <strong>{customer.name}</strong>
+                  <span>{formatPhone(customer.phone)} · {customer.city}, {customer.state} {customer.zip}</span>
+                </button>
+              ))
+            )}
+          </div>
+        ) : null}
+      </div>
       {selectedCustomer ? (
         <div className="selected-customer">
           <strong>{selectedCustomer.name}</strong>
           <span>{formatPhone(selectedCustomer.phone)} · {selectedCustomer.addressLine1}, {selectedCustomer.city}</span>
         </div>
       ) : null}
-      <div className="picker-results">
-        {query.trim().length < 2 ? (
-          <div className="picker-empty">
-            <strong>Start with search</strong>
-            <span>Type 2+ characters. Results stay filtered.</span>
-          </div>
-        ) : results.length === 0 ? (
-          <div className="picker-empty">
-            <strong>No match</strong>
-            <span>Create the customer, then return here to schedule.</span>
-            <Link href="/customers/new?next=job" className="button button-secondary">Create customer</Link>
-          </div>
-        ) : (
-          results.map((customer) => (
-            <button key={customer.id} type="button" onClick={() => onPick(customer)}>
-              <strong>{customer.name}</strong>
-              <span>{formatPhone(customer.phone)} · {customer.city}, {customer.state} {customer.zip}</span>
-            </button>
-          ))
-        )}
-      </div>
     </div>
   );
 }

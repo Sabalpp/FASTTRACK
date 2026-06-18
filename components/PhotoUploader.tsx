@@ -114,9 +114,18 @@ export function PhotoUploader({ jobId, uploadedBy }: { jobId: string; uploadedBy
     <form className="stack" onSubmit={submit}>
       <TwoColumn>
         <Field label="Photo kind">
-          <select value={kind} onChange={(event) => setKind(event.target.value as PhotoKind)}>
-            {photoKinds.map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
+          <div className="segmented-control photo-kind-segments">
+            {photoKinds.map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={kind === option ? "active" : ""}
+                onClick={() => setKind(option)}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
         </Field>
         <Field label="Choose photo">
           <input type="file" accept="image/*" capture="environment" onChange={(event) => handleFile(event.target.files?.[0])} />
@@ -132,13 +141,13 @@ export function PhotoUploader({ jobId, uploadedBy }: { jobId: string; uploadedBy
         <video ref={videoRef} className={`camera-video ${cameraActive ? "camera-video-active" : ""}`} playsInline muted autoPlay />
         {previewUrl ? <img className="photo-preview" src={previewUrl} alt="Selected job photo preview" /> : null}
         {cameraError ? <p className="error-message">{cameraError}</p> : null}
-        <p className="muted small">On phones and iPads, the file picker can open the camera. If the browser supports live camera access, the camera button captures directly from the device.</p>
+        <p className="muted small">On phones and iPads, Choose photo can open the camera. Use device camera captures directly when supported.</p>
       </div>
       <Field label="Caption">
         <input value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Before, after, serial number, leak location..." />
       </Field>
       <Button type="submit" disabled={!file && !dataUrl}>{demoMode ? "Add photo" : "Upload private photo"}</Button>
-      <p className="muted small">{demoMode ? "Demo mode stores an image preview in localStorage." : "Production mode stores photos in the private Supabase bucket."}</p>
+      {demoMode ? null : <p className="muted small">Production mode stores photos in the private Supabase bucket.</p>}
     </form>
   );
 }

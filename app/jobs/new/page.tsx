@@ -6,14 +6,17 @@ import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { CustomerPicker } from "@/components/CustomerPicker";
-import { Button, Card, Field, PageHeader, TwoColumn } from "@/components/ui";
+import { RoleGate } from "@/components/RoleGate";
+import { Button, Card, Field, PageHeader } from "@/components/ui";
 import type { Customer } from "@/lib/types";
 
 export default function NewJobPage() {
   return (
-    <Suspense fallback={<main className="page-shell"><p>Loading scheduler...</p></main>}>
-      <NewJobClient />
-    </Suspense>
+    <RoleGate allowed={["owner", "call_center"]}>
+      <Suspense fallback={<main className="page-shell"><p>Loading scheduler...</p></main>}>
+        <NewJobClient />
+      </Suspense>
+    </RoleGate>
   );
 }
 
@@ -27,10 +30,10 @@ function NewJobClient() {
   const techs = useMemo(() => data.allowedUsers.filter((user) => user.role === "tech" && user.active), [data.allowedUsers]);
   const [form, setForm] = useState({
     assignedTechId: currentUser.role === "tech" ? currentUser.id : techs[0]?.id ?? "",
-    scheduledAt: "",
+    scheduledDate: "",
+    scheduledTime: "",
     serviceAddress: preselectedCustomer ? `${preselectedCustomer.addressLine1}${preselectedCustomer.addressLine2 ? ` ${preselectedCustomer.addressLine2}` : ""}, ${preselectedCustomer.city}, ${preselectedCustomer.state} ${preselectedCustomer.zip}` : "",
-    description: "",
-    notes: ""
+    description: ""
   });
 
   function update(key: keyof typeof form, value: string) {
@@ -51,10 +54,10 @@ function NewJobClient() {
     const job = data.createJob({
       customerId: selectedCustomer.id,
       assignedTechId: form.assignedTechId || undefined,
-      scheduledAt: form.scheduledAt ? new Date(form.scheduledAt).toISOString() : new Date().toISOString(),
+      scheduledAt: form.scheduledDate && form.scheduledTime ? new Date(`${form.scheduledDate}T${form.scheduledTime}`).toISOString() : new Date().toISOString(),
       serviceAddress: form.serviceAddress,
       description: form.description,
-      notes: form.notes
+      notes: ""
     });
     router.push(`/jobs/${job.id}`);
   }
@@ -62,42 +65,57 @@ function NewJobClient() {
   return (
     <main className="page-shell">
       <PageHeader
-        eyebrow="Schedule"
-        title="New service call"
-        description="Search first. If there is no match, create the customer and come back to schedule."
+        eyebrow="Dispatch"
+        title="Schedule service"
+        description="Find the caller, confirm the address, assign the tech, then schedule."
       />
-      <Card>
+      <Card className="schedule-call-card">
         <form className="stack" onSubmit={submit}>
-          <div className="job-intake-grid">
-            <CustomerPicker selectedCustomer={selectedCustomer} onPick={pickCustomer} />
-            <div className="intake-guide compact-intake-guide">
-              <p className="eyebrow">Scheduling</p>
-              <h2>{selectedCustomer ? "Customer selected" : "No customer yet"}</h2>
-              <p className="muted">{selectedCustomer ? "Confirm address, time, and job notes below." : "Start with the customer search. Create only if there is no match."}</p>
-            </div>
+          <div className="service-call-layout">
+            <section className="service-call-panel customer-search-panel">
+              <p className="eyebrow">Customer</p>
+              <h2>Find caller</h2>
+              <CustomerPicker selectedCustomer={selectedCustomer} onPick={pickCustomer} />
+            </section>
+
+            <section className="service-call-panel dispatch-panel">
+              <p className="eyebrow">Dispatch</p>
+              <h2>Schedule</h2>
+              <Field label="Assigned tech">
+                <select value={form.assignedTechId} onChange={(event) => update("assignedTechId", event.target.value)} disabled={currentUser.role === "tech"}>
+                  <option value="">Unassigned</option>
+                  {techs.map((tech) => <option key={tech.id} value={tech.id}>{tech.displayName}</option>)}
+                </select>
+              </Field>
+              <div className="date-time-grid">
+                <Field label="Date">
+                  <input required type="date" value={form.scheduledDate} onChange={(event) => update("scheduledDate", event.target.value)} />
+                </Field>
+                <Field label="Time">
+                  <input required type="time" value={form.scheduledTime} onChange={(event) => update("scheduledTime", event.target.value)} />
+                </Field>
+              </div>
+            </section>
           </div>
-          <TwoColumn>
-            <Field label="Assigned tech">
-              <select value={form.assignedTechId} onChange={(event) => update("assignedTechId", event.target.value)} disabled={currentUser.role === "tech"}>
-                <option value="">Unassigned</option>
-                {techs.map((tech) => <option key={tech.id} value={tech.id}>{tech.displayName}</option>)}
-              </select>
+
+          <div className="service-details-panel">
+            <div>
+              <p className="eyebrow">Call details</p>
+              <h2>What is the issue?</h2>
+            </div>
+            <Field label="Service address">
+              <AddressAutocomplete
+                required
+                value={form.serviceAddress}
+                onChange={(value) => update("serviceAddress", value)}
+                onSelect={(address) => update("serviceAddress", address.formatted)}
+              />
             </Field>
-            <Field label="Scheduled date/time">
-              <input required type="datetime-local" value={form.scheduledAt} onChange={(event) => update("scheduledAt", event.target.value)} />
+            <Field label="Description">
+              <textarea required value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="No cooling upstairs, water heater not heating..." />
             </Field>
-          </TwoColumn>
-          <Field label="Service address">
-            <AddressAutocomplete
-              required
-              value={form.serviceAddress}
-              onChange={(value) => update("serviceAddress", value)}
-              onSelect={(address) => update("serviceAddress", address.formatted)}
-            />
-          </Field>
-          <Field label="Description"><textarea required value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="No cooling upstairs, water heater not heating..." /></Field>
-          <Field label="Scheduling notes"><textarea value={form.notes} onChange={(event) => update("notes", event.target.value)} /></Field>
-          <Button type="submit" disabled={!selectedCustomer}>Schedule service call</Button>
+          </div>
+          <Button type="submit" disabled={!selectedCustomer}>Schedule service</Button>
         </form>
       </Card>
     </main>

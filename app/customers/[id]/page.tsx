@@ -82,7 +82,7 @@ export default function CustomerDetailPage() {
         eyebrow="Customer"
         title={customer.name}
         description={`${formatPhone(customer.phone)} · ${customer.email ?? "No email"}`}
-        action={canScheduleJobs(currentUser.role) ? <ButtonLink href={`/jobs/new?customerId=${customer.id}`}>New job</ButtonLink> : undefined}
+        action={canScheduleJobs(currentUser.role) ? <ButtonLink href={`/jobs/new?customerId=${customer.id}`}>Schedule service</ButtonLink> : undefined}
       />
       <TwoColumn>
         <Card>
@@ -154,7 +154,7 @@ export default function CustomerDetailPage() {
           <div>
             <h2>History</h2>
           </div>
-          {canScheduleJobs(currentUser.role) ? <Link href={`/jobs/new?customerId=${customer.id}`} className="text-link">New job</Link> : null}
+          {canScheduleJobs(currentUser.role) ? <Link href={`/jobs/new?customerId=${customer.id}`} className="text-link">Schedule service</Link> : null}
         </div>
         {customerJobs.length === 0 ? (
           <EmptyState title="No jobs yet" description="Schedule the first visit." />

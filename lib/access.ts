@@ -21,11 +21,11 @@ export function canSendInvoices(role: Role): boolean {
 }
 
 export function canScheduleJobs(role: Role): boolean {
-  return role === "owner" || role === "call_center" || role === "tech";
+  return role === "owner" || role === "call_center";
 }
 
 export function canEditCustomers(role: Role): boolean {
-  return role === "owner" || role === "call_center" || role === "tech";
+  return role === "owner" || role === "call_center";
 }
 
 export function canManageUsers(role: Role): boolean {

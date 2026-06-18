@@ -2,36 +2,13 @@
 
 import Chart from "chart.js/auto";
 import { useEffect, useMemo, useRef } from "react";
-import { formatDateTime } from "@/lib/date";
-import { money } from "@/lib/money";
-import type { Invoice, InvoiceStatus, Job, JobStatus } from "@/lib/types";
+import type { Job, JobStatus } from "@/lib/types";
 
 const statusLabels: Record<JobStatus, string> = {
   scheduled: "Scheduled",
   in_progress: "In progress",
   complete: "Complete",
   cancelled: "Cancelled"
-};
-
-const invoiceLabels: Record<InvoiceStatus, string> = {
-  draft: "Draft",
-  sent: "Sent",
-  paid: "Paid",
-  cancelled: "Cancelled"
-};
-
-const jobColors: Record<JobStatus, string> = {
-  scheduled: "#263846",
-  in_progress: "#c8571b",
-  complete: "#177245",
-  cancelled: "#b42318"
-};
-
-const invoiceColors: Record<InvoiceStatus, string> = {
-  draft: "#c8571b",
-  sent: "#263846",
-  paid: "#177245",
-  cancelled: "#b42318"
 };
 
 function dayKey(date: Date) {
@@ -72,24 +49,8 @@ function buildWeekRows(firstDay: Date) {
   });
 }
 
-function invoiceAmount(invoice: Invoice) {
-  if (invoice.selectedTier === "good") return invoice.totalGood;
-  if (invoice.selectedTier === "better") return invoice.totalBetter;
-  if (invoice.selectedTier === "best") return invoice.totalBest;
-  return invoice.totalBest || invoice.totalBetter || invoice.totalGood;
-}
-
-export function OperationsChart({
-  jobs,
-  invoices,
-  canSeeMoney
-}: {
-  jobs: Job[];
-  invoices: Invoice[];
-  canSeeMoney: boolean;
-}) {
+export function OperationsChart({ jobs }: { jobs: Job[] }) {
   const workloadRef = useRef<HTMLCanvasElement | null>(null);
-  const invoiceRef = useRef<HTMLCanvasElement | null>(null);
 
   const metrics = useMemo(() => {
     const currentWeekStart = startOfWeek(new Date());
@@ -116,33 +77,10 @@ export function OperationsChart({
       row[job.status] += 1;
     });
 
-    const invoiceCounts: Record<InvoiceStatus, number> = {
-      draft: 0,
-      sent: 0,
-      paid: 0,
-      cancelled: 0
-    };
-    const invoiceTotals: Record<InvoiceStatus, number> = {
-      draft: 0,
-      sent: 0,
-      paid: 0,
-      cancelled: 0
-    };
-
-    invoices.forEach((invoice) => {
-      const amount = invoiceAmount(invoice);
-      invoiceCounts[invoice.status] += 1;
-      invoiceTotals[invoice.status] += amount;
-    });
-
     const totalJobs = jobs.length;
     const openJobs = statusCounts.scheduled + statusCounts.in_progress;
     const completedJobs = statusCounts.complete;
     const completionRate = totalJobs === 0 ? 0 : Math.round((completedJobs / totalJobs) * 100);
-    const activeInvoiceTotal = invoiceTotals.draft + invoiceTotals.sent;
-    const nextJob = jobs
-      .filter((job) => job.status !== "complete" && job.status !== "cancelled")
-      .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())[0];
 
     return {
       days,
@@ -151,27 +89,19 @@ export function OperationsChart({
         label: statusLabels[status],
         count
       })),
-      invoiceRows: (Object.entries(invoiceCounts) as [InvoiceStatus, number][]).map(([status, count]) => ({
-        status,
-        label: invoiceLabels[status],
-        count,
-        amount: invoiceTotals[status]
-      })),
-      invoiceTotals,
       summary: {
         totalJobs,
         openJobs,
         completedJobs,
         completionRate,
-        activeInvoiceTotal,
-        paidInvoiceTotal: invoiceTotals.paid,
-        nextJob,
         periodLabel
       }
     };
-  }, [jobs, invoices]);
+  }, [jobs]);
 
   const weekRange = `${metrics.days[0]?.date ?? ""} - ${metrics.days[metrics.days.length - 1]?.date ?? ""}`;
+  const maxDailyJobs = Math.max(0, ...metrics.days.map((day) => Math.max(day.scheduled + day.in_progress, day.complete)));
+  const chartMax = Math.max(3, maxDailyJobs + 1);
 
   useEffect(() => {
     const canvas = workloadRef.current;
@@ -181,13 +111,28 @@ export function OperationsChart({
       type: "bar",
       data: {
         labels: metrics.days.map((day) => day.day),
-        datasets: (Object.keys(jobColors) as JobStatus[]).map((status) => ({
-          label: statusLabels[status],
-          data: metrics.days.map((day) => day[status]),
-          backgroundColor: jobColors[status],
-          borderRadius: 6,
-          borderSkipped: false
-        }))
+        datasets: [
+          {
+            label: "Open",
+            data: metrics.days.map((day) => day.scheduled + day.in_progress),
+            backgroundColor: "#263846",
+            borderRadius: 9,
+            borderSkipped: false,
+            barPercentage: 0.82,
+            categoryPercentage: 0.54,
+            maxBarThickness: 32
+          },
+          {
+            label: "Complete",
+            data: metrics.days.map((day) => day.complete),
+            backgroundColor: "#177245",
+            borderRadius: 9,
+            borderSkipped: false,
+            barPercentage: 0.82,
+            categoryPercentage: 0.54,
+            maxBarThickness: 32
+          }
+        ]
       },
       options: {
         responsive: true,
@@ -196,7 +141,7 @@ export function OperationsChart({
           duration: 240
         },
         layout: {
-          padding: { top: 8, right: 8, bottom: 0, left: 0 }
+          padding: { top: 10, right: 12, bottom: 0, left: 0 }
         },
         interaction: {
           intersect: false,
@@ -207,6 +152,10 @@ export function OperationsChart({
             display: false
           },
           tooltip: {
+            displayColors: true,
+            backgroundColor: "#111827",
+            padding: 10,
+            cornerRadius: 8,
             callbacks: {
               afterBody: (items) => {
                 const day = metrics.days[items[0]?.dataIndex ?? 0];
@@ -217,7 +166,6 @@ export function OperationsChart({
         },
         scales: {
           x: {
-            stacked: true,
             grid: { display: false },
             border: { display: false },
             ticks: {
@@ -226,10 +174,9 @@ export function OperationsChart({
             }
           },
           y: {
-            stacked: true,
             beginAtZero: true,
             grace: "12%",
-            suggestedMax: 3,
+            max: chartMax,
             ticks: {
               precision: 0,
               color: "#64748b",
@@ -246,59 +193,14 @@ export function OperationsChart({
     });
 
     return () => chart.destroy();
-  }, [metrics.days]);
-
-  useEffect(() => {
-    const canvas = invoiceRef.current;
-    if (!canvas || !canSeeMoney) return;
-
-    const values = metrics.invoiceRows.map((row) => row.amount);
-    const hasValue = values.some((value) => value > 0);
-    const chart = new Chart(canvas, {
-      type: "doughnut",
-      data: {
-        labels: metrics.invoiceRows.map((row) => row.label),
-        datasets: [
-          {
-            data: hasValue ? values : metrics.invoiceRows.map((row) => row.count),
-            backgroundColor: metrics.invoiceRows.map((row) => invoiceColors[row.status]),
-            borderColor: "#ffffff",
-            borderWidth: 2,
-            hoverOffset: 3
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: "66%",
-        animation: {
-          duration: 240
-        },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: (item) => {
-                const row = metrics.invoiceRows[item.dataIndex];
-                if (!row) return "";
-                return hasValue ? `${row.label}: ${money(row.amount)}` : `${row.label}: ${row.count}`;
-              }
-            }
-          }
-        }
-      }
-    });
-
-    return () => chart.destroy();
-  }, [canSeeMoney, metrics.invoiceRows]);
+  }, [chartMax, metrics.days]);
 
   return (
-    <div className="operations-chart">
+    <div className="operations-chart operations-chart-refined">
       <div className="chart-frame workload-chart" aria-label="Weekly job workload">
         <div className="workload-chart-head">
           <div>
-            <strong>{metrics.summary.periodLabel}</strong>
+            <strong>{metrics.summary.periodLabel === "This week" ? "Schedule" : metrics.summary.periodLabel}</strong>
             <span>{weekRange}</span>
           </div>
           <div className="workload-total">
@@ -307,7 +209,11 @@ export function OperationsChart({
           </div>
         </div>
         <div className="workload-canvas-wrap">
-          <canvas ref={workloadRef} aria-label="Weekly stacked bar chart by job status" role="img" />
+          <canvas ref={workloadRef} aria-label="Weekly workload bar chart" role="img" />
+        </div>
+        <div className="workload-legend" aria-hidden="true">
+          <span><i className="legend-dot legend-dot-open" />Open</span>
+          <span><i className="legend-dot legend-dot-complete" />Complete</span>
         </div>
       </div>
 
@@ -319,7 +225,7 @@ export function OperationsChart({
               <strong>{metrics.summary.openJobs}</strong>
             </div>
             <div>
-              <span>Done</span>
+              <span>Complete</span>
               <strong>{metrics.summary.completedJobs}</strong>
             </div>
             <div>
@@ -336,44 +242,6 @@ export function OperationsChart({
               </div>
             ))}
           </div>
-        </div>
-
-        {canSeeMoney ? (
-          <div className="invoice-pipeline-card" aria-label="Invoice pipeline">
-            <div className="invoice-pipeline-head">
-              <div>
-                <strong>Pipeline</strong>
-                <span>Draft and sent value</span>
-              </div>
-              <strong>{money(metrics.summary.activeInvoiceTotal)}</strong>
-            </div>
-            <div className="invoice-pipeline-body">
-              <div className="invoice-canvas-wrap">
-                <canvas ref={invoiceRef} aria-label="Invoice status value chart" role="img" />
-              </div>
-              <div className="invoice-status-list">
-                {metrics.invoiceRows.map((row) => (
-                  <div key={row.status} className={`status-meter invoice-meter invoice-meter-${row.status}`}>
-                    <span className="status-dot" />
-                    <span>{row.label}</span>
-                    <strong>{money(row.amount)}</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="next-work-card">
-          <span>Next active job</span>
-          {metrics.summary.nextJob ? (
-            <>
-              <strong>{formatDateTime(metrics.summary.nextJob.scheduledAt)}</strong>
-              <p>{metrics.summary.nextJob.description}</p>
-            </>
-          ) : (
-            <strong>No active jobs</strong>
-          )}
         </div>
       </div>
     </div>

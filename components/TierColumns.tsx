@@ -19,27 +19,31 @@ export function TierColumns({
   editable?: boolean;
 }) {
   return (
-    <div className="tier-grid">
+    <div className="tier-grid estimate-tier-grid">
       {tierOptions.map((tier) => {
         const tierItems = items.filter((item) => item.tier === tier);
         const subtotal = subtotalForTier(items, tier);
         const tax = subtotal * taxRate;
         const total = subtotal + tax;
         return (
-          <div className="tier-card" key={tier}>
+          <div className={`tier-card estimate-tier-card ${tierItems.length === 0 ? "tier-card-empty" : ""}`} key={tier}>
             <div className="tier-head">
-              <span>{tierLabels[tier]}</span>
-              <strong>{money(total)}</strong>
+              <div>
+                <span>{tierLabels[tier]}</span>
+                <small>{tierItems.length} item{tierItems.length === 1 ? "" : "s"}</small>
+              </div>
+              {tierItems.length > 0 ? <strong>{money(total)}</strong> : null}
             </div>
             {tierItems.length === 0 ? (
-              <p className="muted">No {tierLabels[tier].toLowerCase()} items yet.</p>
+              <p className="muted">Add an item when this option needs work.</p>
             ) : (
               <div className="line-items-list">
                 {tierItems.map((item) => (
-                  <div key={item.id} className={`line-item-row ${editable ? "line-item-row-editable" : ""}`}>
+                  <div key={item.id} className={`line-item-row estimate-line-item ${editable ? "line-item-row-editable" : ""}`}>
                     {editable && onEdit ? (
-                      <div className="line-item-edit-grid">
+                      <div className="estimate-line-editor">
                         <input
+                          className="line-description-input"
                           aria-label="Line item description"
                           value={item.description}
                           onChange={(event) => onEdit(item.id, { description: event.target.value })}
@@ -52,21 +56,29 @@ export function TierColumns({
                           value={item.quantity}
                           onChange={(event) => onEdit(item.id, { quantity: Number(event.target.value) })}
                         />
-                        <input
-                          aria-label="Unit price"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.unitPrice}
-                          onChange={(event) => onEdit(item.id, { unitPrice: Number(event.target.value) })}
-                        />
-                        <select
-                          aria-label="Tier"
-                          value={item.tier}
-                          onChange={(event) => onEdit(item.id, { tier: event.target.value as Tier })}
-                        >
-                          {tierOptions.map((option) => <option key={option} value={option}>{tierLabels[option]}</option>)}
-                        </select>
+                        <div className="money-input compact-money-input">
+                          <span>$</span>
+                          <input
+                            aria-label="Unit price"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.unitPrice}
+                            onChange={(event) => onEdit(item.id, { unitPrice: Number(event.target.value) })}
+                          />
+                        </div>
+                        <div className="segmented-control tier-move-segments" aria-label="Move item to option">
+                          {tierOptions.map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              className={item.tier === option ? "active" : ""}
+                              onClick={() => onEdit(item.id, { tier: option as Tier })}
+                            >
+                              {tierLabels[option]}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     ) : (
                       <div>
@@ -74,17 +86,21 @@ export function TierColumns({
                         <small>{item.quantity} × {money(item.unitPrice)}</small>
                       </div>
                     )}
-                    <span className="line-item-amount">{money(item.quantity * item.unitPrice)}</span>
-                    {editable && onDelete ? <button type="button" className="mini-button" onClick={() => onDelete(item.id)}>Remove</button> : null}
+                    <div className="line-item-actions">
+                      <span className="line-item-amount">{money(item.quantity * item.unitPrice)}</span>
+                      {editable && onDelete ? <button type="button" className="mini-button" onClick={() => onDelete(item.id)}>Remove</button> : null}
+                    </div>
                   </div>
                 ))}
               </div>
             )}
-            <div className="tier-totals">
-              <span>Subtotal <strong>{money(subtotal)}</strong></span>
-              <span>Tax <strong>{money(tax)}</strong></span>
-              <span>Total <strong>{money(total)}</strong></span>
-            </div>
+            {tierItems.length > 0 ? (
+              <div className="tier-totals">
+                <span>Subtotal <strong>{money(subtotal)}</strong></span>
+                <span>Tax <strong>{money(tax)}</strong></span>
+                <span>Total <strong>{money(total)}</strong></span>
+              </div>
+            ) : null}
           </div>
         );
       })}

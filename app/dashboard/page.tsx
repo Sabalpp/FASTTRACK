@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarPlus, FileText, Package, Users } from "lucide-react";
+import { CalendarPlus, Clock3, FileText, Package, Users } from "lucide-react";
 import { useMemo } from "react";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
 import { canScheduleJobs, canViewInvoice, canViewJob } from "@/lib/access";
 import { formatDateTime } from "@/lib/date";
-import { money } from "@/lib/money";
-import { ButtonLink, Card, EmptyState, PageHeader, StatusPill } from "@/components/ui";
+import { ButtonLink, Card, EmptyState, StatusPill } from "@/components/ui";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { OperationsChart } from "@/components/OperationsChart";
 
@@ -36,57 +35,155 @@ export default function DashboardPage() {
     [currentUser, data.invoices, data.jobs]
   );
   const draftInvoices = visibleInvoices.filter((invoice) => invoice.status === "draft");
-  const invoiceQueue = visibleInvoices.slice(0, 4);
+  const invoiceQueue = visibleInvoices.slice(0, 5);
   const completedJobs = visibleJobs.filter((job) => job.status === "complete").length;
+  const activeJobs = visibleJobs.filter((job) => job.status !== "complete" && job.status !== "cancelled");
   const dashboardTitle = currentUser.role === "owner" ? "Operations" : currentUser.role === "tech" ? "Today" : "Desk";
-  const queueJobs = visibleJobs.slice(0, 5);
+  const queueJobs = activeJobs.slice(0, 6);
+  const workItems = [
+    ...queueJobs.map((job) => {
+      const customer = data.customers.find((candidate) => candidate.id === job.customerId);
+      const tech = data.allowedUsers.find((candidate) => candidate.id === job.assignedTechId);
+      return {
+        id: job.id,
+        href: `/jobs/${job.id}`,
+        type: "Job",
+        title: customer?.name ?? "Unknown customer",
+        detail: job.description,
+        owner: tech?.displayName ?? "Unassigned",
+        date: formatDateTime(job.scheduledAt),
+        status: job.status.replace("_", " "),
+        tone: job.status === "complete" ? "good" as const : job.status === "cancelled" ? "bad" as const : "info" as const
+      };
+    }),
+    ...invoiceQueue.map((invoice) => {
+      const job = data.jobs.find((candidate) => candidate.id === invoice.jobId);
+      const customer = data.customers.find((candidate) => candidate.id === job?.customerId);
+      return {
+        id: invoice.id,
+        href: `/invoices/${invoice.id}`,
+        type: "Invoice",
+        title: invoice.invoiceNumber,
+        detail: customer?.name ?? "Unknown customer",
+        owner: invoice.sentToEmail ?? "Not sent",
+        date: invoice.createdAt ? formatDateTime(invoice.createdAt) : "",
+        status: invoice.status,
+        tone: invoice.status === "paid" ? "good" as const : invoice.status === "cancelled" ? "bad" as const : "warn" as const
+      };
+    })
+  ].slice(0, 8);
 
   return (
-    <main className="page-shell dashboard-page">
-      <PageHeader
-        title={dashboardTitle}
-      />
+    <main className="page-shell dashboard-page shad-dashboard-page">
+      <section className="dashboard-site-header">
+        <div>
+          <h1>{dashboardTitle}</h1>
+        </div>
+      </section>
 
-      <section className="dashboard-bento-grid">
+      <section className="dashboard-section-cards" aria-label="Dashboard summary">
         {canScheduleJobs(currentUser.role) ? (
-          <Link href="/jobs/new" className="primary-job-action">
-            <span className="primary-job-icon" aria-hidden="true">
-              <CalendarPlus size={22} />
-            </span>
-            <span>
-              <strong>New job</strong>
-              <small>Customer, address, schedule, tech.</small>
-            </span>
+          <Link href="/jobs/new" className="dashboard-section-card dashboard-section-card-primary">
+            <span><CalendarPlus size={20} aria-hidden="true" /></span>
+            <div>
+              <strong>Schedule service</strong>
+            </div>
           </Link>
         ) : null}
+        <Link href="/jobs" className="dashboard-section-card">
+          <span><Clock3 size={20} aria-hidden="true" /></span>
+          <div>
+            <p>Open jobs</p>
+            <strong>{activeJobs.length}</strong>
+            <small>{completedJobs} completed</small>
+          </div>
+        </Link>
+        {currentUser.role !== "call_center" ? (
+          <Link href="/invoices" className="dashboard-section-card">
+            <span><FileText size={20} aria-hidden="true" /></span>
+            <div>
+              <p>Draft invoices</p>
+              <strong>{draftInvoices.length}</strong>
+              <small>Needs review</small>
+            </div>
+          </Link>
+        ) : null}
+        <Link href="/customers" className="dashboard-section-card">
+          <span><Users size={20} aria-hidden="true" /></span>
+          <div>
+            <p>Customers</p>
+            <strong>{data.customers.length}</strong>
+            <small>Search and schedule</small>
+          </div>
+        </Link>
+        {currentUser.role === "owner" ? (
+          <Link href="/parts" className="dashboard-section-card">
+            <span><Package size={20} aria-hidden="true" /></span>
+            <div>
+              <p>Parts</p>
+              <strong>{data.parts.length}</strong>
+              <small>Catalog items</small>
+            </div>
+          </Link>
+        ) : null}
+      </section>
 
-        <section className="ops-strip" aria-label="Operations summary">
-          <div className="ops-stat">
-            <strong>{visibleJobs.length}</strong>
-            <span>{currentUser.role === "tech" ? "assigned" : "jobs"}</span>
+      <Card className="ops-chart-card dashboard-chart-panel">
+        <div className="section-head">
+          <div>
+            <h2>Workload</h2>
+            <p className="subtle-copy">Scheduled, active, and completed jobs by day.</p>
           </div>
-          <div className="ops-stat">
-            <strong>{draftInvoices.length}</strong>
-            <span>drafts</span>
-          </div>
-          <div className="ops-stat">
-            <strong>{completedJobs}</strong>
-            <span>done</span>
-          </div>
-        </section>
+        </div>
+        <OperationsChart jobs={visibleJobs} />
+      </Card>
 
-        <Card className="ops-chart-card dashboard-bento-main">
+      {currentUser.role === "call_center" ? (
+        <Card className="search-command-card">
+          <p className="eyebrow">Customer lookup</p>
+          <GlobalSearch />
+          <div className="action-row">
+            <ButtonLink href="/customers/new">Create customer</ButtonLink>
+            <ButtonLink href="/jobs/new" variant="secondary">Schedule service</ButtonLink>
+          </div>
+        </Card>
+      ) : null}
+
+      <section className="dashboard-lower-grid">
+        <Card className="dashboard-table-card">
           <div className="section-head">
             <div>
-              <h2>Workload</h2>
-              <p className="subtle-copy">Scheduled and completed work.</p>
+              <h2>Active work</h2>
+              <p className="subtle-copy">Jobs and invoice drafts that need attention.</p>
             </div>
-            <StatusPill tone="neutral">schedule</StatusPill>
+            <div className="action-row">
+              <ButtonLink href="/jobs" variant="secondary">All jobs</ButtonLink>
+              {currentUser.role !== "call_center" ? <ButtonLink href="/invoices" variant="secondary">Invoices</ButtonLink> : null}
+            </div>
           </div>
-          <OperationsChart jobs={visibleJobs} invoices={visibleInvoices} canSeeMoney={currentUser.role !== "call_center"} />
+          {workItems.length === 0 ? (
+            <EmptyState title="No work yet" description="Schedule a service call to start." action={canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new">Schedule service</ButtonLink> : undefined} />
+          ) : (
+            <div className="dashboard-work-list" aria-label="Active work">
+              {workItems.map((row) => (
+                <Link key={`${row.type}-${row.id}`} href={row.href} className="dashboard-work-row">
+                  <span className="work-row-type">{row.type}</span>
+                  <span className="work-row-main">
+                    <strong>{row.title}</strong>
+                    <small>{row.detail}</small>
+                  </span>
+                  <span className="work-row-meta">
+                    <small>{row.owner}</small>
+                    <small>{row.date}</small>
+                  </span>
+                  <span className="work-row-status"><StatusPill tone={row.tone}>{row.status}</StatusPill></span>
+                </Link>
+              ))}
+            </div>
+          )}
         </Card>
 
-        <section className="quick-action-grid quick-action-grid-compact dashboard-bento-actions" aria-label="Quick actions">
+        <section className="dashboard-action-panel" aria-label="Quick actions">
           {roleActions[currentUser.role].map((action) => (
             <Link key={action.title} href={action.href} className="quick-action-card">
               <span className="quick-action-arrow">→</span>
@@ -96,72 +193,6 @@ export default function DashboardPage() {
             </Link>
           ))}
         </section>
-      </section>
-
-      {currentUser.role === "call_center" ? (
-        <Card className="search-command-card">
-          <p className="eyebrow">Customer lookup</p>
-          <GlobalSearch />
-          <div className="action-row">
-            <ButtonLink href="/customers/new">Create customer</ButtonLink>
-            <ButtonLink href="/jobs/new" variant="secondary">Schedule job</ButtonLink>
-          </div>
-        </Card>
-      ) : null}
-
-      <section className="dashboard-grid dashboard-grid-single">
-        <Card>
-          <div className="section-head">
-            <div>
-              <h2>Open work</h2>
-            </div>
-            <div className="action-row">
-              <ButtonLink href="/jobs" variant="secondary">All jobs</ButtonLink>
-              {currentUser.role !== "call_center" ? <ButtonLink href="/invoices" variant="secondary">Invoices</ButtonLink> : null}
-            </div>
-          </div>
-          {queueJobs.length === 0 && invoiceQueue.length === 0 ? (
-            <EmptyState title="No work yet" description="Create a job to start." action={canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new">New job</ButtonLink> : undefined} />
-          ) : (
-            <div className="queue-list">
-              {queueJobs.map((job) => {
-                const customer = data.customers.find((candidate) => candidate.id === job.customerId);
-                return (
-                  <Link key={job.id} href={`/jobs/${job.id}`} className="record-row job-row">
-                    <div className="record-main">
-                      <strong>{customer?.name ?? "Unknown customer"}</strong>
-                      <span>{job.description}</span>
-                    </div>
-                    <div className="record-meta">
-                      <span>{formatDateTime(job.scheduledAt)}</span>
-                    </div>
-                    <div className="record-side">
-                      <StatusPill tone={job.status === "complete" ? "good" : job.status === "cancelled" ? "bad" : "info"}>{job.status.replace("_", " ")}</StatusPill>
-                    </div>
-                  </Link>
-                );
-              })}
-              {currentUser.role !== "call_center" && invoiceQueue.map((invoice) => {
-                  const job = data.jobs.find((candidate) => candidate.id === invoice.jobId);
-                  const customer = data.customers.find((candidate) => candidate.id === job?.customerId);
-                  return (
-                    <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="record-row invoice-row">
-                      <div className="record-main">
-                        <strong>{invoice.invoiceNumber}</strong>
-                        <span>{customer?.name ?? "Unknown customer"}</span>
-                      </div>
-                      <div className="record-meta">
-                        <span>{money(invoice.totalBest)}</span>
-                      </div>
-                      <div className="record-side">
-                        <StatusPill tone="warn">draft</StatusPill>
-                      </div>
-                    </Link>
-                  );
-                })}
-            </div>
-          )}
-        </Card>
       </section>
     </main>
   );

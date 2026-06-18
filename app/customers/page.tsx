@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
 import { canScheduleJobs, canViewCustomer } from "@/lib/access";
+import { canEditCustomers } from "@/lib/access";
 import { formatPhone } from "@/lib/phone";
 import { ButtonLink, EmptyState, PageHeader } from "@/components/ui";
 import type { Customer } from "@/lib/types";
@@ -47,8 +48,8 @@ export default function CustomersPage() {
         title="Customers"
         action={
           <div className="action-row">
-            <ButtonLink href="/customers/new">Create customer</ButtonLink>
-            {canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new" variant="secondary">Schedule job</ButtonLink> : null}
+            {canEditCustomers(currentUser.role) ? <ButtonLink href="/customers/new">Create customer</ButtonLink> : null}
+            {canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new" variant="secondary">Schedule service</ButtonLink> : null}
           </div>
         }
       />
@@ -61,8 +62,8 @@ export default function CustomersPage() {
             {results.length === 0 ? (
               <EmptyState
                 title={query.trim() ? "No matching customer" : "No customers yet"}
-                description={query.trim() ? "Create the customer if this is a new call." : "Create a customer first, then schedule the job from that record."}
-                action={<ButtonLink href="/customers/new">Create customer</ButtonLink>}
+                description={query.trim() ? "Create the customer if this is a new call." : "Create a customer first, then schedule service from that record."}
+                action={canEditCustomers(currentUser.role) ? <ButtonLink href="/customers/new">Create customer</ButtonLink> : undefined}
               />
             ) : (
               results.map((customer) => {
@@ -102,8 +103,8 @@ export default function CustomersPage() {
             <h2>Customer first</h2>
             <p className="muted">Use this screen to find or create the customer. Job scheduling should start from a known customer record so history, phone, address, and invoices stay connected.</p>
             <div className="action-row">
-              <ButtonLink href="/customers/new">New customer</ButtonLink>
-              {canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new" variant="secondary">New job</ButtonLink> : null}
+              {canEditCustomers(currentUser.role) ? <ButtonLink href="/customers/new">New customer</ButtonLink> : null}
+              {canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new" variant="secondary">Schedule service</ButtonLink> : null}
             </div>
           </div>
         </aside>

@@ -8,12 +8,15 @@ export function BackgroundPaperShaders() {
   const [isInteracting, setIsInteracting] = useState(false);
   const resetTimer = useRef<number | undefined>(undefined);
   const frame = useRef<number | undefined>(undefined);
+  const idleFrame = useRef<number | undefined>(undefined);
+  const lastPointerAt = useRef(0);
 
-  const speed = isInteracting ? 1.35 : 0.72;
-  const dotSpeed = isInteracting ? 1.8 : 0.95;
+  const speed = isInteracting ? 1.45 : 0.88;
+  const dotSpeed = isInteracting ? 1.9 : 1.08;
 
   useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
+      lastPointerAt.current = performance.now();
       if (frame.current) window.cancelAnimationFrame(frame.current);
 
       frame.current = window.requestAnimationFrame(() => {
@@ -26,16 +29,30 @@ export function BackgroundPaperShaders() {
 
       if (resetTimer.current) window.clearTimeout(resetTimer.current);
       resetTimer.current = window.setTimeout(() => {
-        setPointer({ x: 0, y: 0 });
         setIsInteracting(false);
       }, 900);
     }
 
-    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    function animateIdle() {
+      const now = performance.now();
+      if (now - lastPointerAt.current > 900) {
+        const t = now / 1000;
+        setPointer({
+          x: Math.sin(t * 0.38) * 0.055,
+          y: Math.cos(t * 0.31) * 0.045
+        });
+      }
+      idleFrame.current = window.setTimeout(animateIdle, 80);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove, { capture: true, passive: true });
+    idleFrame.current = window.setTimeout(animateIdle, 80);
+
     return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointermove", handlePointerMove, { capture: true });
       if (resetTimer.current) window.clearTimeout(resetTimer.current);
       if (frame.current) window.cancelAnimationFrame(frame.current);
+      if (idleFrame.current) window.clearTimeout(idleFrame.current);
     };
   }, []);
 

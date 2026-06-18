@@ -21,14 +21,14 @@ export default function JobsPage() {
       <PageHeader
         eyebrow="Cases"
         title={currentUser.role === "tech" ? "Your assigned jobs" : "Jobs"}
-        action={canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new">Schedule job</ButtonLink> : undefined}
+        action={canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new">Schedule service</ButtonLink> : undefined}
       />
       <div className="record-list">
         {visibleJobs.length === 0 ? (
           <EmptyState
             title={currentUser.role === "tech" ? "No assigned jobs" : "No jobs scheduled"}
-            description={currentUser.role === "tech" ? "Create a field intake job or wait for dispatch to assign one." : "Search for the customer first, then schedule the job."}
-            action={canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new">Schedule job</ButtonLink> : undefined}
+            description={currentUser.role === "tech" ? "Wait for dispatch to assign work." : "Search for the customer first, then schedule service."}
+            action={canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new">Schedule service</ButtonLink> : undefined}
           />
         ) : (
           visibleJobs.map((job) => {

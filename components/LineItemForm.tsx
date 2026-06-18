@@ -53,10 +53,19 @@ export function LineItemForm({ jobId }: { jobId: string }) {
             <option value="manual">Custom item</option>
           </select>
         </Field>
-        <Field label="Tier">
-          <select value={tier} onChange={(event) => setTier(event.target.value as Tier)}>
-            {tierOptions.map((option) => <option key={option} value={option}>{tierLabels[option]}</option>)}
-          </select>
+        <Field label="Option">
+          <div className="segmented-control tier-segments">
+            {tierOptions.map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={tier === option ? "active" : ""}
+                onClick={() => setTier(option)}
+              >
+                {tierLabels[option]}
+              </button>
+            ))}
+          </div>
         </Field>
       </TwoColumn>
       <Field label="Description">
@@ -66,8 +75,11 @@ export function LineItemForm({ jobId }: { jobId: string }) {
         <Field label="Quantity">
           <input type="number" step="0.01" min="0" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
         </Field>
-        <Field label="Unit price">
-          <input type="number" step="0.01" min="0" value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} />
+        <Field label="Unit price ($)">
+          <div className="money-input">
+            <span>$</span>
+            <input type="number" step="0.01" min="0" value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} />
+          </div>
         </Field>
       </TwoColumn>
       <Button type="submit">Add item</Button>

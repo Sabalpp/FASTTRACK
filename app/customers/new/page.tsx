@@ -7,14 +7,17 @@ import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
 import { formatPhoneInput } from "@/lib/phone";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import { RoleGate } from "@/components/RoleGate";
 import { Button, Card, Field, PageHeader, TwoColumn } from "@/components/ui";
 import type { Customer } from "@/lib/types";
 
 export default function NewCustomerPage() {
   return (
-    <Suspense fallback={<main className="page-shell"><p>Loading customer intake...</p></main>}>
-      <NewCustomerClient />
-    </Suspense>
+    <RoleGate allowed={["owner", "call_center"]}>
+      <Suspense fallback={<main className="page-shell"><p>Loading customer intake...</p></main>}>
+        <NewCustomerClient />
+      </Suspense>
+    </RoleGate>
   );
 }
 

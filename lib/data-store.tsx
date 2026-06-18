@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { demoState } from "@/lib/demo-data";
-import { buildInvoiceDraft, invoiceNumber } from "@/lib/invoice";
+import { buildInvoiceDraft, invoiceNumber, totalsForItems } from "@/lib/invoice";
 import { normalizePhone } from "@/lib/phone";
 import { demoMode } from "@/lib/runtime";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
@@ -140,7 +140,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const nextState = await loadSupabaseState(dataClient);
+        const nextState = await loadSupabaseStateWithRetry(dataClient);
         if (cancelled) return;
         setState(nextState);
         setLastError(undefined);
@@ -330,43 +330,84 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         unitPrice: Number(input.unitPrice),
         sortOrder: existingCount + 1
       };
-      setState((current) => ({ ...current, jobLineItems: [...current.jobLineItems, lineItem] }));
+      const nextLineItems = [...state.jobLineItems, lineItem];
+      const invoicePatch = invoiceTotalsPatchForJob(state.invoices, nextLineItems, input.jobId);
+
+      setState((current) => ({
+        ...current,
+        jobLineItems: nextLineItems,
+        invoices: invoicePatch
+          ? current.invoices.map((invoice) => (invoice.id === invoicePatch.id ? { ...invoice, ...invoicePatch.patch } : invoice))
+          : current.invoices
+      }));
       persistSupabase("line item insert", async () => {
         const { error } = await supabase!.from("job_line_items").insert(lineItemToRow(lineItem));
         if (error) throw error;
       });
+      if (invoicePatch) {
+        persistSupabase("invoice totals update", async () => {
+          const { error } = await supabase!.from("invoices").update(invoicePatchToRow(invoicePatch.patch)).eq("id", invoicePatch.id);
+          if (error) throw error;
+        });
+      }
       return lineItem;
     }
 
     function updateLineItem(id: string, input: Partial<JobLineItem>) {
+      const existingItem = state.jobLineItems.find((item) => item.id === id);
+      const nextLineItems = state.jobLineItems.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              ...input,
+              quantity: input.quantity === undefined ? item.quantity : Number(input.quantity),
+              unitPrice: input.unitPrice === undefined ? item.unitPrice : Number(input.unitPrice)
+            }
+          : item
+      );
+      const invoicePatch = existingItem ? invoiceTotalsPatchForJob(state.invoices, nextLineItems, existingItem.jobId) : undefined;
+
       setState((current) => ({
         ...current,
-        jobLineItems: current.jobLineItems.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                ...input,
-                quantity: input.quantity === undefined ? item.quantity : Number(input.quantity),
-                unitPrice: input.unitPrice === undefined ? item.unitPrice : Number(input.unitPrice)
-              }
-            : item
-        )
+        jobLineItems: nextLineItems,
+        invoices: invoicePatch
+          ? current.invoices.map((invoice) => (invoice.id === invoicePatch.id ? { ...invoice, ...invoicePatch.patch } : invoice))
+          : current.invoices
       }));
       persistSupabase("line item update", async () => {
         const { error } = await supabase!.from("job_line_items").update(lineItemPatchToRow(input)).eq("id", id);
         if (error) throw error;
       });
+      if (invoicePatch) {
+        persistSupabase("invoice totals update", async () => {
+          const { error } = await supabase!.from("invoices").update(invoicePatchToRow(invoicePatch.patch)).eq("id", invoicePatch.id);
+          if (error) throw error;
+        });
+      }
     }
 
     function deleteLineItem(id: string) {
+      const existingItem = state.jobLineItems.find((item) => item.id === id);
+      const nextLineItems = state.jobLineItems.filter((item) => item.id !== id);
+      const invoicePatch = existingItem ? invoiceTotalsPatchForJob(state.invoices, nextLineItems, existingItem.jobId) : undefined;
+
       setState((current) => ({
         ...current,
-        jobLineItems: current.jobLineItems.filter((item) => item.id !== id)
+        jobLineItems: nextLineItems,
+        invoices: invoicePatch
+          ? current.invoices.map((invoice) => (invoice.id === invoicePatch.id ? { ...invoice, ...invoicePatch.patch } : invoice))
+          : current.invoices
       }));
       persistSupabase("line item delete", async () => {
         const { error } = await supabase!.from("job_line_items").delete().eq("id", id);
         if (error) throw error;
       });
+      if (invoicePatch) {
+        persistSupabase("invoice totals update", async () => {
+          const { error } = await supabase!.from("invoices").update(invoicePatchToRow(invoicePatch.patch)).eq("id", invoicePatch.id);
+          if (error) throw error;
+        });
+      }
     }
 
     function createPart(input: NewPartInput) {
@@ -500,6 +541,19 @@ export function useAppData() {
   return value;
 }
 
+function invoiceTotalsPatchForJob(invoices: Invoice[], lineItems: JobLineItem[], jobId: string) {
+  const invoice = invoices.find((candidate) => candidate.jobId === jobId && candidate.status === "draft");
+  if (!invoice) return undefined;
+
+  return {
+    id: invoice.id,
+    patch: totalsForItems(
+      lineItems.filter((item) => item.jobId === jobId),
+      invoice.taxRate
+    )
+  };
+}
+
 export const roleLabels: Record<Role, string> = {
   owner: "Owner",
   tech: "Tech",
@@ -516,6 +570,25 @@ export const unitOptions: Unit[] = ["each", "hour", "lb", "visit", "other"];
 export const tierOptions: Tier[] = ["good", "better", "best"];
 export const roleOptions: Role[] = ["owner", "tech", "call_center"];
 export const photoKinds: PhotoKind[] = ["before", "after", "other"];
+
+async function loadSupabaseStateWithRetry(supabase: SupabaseClient): Promise<AppState> {
+  const delays = [1000, 2000, 4000, 8000];
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      return await loadSupabaseState(supabase);
+    } catch (error) {
+      lastError = error;
+      if (!isJwtIssuedAtFutureError(error) || attempt === delays.length) throw error;
+
+      await wait(delays[attempt]);
+      await supabase.auth.refreshSession();
+    }
+  }
+
+  throw lastError;
+}
 
 async function loadSupabaseState(supabase: SupabaseClient): Promise<AppState> {
   const [
@@ -575,11 +648,12 @@ function searchCustomersLocally(query: string, visibleCustomers: Customer[]) {
   const trimmed = query.trim().toLowerCase();
   if (!trimmed) return visibleCustomers.slice(0, 25);
   const digits = normalizePhone(trimmed);
-  const terms = trimmed.split(/\s+/).filter(Boolean);
+  const normalizedQuery = normalizeSearchText(trimmed);
+  const terms = normalizedQuery.split(/\s+/).filter(Boolean);
 
   return visibleCustomers
     .map((customer) => {
-      const haystack = [
+      const rawValues = [
         customer.name,
         customer.phone,
         customer.phoneDigits,
@@ -591,19 +665,78 @@ function searchCustomersLocally(query: string, visibleCustomers: Customer[]) {
         customer.zip,
         customer.notes
       ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
+        .filter(Boolean) as string[];
+      const haystack = normalizeSearchText(rawValues.join(" "));
+      const tokens = haystack.split(/\s+/).filter(Boolean);
 
-      const termScore = terms.reduce((score, term) => (haystack.includes(term) ? score + 1 : score), 0);
-      const digitScore = digits && customer.phoneDigits.includes(digits) ? 3 : 0;
-      const prefixScore = customer.name.toLowerCase().startsWith(trimmed) ? 2 : 0;
-      return { customer, score: termScore + digitScore + prefixScore };
+      const exactScore = haystack.includes(normalizedQuery) ? 8 : 0;
+      const termScore = terms.reduce((score, term) => score + bestTermScore(term, tokens, haystack), 0);
+      const digitScore = digits && customer.phoneDigits.includes(digits) ? 10 : 0;
+      const prefixScore = normalizeSearchText(customer.name).startsWith(normalizedQuery) ? 6 : 0;
+      const addressScore = normalizeSearchText(`${customer.addressLine1} ${customer.city} ${customer.zip}`).includes(normalizedQuery) ? 4 : 0;
+      return { customer, score: exactScore + termScore + digitScore + prefixScore + addressScore };
     })
     .filter((result) => result.score > 0)
     .sort((a, b) => b.score - a.score || a.customer.name.localeCompare(b.customer.name))
     .map((result) => result.customer)
     .slice(0, 25);
+}
+
+function normalizeSearchText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function bestTermScore(term: string, tokens: string[], haystack: string) {
+  if (term.length === 0) return 0;
+  if (haystack.includes(term)) return term.length > 2 ? 5 : 3;
+
+  return tokens.reduce((best, token) => {
+    if (token.startsWith(term) || term.startsWith(token)) return Math.max(best, 4);
+    if (term.length >= 3 && isSubsequence(term, token)) return Math.max(best, 2);
+    if (term.length >= 4 && editDistanceWithinOne(term, token)) return Math.max(best, 3);
+    return best;
+  }, 0);
+}
+
+function isSubsequence(needle: string, value: string) {
+  let cursor = 0;
+  for (const character of value) {
+    if (character === needle[cursor]) cursor += 1;
+    if (cursor === needle.length) return true;
+  }
+  return false;
+}
+
+function editDistanceWithinOne(left: string, right: string) {
+  if (Math.abs(left.length - right.length) > 1) return false;
+
+  let edits = 0;
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < left.length && rightIndex < right.length) {
+    if (left[leftIndex] === right[rightIndex]) {
+      leftIndex += 1;
+      rightIndex += 1;
+      continue;
+    }
+
+    edits += 1;
+    if (edits > 1) return false;
+
+    if (left.length > right.length) leftIndex += 1;
+    else if (right.length > left.length) rightIndex += 1;
+    else {
+      leftIndex += 1;
+      rightIndex += 1;
+    }
+  }
+
+  return true;
 }
 
 function mergeCustomers(state: AppState, customers: Customer[]) {
@@ -635,4 +768,13 @@ function safeFileExtension(fileName: string) {
 
 function throwIfError(label: string, error: { message: string } | null) {
   if (error) throw new Error(`${label}: ${error.message}`);
+}
+
+function isJwtIssuedAtFutureError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toLowerCase().includes("jwt issued at future");
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }

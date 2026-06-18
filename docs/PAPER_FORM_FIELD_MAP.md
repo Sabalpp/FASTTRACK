@@ -2,6 +2,13 @@
 
 Source: user-provided photo of the current Fast Track paper service/invoice sheet on 2026-06-17.
 
+Machine-readable extraction:
+
+- `docs/fast_track_invoice_component_extraction.json`
+- `docs/fast_track_invoice_rebuilt.pdf`
+- 49 extracted fields
+- 35 extracted layout/static components
+
 This document captures what can be extracted from the image and how it should map into the production app. Keep this file updated as more photos, scans, or PDFs arrive.
 
 ## Extracted Company Identity
@@ -117,6 +124,12 @@ Already covered by existing app/schema:
 - Invoice PDF storage pointer: `invoices.pdf_storage_path`
 - Allowed users and roles: `allowed_users`
 
+Partially covered:
+
+- Good/Better/Best estimates: covered by `job_line_items.tier` and invoice subtotal/total columns, but the UI must keep line-item edits and stored invoice totals synchronized.
+- Customer/job photos: covered by `job_photos`, but the customer profile should surface every photo through the customer's jobs, not only inside the job screen.
+- Invoice PDF: currently generated from app data, but the document design still needs to move closer to the extracted paper layout.
+
 Needs schema/product work:
 
 - Multiple equipment/appliance rows per job.
@@ -127,6 +140,26 @@ Needs schema/product work:
 - Coupon/discount support.
 - Warranty month/year support.
 - PDF layout that resembles the useful structure of the paper form without copying bad paper-only practices.
+
+## Paper-to-iPad Field Workflow
+
+The app is replacing this field routine:
+
+1. Desk or owner receives the call and creates/fetches the customer.
+2. Desk or owner schedules the job with address, phone, email, service request, and assigned tech.
+3. Tech opens the assigned job on an iPad instead of carrying the paper sheet.
+4. Tech confirms customer/address, adds equipment/appliance information, and records request/diagnosis/work performed.
+5. Tech captures before/after/other photos; photos attach to the job and roll up to the customer profile.
+6. Tech builds Good/Better/Best options from parts, labor, custom items, deposit, tax, and discounts.
+7. Customer reviews the option, signs authorization/completion when needed, and the selected option becomes the invoice.
+8. Owner reviews/sends the paper-format PDF, stores the PDF in Supabase Storage, and later sends a Stripe/Square payment link.
+9. Owner dashboard shows open jobs, draft invoices, sent/paid status, and technician workload.
+
+Core product rule:
+
+- Paper fields should become structured job/customer/invoice data first.
+- The PDF is the final output, not the primary place where data is entered.
+- Raw card number/CVV fields from the paper sheet should not be implemented in the production database.
 
 ## Proposed Production Schema Additions
 

@@ -165,8 +165,8 @@ export function FramerShowcase() {
           <div className="verb-button-grid">
             {workflowSteps.map((step) => (
               <button key={step.verb} className={activeVerb === step.verb ? "verb-button verb-button-active" : "verb-button"} onClick={() => setActiveVerb(step.verb)}>
-                <strong>{step.verb}</strong>
-                <span>{step.caption}</span>
+                <strong>{step.label}</strong>
+                <span>{step.detail}</span>
               </button>
             ))}
           </div>

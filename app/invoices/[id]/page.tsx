@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { tierLabels, tierOptions, useAppData } from "@/lib/data-store";
 import { canSendInvoices, canViewInvoice } from "@/lib/access";
 import { money } from "@/lib/money";
+import { TierColumns } from "@/components/TierColumns";
 import { Button, Card, EmptyState, Field, PageHeader, StatusPill } from "@/components/ui";
 import type { Tier } from "@/lib/types";
 
@@ -33,6 +34,7 @@ export default function InvoiceDetailPage() {
   const job = invoice ? data.jobs.find((candidate) => candidate.id === invoice.jobId) : undefined;
   const customer = job ? data.customers.find((candidate) => candidate.id === job.customerId) : undefined;
   const [selectedTier, setSelectedTier] = useState<Tier>(invoice?.selectedTier ?? "better");
+  const [editingOptions, setEditingOptions] = useState(false);
   const [email, setEmail] = useState(invoice?.sentToEmail ?? customer?.email ?? "");
   const [sent, setSent] = useState(false);
 
@@ -60,6 +62,7 @@ export default function InvoiceDetailPage() {
     better: invoice.totalBetter,
     best: invoice.totalBest
   };
+  const canEditDraft = canSendInvoices(currentUser.role) && invoice.status === "draft";
 
   function saveTier() {
     data.updateInvoice(invoiceId, { selectedTier });
@@ -90,14 +93,40 @@ export default function InvoiceDetailPage() {
               setSelectedTier(tier);
               data.updateInvoice(invoiceId, { selectedTier: tier });
             }}
+            onDoubleClick={() => {
+              if (!canEditDraft) return;
+              setSelectedTier(tier);
+              setEditingOptions(true);
+              data.updateInvoice(invoiceId, { selectedTier: tier });
+            }}
           >
             <p className="eyebrow">{tierLabels[tier]}</p>
             <h2>{money(totalByTier[tier])}</h2>
             <p className="muted">{items.filter((item) => item.tier === tier).length} line items</p>
-            <span className="option-card-status">{selectedTier === tier ? "Selected" : "Select option"}</span>
+            <span className="option-card-status">{editingOptions && selectedTier === tier ? "Editing" : selectedTier === tier ? "Selected" : "Select option"}</span>
           </button>
         ))}
       </section>
+
+      {canEditDraft && editingOptions ? (
+        <Card className="invoice-edit-card">
+          <div className="section-head">
+            <div>
+              <p className="eyebrow">Estimate</p>
+              <h2>Edit Good / Better / Best</h2>
+              <p className="muted">Change descriptions, quantities, prices, and move items between packages.</p>
+            </div>
+            <Button variant="secondary" onClick={() => setEditingOptions(false)}>Done</Button>
+          </div>
+          <TierColumns
+            items={items}
+            taxRate={invoice.taxRate}
+            editable
+            onEdit={data.updateLineItem}
+            onDelete={data.deleteLineItem}
+          />
+        </Card>
+      ) : null}
 
       <Card className="invoice-send-card">
         <div className="section-head">
@@ -122,8 +151,10 @@ export default function InvoiceDetailPage() {
             )}
           </div>
         </div>
-        {canSendInvoices(currentUser.role) ? <p className="muted invoice-send-note">Email delivery is not connected yet. This updates the invoice status only.</p> : null}
-        {sent ? <p className="success-message">Invoice marked sent.</p> : null}
+        {canSendInvoices(currentUser.role) ? (
+          <p className="muted invoice-send-note">Demo send records the recipient and marks the PDF sent. Real email delivery needs an email provider key.</p>
+        ) : null}
+        {sent ? <p className="success-message">Invoice marked sent for {email || "customer"}.</p> : null}
       </Card>
 
       <InvoicePdfViewer invoice={{ ...invoice, selectedTier }} job={job} customer={customer} items={items} />

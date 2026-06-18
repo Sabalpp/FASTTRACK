@@ -183,7 +183,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const authError = useMemo(() => {
     if (demoMode) return undefined;
     if (explicitAuthError) return explicitAuthError;
-    if (dataError) return dataError;
+    if (dataError) {
+      if (dataError.toLowerCase().includes("jwt issued at future")) {
+        return "Supabase is syncing the Google session. Wait a few seconds, then refresh.";
+      }
+      return dataError;
+    }
     if (sessionEmail && dataLoaded && !productionUser.active) {
       return `${sessionEmail} is not on the Fast Track allowlist. Ask an owner to add or reactivate this account.`;
     }
