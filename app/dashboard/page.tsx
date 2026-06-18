@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarPlus } from "lucide-react";
+import { CalendarPlus, FileText, Package, Users } from "lucide-react";
 import { useMemo } from "react";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
@@ -14,16 +14,16 @@ import { OperationsChart } from "@/components/OperationsChart";
 
 const roleActions = {
   owner: [
-    { title: "Parts", body: "Catalog pricing.", href: "/parts" },
-    { title: "Users", body: "Allowed access.", href: "/admin/users" }
+    { title: "Parts", body: "Catalog", href: "/parts", Icon: Package },
+    { title: "Users", body: "Access", href: "/admin/users", Icon: Users }
   ],
   tech: [
-    { title: "Customer", body: "Create record.", href: "/customers/new?next=job" },
-    { title: "Assigned", body: "Open work.", href: "/jobs" }
+    { title: "Customer", body: "Create", href: "/customers/new?next=job", Icon: Users },
+    { title: "Assigned", body: "Open work", href: "/jobs", Icon: FileText }
   ],
   call_center: [
-    { title: "Customers", body: "Find records.", href: "/customers" },
-    { title: "New", body: "Create customer.", href: "/customers/new" }
+    { title: "Customers", body: "Find", href: "/customers", Icon: Users },
+    { title: "New", body: "Create", href: "/customers/new", Icon: CalendarPlus }
   ]
 };
 
@@ -47,53 +47,50 @@ export default function DashboardPage() {
         title={dashboardTitle}
       />
 
-      {canScheduleJobs(currentUser.role) ? (
-        <Link href="/jobs/new" className="primary-job-action">
-          <span className="primary-job-icon" aria-hidden="true">
-            <CalendarPlus size={22} />
-          </span>
-          <span>
-            <strong>New job</strong>
-            <small>Create the customer, service address, schedule, and assigned tech in one flow.</small>
-          </span>
-        </Link>
-      ) : null}
+      <section className="dashboard-bento-grid">
+        {canScheduleJobs(currentUser.role) ? (
+          <Link href="/jobs/new" className="primary-job-action">
+            <span className="primary-job-icon" aria-hidden="true">
+              <CalendarPlus size={22} />
+            </span>
+            <span>
+              <strong>New job</strong>
+              <small>Customer, address, schedule, tech.</small>
+            </span>
+          </Link>
+        ) : null}
 
-      <section className="ops-strip" aria-label="Operations summary">
-        <div className="ops-stat">
-          <strong>{visibleJobs.length}</strong>
-          <span>{currentUser.role === "tech" ? "assigned" : "jobs"}</span>
-        </div>
-        <div className="ops-stat">
-          <strong>{draftInvoices.length}</strong>
-          <span>drafts</span>
-        </div>
-        <div className="ops-stat">
-          <strong>{completedJobs}</strong>
-          <span>complete</span>
-        </div>
-      </section>
+        <section className="ops-strip" aria-label="Operations summary">
+          <div className="ops-stat">
+            <strong>{visibleJobs.length}</strong>
+            <span>{currentUser.role === "tech" ? "assigned" : "jobs"}</span>
+          </div>
+          <div className="ops-stat">
+            <strong>{draftInvoices.length}</strong>
+            <span>drafts</span>
+          </div>
+          <div className="ops-stat">
+            <strong>{completedJobs}</strong>
+            <span>done</span>
+          </div>
+        </section>
 
-      <section className="dashboard-overview-grid">
-        <Card className="ops-chart-card">
+        <Card className="ops-chart-card dashboard-bento-main">
           <div className="section-head">
             <div>
               <h2>Workload</h2>
-              <p className="subtle-copy">Scheduled work and completed jobs.</p>
+              <p className="subtle-copy">Scheduled and completed work.</p>
             </div>
             <StatusPill tone="neutral">schedule</StatusPill>
           </div>
-          <OperationsChart
-            jobs={visibleJobs}
-            invoices={visibleInvoices}
-            canSeeMoney={currentUser.role !== "call_center"}
-          />
+          <OperationsChart jobs={visibleJobs} invoices={visibleInvoices} canSeeMoney={currentUser.role !== "call_center"} />
         </Card>
 
-        <section className="quick-action-grid quick-action-grid-compact" aria-label="Quick actions">
+        <section className="quick-action-grid quick-action-grid-compact dashboard-bento-actions" aria-label="Quick actions">
           {roleActions[currentUser.role].map((action) => (
             <Link key={action.title} href={action.href} className="quick-action-card">
               <span className="quick-action-arrow">→</span>
+              <action.Icon size={18} aria-hidden="true" />
               <strong>{action.title}</strong>
               <p>{action.body}</p>
             </Link>

@@ -1,11 +1,18 @@
 "use client";
 
+import { BriefcaseBusiness, Headset, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { RoleGate } from "@/components/RoleGate";
 import { Button, Card, Field, PageHeader, StatusPill, ThreeColumn, TwoColumn } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { roleLabels, roleOptions, useAppData } from "@/lib/data-store";
 import type { Role } from "@/lib/types";
+
+const roleIcons = {
+  owner: ShieldCheck,
+  tech: BriefcaseBusiness,
+  call_center: Headset
+};
 
 export default function AdminUsersPage() {
   const data = useAppData();
@@ -32,13 +39,21 @@ export default function AdminUsersPage() {
       <main className="page-shell users-page">
         <PageHeader eyebrow="Owner only" title="Users" description="Control which Google accounts can access the app and what role they receive." />
         <ThreeColumn>
-          {roleOptions.map((role) => (
-            <Card key={role} className="user-role-card">
-              <p className="eyebrow">{roleLabels[role]}</p>
-              <h2>{data.allowedUsers.filter((user) => user.role === role && user.active).length}</h2>
-              <p className="muted">Active users</p>
-            </Card>
-          ))}
+          {roleOptions.map((role) => {
+            const Icon = roleIcons[role];
+            return (
+              <Card key={role} className="user-role-card">
+                <div className="user-role-card-head">
+                  <p className="eyebrow">{roleLabels[role]}</p>
+                  <span aria-hidden="true">
+                    <Icon size={20} />
+                  </span>
+                </div>
+                <h2>{data.allowedUsers.filter((user) => user.role === role && user.active).length}</h2>
+                <p className="muted">Active users</p>
+              </Card>
+            );
+          })}
         </ThreeColumn>
         <Card>
           <p className="eyebrow">Add user</p>
