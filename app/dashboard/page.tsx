@@ -74,7 +74,11 @@ export default function DashboardPage() {
             </div>
             <StatusPill tone="info">live</StatusPill>
           </div>
-          <OperationsChart jobs={visibleJobs} />
+          <OperationsChart
+            jobs={visibleJobs}
+            invoices={visibleInvoices}
+            canSeeMoney={currentUser.role !== "call_center"}
+          />
         </Card>
 
         <section className="quick-action-grid quick-action-grid-compact" aria-label="Quick actions">

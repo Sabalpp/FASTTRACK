@@ -2780,8 +2780,8 @@ label {
 
 .operations-chart {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(190px, 230px);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(270px, 340px);
+  gap: 14px;
   align-items: stretch;
   margin-top: 14px;
 }
@@ -2803,8 +2803,12 @@ label {
   display: grid;
   align-content: start;
   gap: 12px;
-  border-left: 1px solid #edf1f4;
-  padding-left: 14px;
+}
+
+.operations-side-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
 }
 
 .quick-action-grid-compact {
@@ -2977,6 +2981,7 @@ label {
   .dashboard-overview-grid,
   .ops-chart-card,
   .operations-chart,
+  .operations-side-panel,
   .chart-frame {
     min-width: 0;
     max-width: 100%;
@@ -3003,11 +3008,9 @@ label {
 
   .status-stack {
     grid-template-columns: 1fr;
-    border-left: 0;
     border-top: 1px solid #edf1f4;
     gap: 10px;
     padding-top: 12px;
-    padding-left: 0;
   }
 
   .status-summary {
@@ -3021,6 +3024,19 @@ label {
   .quick-action-grid-compact {
     grid-template-columns: 1fr;
     overflow: visible;
+  }
+
+  .invoice-pipeline-body {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .invoice-canvas-wrap {
+    height: 96px;
+  }
+
+  .invoice-canvas-wrap canvas {
+    width: 96px !important;
+    height: 96px !important;
   }
 }
 
@@ -3802,6 +3818,113 @@ label {
 
 .status-meter-cancelled .status-dot {
   background: #b42318;
+}
+
+.invoice-pipeline-card,
+.next-work-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid #dce3ea;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.invoice-pipeline-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.invoice-pipeline-head > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.invoice-pipeline-head strong,
+.next-work-card strong {
+  color: var(--ink);
+  font-weight: 950;
+}
+
+.invoice-pipeline-head > strong {
+  font-size: 0.98rem;
+  white-space: nowrap;
+}
+
+.invoice-pipeline-head span,
+.next-work-card > span,
+.next-work-card p {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.invoice-pipeline-body {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.invoice-canvas-wrap {
+  min-width: 0;
+  height: 112px;
+}
+
+.invoice-canvas-wrap canvas {
+  width: 112px !important;
+  height: 112px !important;
+}
+
+.invoice-status-list {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.invoice-meter {
+  min-height: 24px;
+  font-size: 0.78rem;
+}
+
+.invoice-meter strong {
+  font-size: 0.82rem;
+}
+
+.invoice-meter-draft .status-dot {
+  background: #c8571b;
+}
+
+.invoice-meter-sent .status-dot {
+  background: #263846;
+}
+
+.invoice-meter-paid .status-dot {
+  background: #177245;
+}
+
+.invoice-meter-cancelled .status-dot {
+  background: #b42318;
+}
+
+.next-work-card {
+  gap: 6px;
+  background: #f8fafc;
+}
+
+.next-work-card strong,
+.next-work-card p {
+  overflow-wrap: anywhere;
+}
+
+.next-work-card p {
+  margin: 0;
+  line-height: 1.35;
 }
 
 .invoice-send-card {
