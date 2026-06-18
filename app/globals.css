@@ -3117,8 +3117,15 @@ label {
 
 .picker-empty {
   display: grid;
-  gap: 4px;
+  gap: 6px;
   padding: 14px;
+}
+
+.picker-empty .button {
+  width: fit-content;
+  min-height: 38px;
+  margin-top: 4px;
+  padding: 8px 12px;
 }
 
 .picker-results button strong,
@@ -3324,7 +3331,7 @@ label {
   z-index: 0;
   overflow: hidden;
   background: #000;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .paper-shader-background::after {

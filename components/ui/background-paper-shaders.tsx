@@ -1,32 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DotOrbit, MeshGradient } from "@paper-design/shaders-react";
 
 export function BackgroundPaperShaders() {
   const [pointer, setPointer] = useState({ x: 0, y: 0 });
   const [isInteracting, setIsInteracting] = useState(false);
+  const resetTimer = useRef<number | undefined>(undefined);
+  const frame = useRef<number | undefined>(undefined);
 
   const speed = isInteracting ? 1.35 : 0.72;
   const dotSpeed = isInteracting ? 1.8 : 0.95;
 
-  return (
-    <div
-      className="paper-shader-background"
-      aria-hidden="true"
-      onPointerMove={(event) => {
-        const rect = event.currentTarget.getBoundingClientRect();
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      if (frame.current) window.cancelAnimationFrame(frame.current);
+
+      frame.current = window.requestAnimationFrame(() => {
         setPointer({
-          x: ((event.clientX - rect.left) / rect.width - 0.5) * 0.34,
-          y: ((event.clientY - rect.top) / rect.height - 0.5) * -0.28
+          x: (event.clientX / window.innerWidth - 0.5) * 0.34,
+          y: (event.clientY / window.innerHeight - 0.5) * -0.28
         });
         setIsInteracting(true);
-      }}
-      onPointerLeave={() => {
+      });
+
+      if (resetTimer.current) window.clearTimeout(resetTimer.current);
+      resetTimer.current = window.setTimeout(() => {
         setPointer({ x: 0, y: 0 });
         setIsInteracting(false);
-      }}
-    >
+      }, 900);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      if (resetTimer.current) window.clearTimeout(resetTimer.current);
+      if (frame.current) window.cancelAnimationFrame(frame.current);
+    };
+  }, []);
+
+  return (
+    <div className="paper-shader-background" aria-hidden="true">
       <MeshGradient
         className="paper-mesh-gradient"
         colors={["#000000", "#0b111b", "#1a1a1a", "#333333", "#ffffff"]}

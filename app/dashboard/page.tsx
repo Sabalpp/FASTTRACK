@@ -113,11 +113,11 @@ export default function DashboardPage() {
         <Card>
           <div className="section-head">
             <div>
-              <h2>Queue</h2>
+              <h2>Open work</h2>
             </div>
             <div className="action-row">
-              <Link href="/jobs" className="text-link">All jobs</Link>
-              {currentUser.role !== "call_center" ? <Link href="/invoices" className="text-link">Invoices</Link> : null}
+              <ButtonLink href="/jobs" variant="secondary">All jobs</ButtonLink>
+              {currentUser.role !== "call_center" ? <ButtonLink href="/invoices" variant="secondary">Invoices</ButtonLink> : null}
             </div>
           </div>
           {queueJobs.length === 0 && invoiceQueue.length === 0 ? (

@@ -54,7 +54,8 @@ export function CustomerPicker({ onPick, selectedCustomer }: { onPick: (customer
         ) : results.length === 0 ? (
           <div className="picker-empty">
             <strong>No match</strong>
-            <span>Create a customer if this is a new call.</span>
+            <span>Create the customer, then return here to schedule.</span>
+            <Link href="/customers/new?next=job" className="button button-secondary">Create customer</Link>
           </div>
         ) : (
           results.map((customer) => (
@@ -65,7 +66,6 @@ export function CustomerPicker({ onPick, selectedCustomer }: { onPick: (customer
           ))
         )}
       </div>
-      <Link href="/customers/new?next=job" className="text-link">No customer? Create one, then schedule.</Link>
     </div>
   );
 }

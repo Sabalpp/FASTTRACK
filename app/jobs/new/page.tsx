@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { CustomerPicker } from "@/components/CustomerPicker";
-import { Button, ButtonLink, Card, Field, PageHeader, TwoColumn } from "@/components/ui";
+import { Button, Card, Field, PageHeader, TwoColumn } from "@/components/ui";
 import type { Customer } from "@/lib/types";
 
 export default function NewJobPage() {
@@ -64,8 +64,7 @@ function NewJobClient() {
       <PageHeader
         eyebrow="Schedule"
         title="New service call"
-        description="Find or create the customer first. History, photos, and invoices stay connected."
-        action={<ButtonLink href="/customers/new?next=job" variant="secondary">Create customer</ButtonLink>}
+        description="Search first. If there is no match, create the customer and come back to schedule."
       />
       <Card>
         <form className="stack" onSubmit={submit}>
@@ -74,8 +73,7 @@ function NewJobClient() {
             <div className="intake-guide compact-intake-guide">
               <p className="eyebrow">Scheduling</p>
               <h2>{selectedCustomer ? "Customer selected" : "No customer yet"}</h2>
-              <p className="muted">{selectedCustomer ? "Confirm address, time, and job notes below." : "Search existing records or create a customer first."}</p>
-              {!selectedCustomer ? <ButtonLink href="/customers/new?next=job" variant="secondary">Create customer</ButtonLink> : null}
+              <p className="muted">{selectedCustomer ? "Confirm address, time, and job notes below." : "Start with the customer search. Create only if there is no match."}</p>
             </div>
           </div>
           <TwoColumn>
