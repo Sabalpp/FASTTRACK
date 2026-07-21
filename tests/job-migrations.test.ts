@@ -18,6 +18,10 @@ describe("arrival-window database rollout", () => {
     expect(protectionMigration).toContain("The recorded arrival time is immutable.");
     expect(protectionMigration).toContain("Dispatch fields are locked after arrival is recorded.");
     expect(protectionMigration).toContain("old.arrival_window_end_at + (new.scheduled_at - old.scheduled_at)");
+    expect(protectionMigration).toContain("new.service_address is distinct from old.service_address");
+    expect(protectionMigration).toContain("Technicians can only start an assigned job or complete an arrived job.");
+    expect(protectionMigration).toContain("new.completed_at := statement_timestamp()");
+    expect(protectionMigration).toContain("Completion time is recorded by the workflow.");
   });
 
   it("keeps the canonical schema aligned with the final migrated contract", () => {

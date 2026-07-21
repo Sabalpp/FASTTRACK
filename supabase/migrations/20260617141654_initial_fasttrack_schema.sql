@@ -8,12 +8,13 @@ create or replace function public.normalize_us_phone(input text)
 returns text
 language sql
 immutable
+set search_path = ''
 as $$
   select case
-    when length(regexp_replace(coalesce(input, ''), '\\D', '', 'g')) = 11
-      and left(regexp_replace(coalesce(input, ''), '\\D', '', 'g'), 1) = '1'
-      then substring(regexp_replace(coalesce(input, ''), '\\D', '', 'g') from 2)
-    else regexp_replace(coalesce(input, ''), '\\D', '', 'g')
+    when length(regexp_replace(coalesce(input, ''), '[^0-9]', '', 'g')) = 11
+      and left(regexp_replace(coalesce(input, ''), '[^0-9]', '', 'g'), 1) = '1'
+      then substring(regexp_replace(coalesce(input, ''), '[^0-9]', '', 'g') from 2)
+    else regexp_replace(coalesce(input, ''), '[^0-9]', '', 'g')
   end;
 $$;
 

@@ -54,7 +54,8 @@ const STORAGE_KEY = "hvac-plumbing-mvp-state-v1";
 const WORKSPACE_LOAD_TIMEOUT_MS = 30_000;
 const SESSION_REFRESH_TIMEOUT_MS = 12_000;
 
-type NewCustomerInput = Omit<Customer, "id" | "phoneDigits" | "createdAt">;
+type NewCustomerInput = Omit<Customer, "id" | "phoneDigits" | "createdAt" | "emailNotificationsEnabled" | "smsConsentStatus" | "smsConsentAt" | "smsConsentSource"> &
+  Partial<Pick<Customer, "emailNotificationsEnabled" | "smsConsentStatus" | "smsConsentAt" | "smsConsentSource">>;
 type NewJobInput = Omit<Job, "id" | "status" | "createdAt" | "arrivedAt" | "completedAt"> & { status?: JobStatus };
 type NewPartInput = Omit<Part, "id" | "createdAt" | "active"> & { active?: boolean };
 type NewLineItemInput = Omit<JobLineItem, "id" | "sortOrder">;
@@ -69,8 +70,8 @@ type AppDataContextValue = AppState & {
   setState: React.Dispatch<React.SetStateAction<AppState>>;
   resetDemoData: () => void;
   searchCustomers: (query: string, visibleCustomers?: Customer[]) => Promise<Customer[]>;
-  createCustomer: (input: NewCustomerInput) => Customer;
-  updateCustomer: (id: string, input: Partial<Customer>) => void;
+  createCustomer: (input: NewCustomerInput) => Promise<Customer>;
+  updateCustomer: (id: string, input: Partial<Customer>) => Promise<void>;
   createJob: (input: NewJobInput) => Promise<Job>;
   updateJob: (id: string, input: Partial<Job>) => Promise<void>;
   markJobArrived: (id: string) => Promise<void>;
@@ -233,34 +234,70 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       return customers;
     }
 
-    function createCustomer(input: NewCustomerInput) {
+    async function createCustomer(input: NewCustomerInput) {
       const customer: Customer = {
         ...input,
         id: crypto.randomUUID(),
         phoneDigits: normalizePhone(input.phone),
+        emailNotificationsEnabled: input.emailNotificationsEnabled ?? true,
+        smsConsentStatus: input.smsConsentStatus ?? "unknown",
         createdAt: new Date().toISOString()
       };
-      setState((current) => ({ ...current, customers: [customer, ...current.customers] }));
-      persistSupabase("customer insert", async () => {
-        const { error } = await supabase!.from("customers").insert(customerToRow(customer));
-        if (error) throw error;
-      });
-      return customer;
+
+      if (demoMode) {
+        setState((current) => ({ ...current, customers: [customer, ...current.customers] }));
+        return customer;
+      }
+
+      if (!supabase) throw new Error("Supabase credentials are not configured.");
+      const requestWorkspaceKey = activeWorkspaceKeyRef.current;
+      const { data, error } = await supabase.from("customers").insert(customerToRow(customer)).select("*").single();
+      if (error) {
+        if (activeWorkspaceKeyRef.current === requestWorkspaceKey) setLastError(error.message);
+        throw error;
+      }
+      if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) throw new Error("The signed-in account changed before the customer was created.");
+      const persistedCustomer = customerFromRow(data);
+      setState((current) => ({ ...current, customers: [persistedCustomer, ...current.customers] }));
+      setLastError(undefined);
+      return persistedCustomer;
     }
 
-    function updateCustomer(id: string, input: Partial<Customer>) {
+    async function updateCustomer(id: string, input: Partial<Customer>) {
+      if (Object.keys(input).length === 0) return;
+
+      if (demoMode) {
+        setState((current) => ({
+          ...current,
+          customers: current.customers.map((customer) =>
+            customer.id === id
+              ? { ...customer, ...input, phoneDigits: input.phone ? normalizePhone(input.phone) : customer.phoneDigits }
+              : customer
+          )
+        }));
+        return;
+      }
+
+      if (!supabase) throw new Error("Supabase credentials are not configured.");
+      const requestWorkspaceKey = activeWorkspaceKeyRef.current;
+      const { data, error } = await supabase
+        .from("customers")
+        .update(customerPatchToRow(input))
+        .eq("id", id)
+        .select("*")
+        .maybeSingle();
+      if (error) {
+        if (activeWorkspaceKeyRef.current === requestWorkspaceKey) setLastError(error.message);
+        throw error;
+      }
+      if (!data) throw new Error("The customer could not be updated. Refresh and confirm your access.");
+      if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) return;
+      const persistedCustomer = customerFromRow(data);
       setState((current) => ({
         ...current,
-        customers: current.customers.map((customer) =>
-          customer.id === id
-            ? { ...customer, ...input, phoneDigits: input.phone ? normalizePhone(input.phone) : customer.phoneDigits }
-            : customer
-        )
+        customers: current.customers.map((customer) => customer.id === id ? persistedCustomer : customer)
       }));
-      persistSupabase("customer update", async () => {
-        const { error } = await supabase!.from("customers").update(customerPatchToRow(input)).eq("id", id);
-        if (error) throw error;
-      });
+      setLastError(undefined);
     }
 
     async function createJob(input: NewJobInput) {
@@ -874,6 +911,13 @@ function mergeCustomers(state: AppState, customers: Customer[]) {
 function normalizeDemoState(state: AppState): AppState {
   return {
     ...state,
+    customers: (state.customers ?? []).map((customer) => ({
+      ...customer,
+      emailNotificationsEnabled: customer.emailNotificationsEnabled ?? true,
+      smsConsentStatus: customer.smsConsentStatus ?? "unknown",
+      smsConsentAt: customer.smsConsentAt ?? undefined,
+      smsConsentSource: customer.smsConsentSource ?? undefined
+    })),
     jobs: (state.jobs ?? []).map((job) => ({
       ...job,
       arrivalWindowEndAt: job.arrivalWindowEndAt ?? defaultServiceWindowEndAt(job.scheduledAt) ?? job.scheduledAt

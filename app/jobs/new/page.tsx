@@ -9,6 +9,7 @@ import { CustomerPicker } from "@/components/CustomerPicker";
 import { RoleGate } from "@/components/RoleGate";
 import { Button, Card, Field, PageHeader } from "@/components/ui";
 import { dateInputValue } from "@/lib/date";
+import { dispatchJobConfirmations } from "@/lib/appointment-confirmations-client";
 import {
   defaultServiceWindowEndAt,
   findTechnicianWindowConflicts,
@@ -45,10 +46,15 @@ function NewJobClient() {
   const [conflictConfirmed, setConflictConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | undefined>();
+  const [scheduleWithoutConfirmation, setScheduleWithoutConfirmation] = useState(false);
 
   const scheduledAtIso = localDateTimeIso(form.scheduledAt);
   const arrivalWindowEndAtIso = localDateTimeIso(form.arrivalWindowEndAt);
   const validWindow = isValidServiceWindow(scheduledAtIso, arrivalWindowEndAtIso);
+  const confirmationChannels = selectedCustomer ? [
+    selectedCustomer.emailNotificationsEnabled && selectedCustomer.email ? `Email to ${selectedCustomer.email}` : undefined,
+    selectedCustomer.smsConsentStatus === "opted_in" && selectedCustomer.phoneDigits.length === 10 ? `Text to ${selectedCustomer.phone}` : undefined
+  ].filter(Boolean) as string[] : [];
   const conflicts = useMemo(
     () => findTechnicianWindowConflicts(data.jobs, {
       assignedTechId: form.assignedTechId || undefined,
@@ -76,6 +82,7 @@ function NewJobClient() {
 
   function pickCustomer(customer: Customer) {
     setSelectedCustomer(customer);
+    setScheduleWithoutConfirmation(false);
     setForm((current) => ({
       ...current,
       serviceAddress: `${customer.addressLine1}${customer.addressLine2 ? ` ${customer.addressLine2}` : ""}, ${customer.city}, ${customer.state} ${customer.zip}`
@@ -86,6 +93,7 @@ function NewJobClient() {
     event.preventDefault();
     if (!selectedCustomer || !scheduledAtIso || !arrivalWindowEndAtIso || !validWindow) return;
     if (conflicts.length > 0 && !conflictConfirmed) return;
+    if (confirmationChannels.length === 0 && !scheduleWithoutConfirmation) return;
     setSubmitting(true);
     setSubmitError(undefined);
     try {
@@ -98,7 +106,14 @@ function NewJobClient() {
         description: form.description,
         notes: ""
       });
-      router.push(`/jobs/${job.id}`);
+      let confirmationNeedsAttention = false;
+      try {
+        const result = await dispatchJobConfirmations(job.id, "pending");
+        confirmationNeedsAttention = result.notifications.some((notification) => notification.status === "failed");
+      } catch {
+        confirmationNeedsAttention = true;
+      }
+      router.push(`/jobs/${job.id}${confirmationNeedsAttention ? "?confirmation=needs-attention" : ""}`);
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "The service call could not be scheduled.");
     } finally {
@@ -180,9 +195,35 @@ function NewJobClient() {
               <textarea required value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="No cooling upstairs, water heater not heating..." />
             </Field>
           </div>
+          <div className="notification-review-panel">
+            <div>
+              <p className="eyebrow">Customer confirmation</p>
+              <h2>{confirmationChannels.length > 0 ? "Sends automatically after scheduling" : "No eligible delivery channel"}</h2>
+              <p className="muted">
+                The confirmation uses the exact arrival window and explains that arrival may occur at any time during that window.
+              </p>
+            </div>
+            {confirmationChannels.length > 0 ? (
+              <div className="notification-channel-preview">
+                {confirmationChannels.map((channel) => <span key={channel}>{channel}</span>)}
+              </div>
+            ) : (
+              <label className="preference-check warning-check">
+                <input
+                  type="checkbox"
+                  checked={scheduleWithoutConfirmation}
+                  onChange={(event) => setScheduleWithoutConfirmation(event.target.checked)}
+                />
+                <span>
+                  <strong>Schedule without confirmation</strong>
+                  <small>Add an email or record SMS consent on the customer profile to enable automatic updates.</small>
+                </span>
+              </label>
+            )}
+          </div>
           {submitError ? <p className="field-error" role="alert">{submitError}</p> : null}
-          <Button type="submit" disabled={submitting || !selectedCustomer || !validWindow || (conflicts.length > 0 && !conflictConfirmed)}>
-            {submitting ? "Scheduling..." : "Schedule service"}
+          <Button type="submit" disabled={submitting || !selectedCustomer || !validWindow || (conflicts.length > 0 && !conflictConfirmed) || (confirmationChannels.length === 0 && !scheduleWithoutConfirmation)}>
+            {submitting ? "Scheduling & notifying..." : confirmationChannels.length > 0 ? "Schedule & send confirmation" : "Schedule service"}
           </Button>
         </form>
       </Card>

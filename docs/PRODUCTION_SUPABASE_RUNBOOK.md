@@ -155,6 +155,32 @@ NEXT_PUBLIC_REQUIRE_OWNER_MFA=false
 6. Add the final Vercel URL to Supabase Auth redirects.
 7. Redeploy if auth/env settings changed.
 
+For appointment SMS, also set the server-only `TWILIO_ACCOUNT_SID`, primary
+`TWILIO_AUTH_TOKEN`, sending credentials, and:
+
+```bash
+TWILIO_WEBHOOK_PUBLIC_URL=https://fasttrack-delta.vercel.app/api/webhooks/twilio
+```
+
+In Twilio's incoming-message/Advanced Opt-Out webhook setting, use the same URL
+with retry overrides appended:
+
+```text
+https://fasttrack-delta.vercel.app/api/webhooks/twilio#rc=3&rp=all&ct=2000&rt=5000&tt=15000
+```
+
+Keep `TWILIO_WEBHOOK_PUBLIC_URL` itself fragment-free. Twilio excludes connection
+override fragments from signature calculation, and the app adds the retry
+overrides automatically to outbound message status callbacks.
+
+Use that exact URL as the Messaging Service incoming-message webhook. The app
+adds the same URL as the outbound delivery-status callback. Twilio signs the
+literal configured URL, so changes to its host, path, or query string require a
+matching Vercel environment update and redeploy. Keep
+`SUPABASE_SERVICE_ROLE_KEY` configured; signed webhooks fail closed without it.
+Set a long random `CRON_SECRET` as well so Vercel can authorize the daily
+notification outbox catch-up job declared in `vercel.json`.
+
 If the deployed app shows `Owner`, `Tech`, and `Desk` buttons, it is still running in demo mode. Production login should show `Continue with Google`. Check Vercel environment variables and redeploy the latest `main` branch.
 
 Production builds intentionally do not allow the demo role picker. Local dev can still use demo mode, but Vercel production should always route through real auth. If production cannot find Supabase env vars, it should show a Supabase configuration/auth error instead of fake role buttons.

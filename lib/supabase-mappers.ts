@@ -3,6 +3,7 @@ import { defaultServiceWindowEndAt } from "@/lib/service-window";
 import type {
   AllowedUser,
   AppState,
+  AppointmentNotification,
   CallLog,
   CallLogEvent,
   Customer,
@@ -30,6 +31,10 @@ type CustomerRow = {
   phone: string;
   phone_digits: string | null;
   email: string | null;
+  email_notifications_enabled?: boolean | null;
+  sms_consent_status?: Customer["smsConsentStatus"] | null;
+  sms_consent_at?: string | null;
+  sms_consent_source?: string | null;
   address_line1: string;
   address_line2: string | null;
   city: string;
@@ -37,6 +42,37 @@ type CustomerRow = {
   zip: string;
   notes: string | null;
   created_at: string;
+  created_by: string | null;
+};
+
+type AppointmentNotificationRow = {
+  id: string;
+  job_id: string | null;
+  customer_id: string | null;
+  job_revision: number;
+  event_type: AppointmentNotification["eventType"];
+  channel: AppointmentNotification["channel"];
+  destination: string;
+  customer_name: string;
+  scheduled_start_at: string;
+  scheduled_end_at: string;
+  service_address: string;
+  message_subject: string | null;
+  message_body: string | null;
+  status: AppointmentNotification["status"];
+  provider: string | null;
+  provider_message_id: string | null;
+  provider_status: string | null;
+  provider_status_at: string | null;
+  claim_token: string | null;
+  idempotency_key: string;
+  attempt_count: number;
+  last_error_code: string | null;
+  error_message: string | null;
+  queued_at: string;
+  processing_at: string | null;
+  accepted_at: string | null;
+  failed_at: string | null;
   created_by: string | null;
 };
 
@@ -193,6 +229,10 @@ export function customerFromRow(row: CustomerRow): Customer {
     phone: row.phone,
     phoneDigits: row.phone_digits ?? normalizePhone(row.phone),
     email: row.email ?? undefined,
+    emailNotificationsEnabled: row.email_notifications_enabled ?? true,
+    smsConsentStatus: row.sms_consent_status ?? "unknown",
+    smsConsentAt: row.sms_consent_at ?? undefined,
+    smsConsentSource: row.sms_consent_source ?? undefined,
     addressLine1: row.address_line1,
     addressLine2: row.address_line2 ?? undefined,
     city: row.city,
@@ -210,6 +250,10 @@ export function customerToRow(customer: Customer): DbPayload {
     name: customer.name,
     phone: customer.phone,
     email: customer.email || null,
+    email_notifications_enabled: customer.emailNotificationsEnabled,
+    sms_consent_status: customer.smsConsentStatus,
+    sms_consent_at: customer.smsConsentAt || null,
+    sms_consent_source: customer.smsConsentSource || null,
     address_line1: customer.addressLine1,
     address_line2: customer.addressLine2 || null,
     city: customer.city,
@@ -226,6 +270,10 @@ export function customerPatchToRow(input: Partial<Customer>): DbPayload {
   if (input.name !== undefined) row.name = input.name;
   if (input.phone !== undefined) row.phone = input.phone;
   if (input.email !== undefined) row.email = input.email || null;
+  if (input.emailNotificationsEnabled !== undefined) row.email_notifications_enabled = input.emailNotificationsEnabled;
+  if (input.smsConsentStatus !== undefined) row.sms_consent_status = input.smsConsentStatus;
+  if (input.smsConsentAt !== undefined) row.sms_consent_at = input.smsConsentAt || null;
+  if (input.smsConsentSource !== undefined) row.sms_consent_source = input.smsConsentSource || null;
   if (input.addressLine1 !== undefined) row.address_line1 = input.addressLine1;
   if (input.addressLine2 !== undefined) row.address_line2 = input.addressLine2 || null;
   if (input.city !== undefined) row.city = input.city;
@@ -234,6 +282,39 @@ export function customerPatchToRow(input: Partial<Customer>): DbPayload {
   if (input.notes !== undefined) row.notes = input.notes;
   if (input.createdBy !== undefined) row.created_by = input.createdBy || null;
   return row;
+}
+
+export function appointmentNotificationFromRow(row: AppointmentNotificationRow): AppointmentNotification {
+  return {
+    id: row.id,
+    jobId: row.job_id ?? undefined,
+    customerId: row.customer_id ?? undefined,
+    jobRevision: row.job_revision,
+    eventType: row.event_type,
+    channel: row.channel,
+    destination: row.destination,
+    customerName: row.customer_name,
+    scheduledStartAt: row.scheduled_start_at,
+    scheduledEndAt: row.scheduled_end_at,
+    serviceAddress: row.service_address,
+    messageSubject: row.message_subject ?? undefined,
+    messageBody: row.message_body ?? undefined,
+    status: row.status,
+    provider: row.provider ?? undefined,
+    providerMessageId: row.provider_message_id ?? undefined,
+    providerStatus: row.provider_status ?? undefined,
+    providerStatusAt: row.provider_status_at ?? undefined,
+    claimToken: row.claim_token ?? undefined,
+    idempotencyKey: row.idempotency_key,
+    attemptCount: row.attempt_count,
+    lastErrorCode: row.last_error_code ?? undefined,
+    errorMessage: row.error_message ?? undefined,
+    queuedAt: row.queued_at,
+    processingAt: row.processing_at ?? undefined,
+    acceptedAt: row.accepted_at ?? undefined,
+    failedAt: row.failed_at ?? undefined,
+    createdBy: row.created_by ?? undefined
+  };
 }
 
 export function jobFromRow(row: JobRow): Job {

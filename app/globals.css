@@ -3472,6 +3472,85 @@ label {
   }
 }
 
+.notification-preferences-panel,
+.notification-review-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, var(--accent));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--accent) 6%);
+}
+
+.notification-preferences-panel h2,
+.notification-preferences-panel h3,
+.notification-review-panel h2 {
+  margin: 2px 0 4px;
+}
+
+.preference-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.preference-check:hover {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+  transform: translateY(-1px);
+}
+
+.preference-check input {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  accent-color: var(--accent);
+}
+
+.preference-check span {
+  display: grid;
+  gap: 3px;
+}
+
+.preference-check small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.warning-check {
+  border-color: color-mix(in srgb, var(--warn) 58%, var(--border));
+  background: color-mix(in srgb, var(--surface) 88%, var(--warn) 12%);
+}
+
+.notification-review-panel {
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.7fr);
+  align-items: center;
+}
+
+.notification-channel-preview {
+  display: grid;
+  gap: 8px;
+}
+
+.notification-channel-preview span {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-weight: 800;
+}
+
+@media (max-width: 860px) {
+  .notification-review-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
 .google-auth-button {
   display: inline-flex;
   align-items: center;
@@ -5854,5 +5933,517 @@ h2 {
 
   .user-access-status {
     justify-content: flex-start;
+  }
+}
+
+/* Appointment confirmation --------------------------------------------------- */
+.appointment-confirmation-card {
+  display: grid;
+  gap: 16px;
+}
+
+.appointment-confirmation-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.appointment-confirmation-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.appointment-confirmation-heading > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.appointment-confirmation-heading h2,
+.appointment-confirmation-heading p {
+  margin: 0;
+}
+
+.appointment-confirmation-heading > div > p:last-child {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.appointment-confirmation-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #cfe0e6;
+  border-radius: 10px;
+  background: #edf8fa;
+  color: var(--brand);
+}
+
+.appointment-confirmation-overall {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  min-width: 210px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fafc;
+  color: var(--muted);
+  padding: 10px 12px;
+}
+
+.appointment-confirmation-overall > span {
+  display: grid;
+  gap: 2px;
+}
+
+.appointment-confirmation-overall strong,
+.appointment-confirmation-overall small {
+  display: block;
+}
+
+.appointment-confirmation-overall strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.appointment-confirmation-overall small {
+  max-width: 260px;
+  font-size: 0.76rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.appointment-confirmation-overall[data-tone="good"] {
+  border-color: #b9dec6;
+  background: #edf9f1;
+  color: var(--good);
+}
+
+.appointment-confirmation-overall[data-tone="info"] {
+  border-color: #bfdbed;
+  background: #eef7fd;
+  color: var(--info);
+}
+
+.appointment-confirmation-overall[data-tone="warn"] {
+  border-color: #f1d59e;
+  background: #fff9e9;
+  color: var(--warn);
+}
+
+.appointment-confirmation-overall[data-tone="bad"] {
+  border-color: #efc2be;
+  background: #fff1ef;
+  color: var(--bad);
+}
+
+.appointment-confirmation-error {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid #efc2be;
+  border-radius: 10px;
+  background: #fff1ef;
+  color: var(--bad);
+  padding: 12px 14px;
+}
+
+.appointment-confirmation-error span {
+  display: grid;
+  gap: 3px;
+}
+
+.appointment-confirmation-error small {
+  color: #92352d;
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.appointment-confirmation-loading,
+.appointment-confirmation-empty {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 72px;
+  border: 1px dashed #cfd8e3;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: var(--muted);
+  padding: 14px;
+  font-weight: 800;
+}
+
+.appointment-confirmation-empty > div {
+  display: grid;
+  gap: 3px;
+}
+
+.appointment-confirmation-empty strong {
+  color: var(--ink);
+}
+
+.appointment-confirmation-empty p {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.appointment-confirmation-spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid #d6e2e7;
+  border-top-color: var(--brand);
+  border-radius: 999px;
+  animation: appointment-confirmation-spin 800ms linear infinite;
+}
+
+@keyframes appointment-confirmation-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.appointment-confirmation-channel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.appointment-confirmation-channel {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-left: 4px solid #94a3b8;
+  border-radius: 10px;
+  background: #fff;
+  padding: 12px 13px;
+}
+
+.appointment-confirmation-channel[data-status="accepted"],
+.appointment-confirmation-channel[data-status="sent"] {
+  border-left-color: var(--good);
+}
+
+.appointment-confirmation-channel[data-status="queued"],
+.appointment-confirmation-channel[data-status="sending"],
+.appointment-confirmation-channel[data-status="processing"] {
+  border-left-color: var(--info);
+}
+
+.appointment-confirmation-channel[data-status="failed"] {
+  border-color: #efc2be;
+  border-left-color: var(--bad);
+  background: #fffafa;
+}
+
+.appointment-confirmation-channel[data-status="suppressed"] {
+  border-left-color: var(--warn);
+  background: #fffdf7;
+}
+
+.appointment-confirmation-channel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.appointment-confirmation-channel-name,
+.appointment-confirmation-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.appointment-confirmation-channel-name {
+  min-width: 0;
+  color: var(--brand-dark);
+}
+
+.appointment-confirmation-status {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #eef2f6;
+  color: var(--muted);
+  padding: 5px 8px;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.appointment-confirmation-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.appointment-confirmation-channel[data-status="accepted"] .appointment-confirmation-status,
+.appointment-confirmation-channel[data-status="sent"] .appointment-confirmation-status {
+  background: #e8f7ed;
+  color: var(--good);
+}
+
+.appointment-confirmation-channel[data-status="queued"] .appointment-confirmation-status,
+.appointment-confirmation-channel[data-status="sending"] .appointment-confirmation-status,
+.appointment-confirmation-channel[data-status="processing"] .appointment-confirmation-status {
+  background: #eaf5fc;
+  color: var(--info);
+}
+
+.appointment-confirmation-channel[data-status="failed"] .appointment-confirmation-status {
+  background: #fdecea;
+  color: var(--bad);
+}
+
+.appointment-confirmation-channel[data-status="suppressed"] .appointment-confirmation-status {
+  background: #fff3d8;
+  color: var(--warn);
+}
+
+.appointment-confirmation-destination,
+.appointment-confirmation-channel-error {
+  margin: 0;
+}
+
+.appointment-confirmation-destination {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 850;
+}
+
+.appointment-confirmation-time {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.appointment-confirmation-channel-error {
+  border-radius: 8px;
+  background: #fdecea;
+  color: var(--bad);
+  padding: 8px 9px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.appointment-confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.appointment-confirmation-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  border: 1px solid #c9d4de;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--brand-dark);
+  padding: 11px 16px;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease, background-color 150ms ease;
+}
+
+.appointment-confirmation-action-primary {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+}
+
+.appointment-confirmation-action:hover,
+.appointment-confirmation-action:focus-visible {
+  border-color: var(--brand);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.1);
+  transform: translateY(-1px);
+}
+
+.appointment-confirmation-action:active {
+  transform: translateY(0);
+}
+
+.appointment-confirmation-action:disabled {
+  cursor: wait;
+  opacity: 0.58;
+  transform: none;
+}
+
+.appointment-confirmation-readonly {
+  margin: 0;
+  border-radius: 8px;
+  background: #f3f5f7;
+  color: var(--muted);
+  padding: 9px 11px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.appointment-confirmation-history {
+  border-top: 1px solid var(--line);
+  padding-top: 4px;
+}
+
+.appointment-confirmation-history summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  border-radius: 8px;
+  color: var(--brand-dark);
+  padding: 8px 10px;
+  font-weight: 900;
+  cursor: pointer;
+  list-style: none;
+}
+
+.appointment-confirmation-history summary::-webkit-details-marker {
+  display: none;
+}
+
+.appointment-confirmation-history summary:hover,
+.appointment-confirmation-history summary:focus-visible {
+  background: #f4f7f9;
+}
+
+.appointment-confirmation-history summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.appointment-confirmation-history summary small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.appointment-confirmation-history-list {
+  display: grid;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.appointment-confirmation-history-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 11px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.appointment-confirmation-history-row:first-child {
+  border-top: 0;
+}
+
+.appointment-confirmation-history-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #edf5f7;
+  color: var(--brand);
+}
+
+.appointment-confirmation-history-row > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.appointment-confirmation-history-row span,
+.appointment-confirmation-history-row small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.appointment-confirmation-history-row .appointment-confirmation-history-error {
+  color: var(--bad);
+  font-weight: 800;
+}
+
+.appointment-confirmation-history-meta {
+  justify-items: end;
+  text-align: right;
+}
+
+.appointment-confirmation-history-meta strong {
+  font-size: 0.8rem;
+}
+
+@media (max-width: 860px) {
+  .appointment-confirmation-header {
+    display: grid;
+  }
+
+  .appointment-confirmation-overall {
+    width: 100%;
+  }
+
+  .appointment-confirmation-channel-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .appointment-confirmation-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .appointment-confirmation-action {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .appointment-confirmation-channel-head {
+    align-items: flex-start;
+  }
+
+  .appointment-confirmation-history-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .appointment-confirmation-history-meta {
+    grid-column: 2;
+    justify-items: start;
+    text-align: left;
+  }
+}
+
+@media (pointer: coarse) {
+  .appointment-confirmation-action,
+  .appointment-confirmation-history summary {
+    min-height: 52px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appointment-confirmation-action {
+    transition: none;
+  }
+
+  .appointment-confirmation-spinner {
+    animation-duration: 1600ms;
   }
 }

@@ -6,6 +6,10 @@ export type Tier = "good" | "better" | "best";
 export type InvoiceStatus = "draft" | "sent" | "paid" | "cancelled";
 export type CallDirection = "inbound" | "outbound";
 export type CallEventType = "pre_call" | "post_call" | "call_modified" | "unknown";
+export type SmsConsentStatus = "unknown" | "opted_in" | "opted_out";
+export type AppointmentNotificationChannel = "email" | "sms";
+export type AppointmentNotificationEvent = "confirmation" | "reschedule" | "cancellation" | "manual_resend";
+export type AppointmentNotificationStatus = "queued" | "processing" | "accepted" | "failed" | "suppressed" | "cancelled";
 
 export type AllowedUser = {
   id: string;
@@ -22,6 +26,10 @@ export type Customer = {
   phone: string;
   phoneDigits: string;
   email?: string;
+  emailNotificationsEnabled: boolean;
+  smsConsentStatus: SmsConsentStatus;
+  smsConsentAt?: string | null;
+  smsConsentSource?: string | null;
   addressLine1: string;
   addressLine2?: string;
   city: string;
@@ -131,6 +139,57 @@ export type CallLogEvent = {
   processedOk: boolean;
   error?: string;
   receivedAt: string;
+};
+
+export type AppointmentNotification = {
+  id: string;
+  jobId?: string;
+  customerId?: string;
+  jobRevision: number;
+  eventType: AppointmentNotificationEvent;
+  channel: AppointmentNotificationChannel;
+  destination: string;
+  customerName: string;
+  scheduledStartAt: string;
+  scheduledEndAt: string;
+  serviceAddress: string;
+  messageSubject?: string;
+  messageBody?: string;
+  status: AppointmentNotificationStatus;
+  provider?: string;
+  providerMessageId?: string;
+  providerStatus?: string;
+  providerStatusAt?: string;
+  claimToken?: string;
+  idempotencyKey: string;
+  attemptCount: number;
+  lastErrorCode?: string;
+  errorMessage?: string;
+  queuedAt: string;
+  processingAt?: string;
+  acceptedAt?: string;
+  failedAt?: string;
+  createdBy?: string;
+};
+
+export type AppointmentNotificationSummary = Pick<
+  AppointmentNotification,
+  | "id"
+  | "jobRevision"
+  | "eventType"
+  | "channel"
+  | "status"
+  | "providerStatus"
+  | "providerStatusAt"
+  | "attemptCount"
+  | "lastErrorCode"
+  | "errorMessage"
+  | "queuedAt"
+  | "processingAt"
+  | "acceptedAt"
+  | "failedAt"
+> & {
+  maskedDestination: string;
 };
 
 export type AppState = {

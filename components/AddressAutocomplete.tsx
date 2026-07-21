@@ -115,13 +115,15 @@ export function AddressAutocomplete({
   onChange,
   onSelect,
   placeholder,
-  required
+  required,
+  disabled = false
 }: {
   value: string;
   onChange: (value: string) => void;
   onSelect?: (selection: AddressSelection) => void;
   placeholder?: string;
   required?: boolean;
+  disabled?: boolean;
 }) {
   const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
@@ -135,6 +137,12 @@ export function AddressAutocomplete({
   );
 
   useEffect(() => {
+    if (disabled) {
+      setSuggestions([]);
+      setOpen(false);
+      setBusy(false);
+      return;
+    }
     const query = value.trim();
     if (query.length < 3 || provider === "manual") {
       setSuggestions([]);
@@ -177,7 +185,7 @@ export function AddressAutocomplete({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [googleKey, mapboxToken, provider, sessionToken, value]);
+  }, [disabled, googleKey, mapboxToken, provider, sessionToken, value]);
 
   async function selectSuggestion(suggestion: Suggestion) {
     setOpen(false);
@@ -202,6 +210,7 @@ export function AddressAutocomplete({
     <div className="address-autocomplete">
       <input
         required={required}
+        disabled={disabled}
         value={value}
         placeholder={placeholder ?? (provider === "manual" ? "Street address" : "Start typing an address")}
         onChange={(event) => onChange(event.target.value)}

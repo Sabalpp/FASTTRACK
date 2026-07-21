@@ -2,10 +2,9 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState, type FormEvent } from "react";
-import { flushSync } from "react-dom";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
-import { formatPhoneInput } from "@/lib/phone";
+import { formatPhoneInput, normalizePhone } from "@/lib/phone";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { RoleGate } from "@/components/RoleGate";
 import { Button, Card, Field, PageHeader, TwoColumn } from "@/components/ui";
@@ -27,6 +26,10 @@ function NewCustomerClient() {
   const { currentUser } = useAuth();
   const data = useAppData();
   const continueToJob = params.get("next") === "job";
+  const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(true);
+  const [smsConsentOptIn, setSmsConsentOptIn] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | undefined>();
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -43,20 +46,32 @@ function NewCustomerClient() {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    let customer: Customer | undefined;
-    flushSync(() => {
-      customer = data.createCustomer({
+    if (normalizePhone(form.phone).length !== 10) {
+      setSubmitError("Enter a valid 10-digit US phone number before saving the customer.");
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(undefined);
+    try {
+      const customer: Customer = await data.createCustomer({
         ...form,
         email: form.email || undefined,
         addressLine2: form.addressLine2 || undefined,
         state: form.state.trim().toUpperCase(),
+        emailNotificationsEnabled,
+        smsConsentStatus: smsConsentOptIn ? "opted_in" : "unknown",
+        smsConsentAt: smsConsentOptIn ? new Date().toISOString() : undefined,
+        smsConsentSource: smsConsentOptIn ? "staff_recorded" : undefined,
         createdBy: currentUser.id
       });
-    });
-    if (!customer) return;
-    router.push(continueToJob ? `/jobs/new?customerId=${customer.id}` : `/customers/${customer.id}`);
+      router.push(continueToJob ? `/jobs/new?customerId=${customer.id}` : `/customers/${customer.id}`);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "The customer could not be created.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -81,6 +96,33 @@ function NewCustomerClient() {
             </Field>
           </TwoColumn>
           <Field label="Email"><input type="email" value={form.email} onChange={(event) => update("email", event.target.value)} /></Field>
+          <div className="notification-preferences-panel">
+            <div>
+              <p className="eyebrow">Service updates</p>
+              <h2>Confirmation preferences</h2>
+              <p className="muted">Appointment confirmations include the exact arrival window and service policy.</p>
+            </div>
+            <label className="preference-check">
+              <input
+                type="checkbox"
+                checked={emailNotificationsEnabled}
+                onChange={(event) => setEmailNotificationsEnabled(event.target.checked)}
+              />
+              <span><strong>Email appointment updates</strong><small>Uses the customer email above when available.</small></span>
+            </label>
+            <label className="preference-check">
+              <input
+                type="checkbox"
+                checked={smsConsentOptIn}
+                onChange={(event) => setSmsConsentOptIn(event.target.checked)}
+                disabled={normalizePhone(form.phone).length !== 10}
+              />
+              <span>
+                <strong>Customer expressly consented to appointment texts</strong>
+                <small>Check only after the customer agrees to automated Fast Track confirmations and schedule changes at this number. Message frequency varies; message and data rates may apply. Reply STOP to opt out.</small>
+              </span>
+            </label>
+          </div>
           <Field label="Street">
             <AddressAutocomplete
               required
@@ -106,7 +148,8 @@ function NewCustomerClient() {
             <Field label="ZIP"><input required value={form.zip} onChange={(event) => update("zip", event.target.value)} /></Field>
           </TwoColumn>
           <Field label="Notes"><textarea value={form.notes} onChange={(event) => update("notes", event.target.value)} placeholder="Gate code, preferred times, equipment notes..." /></Field>
-          <Button type="submit">{continueToJob ? "Create and schedule job" : "Create customer"}</Button>
+          {submitError ? <p className="field-error" role="alert">{submitError}</p> : null}
+          <Button type="submit" disabled={submitting}>{submitting ? "Creating..." : continueToJob ? "Create and schedule job" : "Create customer"}</Button>
         </form>
       </Card>
     </main>

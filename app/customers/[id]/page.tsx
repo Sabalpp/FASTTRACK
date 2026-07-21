@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
 import { canEditCustomers, canScheduleJobs, canViewCustomer, canViewJob } from "@/lib/access";
 import { formatDateTime } from "@/lib/date";
-import { formatPhone } from "@/lib/phone";
+import { formatPhone, formatPhoneInput, normalizePhone } from "@/lib/phone";
 import { formatServiceWindow } from "@/lib/service-window";
 import { useCurrentTime } from "@/lib/use-current-time";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
@@ -22,10 +22,16 @@ export default function CustomerDetailPage() {
   const now = useCurrentTime();
   const customer = data.customers.find((candidate) => candidate.id === params.id);
   const [saved, setSaved] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | undefined>();
   const [draft, setDraft] = useState(() => ({
     name: customer?.name ?? "",
     phone: customer?.phone ?? "",
     email: customer?.email ?? "",
+    emailNotificationsEnabled: customer?.emailNotificationsEnabled ?? true,
+    smsConsentStatus: customer?.smsConsentStatus ?? "unknown",
+    smsConsentAt: customer?.smsConsentAt ?? "",
+    smsConsentSource: customer?.smsConsentSource ?? "",
     addressLine1: customer?.addressLine1 ?? "",
     addressLine2: customer?.addressLine2 ?? "",
     city: customer?.city ?? "",
@@ -40,6 +46,10 @@ export default function CustomerDetailPage() {
       name: customer.name,
       phone: customer.phone,
       email: customer.email ?? "",
+      emailNotificationsEnabled: customer.emailNotificationsEnabled,
+      smsConsentStatus: customer.smsConsentStatus,
+      smsConsentAt: customer.smsConsentAt ?? "",
+      smsConsentSource: customer.smsConsentSource ?? "",
       addressLine1: customer.addressLine1,
       addressLine2: customer.addressLine2 ?? "",
       city: customer.city,
@@ -65,19 +75,34 @@ export default function CustomerDetailPage() {
   const callHistory = data.callLogs.filter((call) => call.customerId === customer.id);
   const editable = canEditCustomers(currentUser.role);
   const customerId = customer.id;
+  const phoneChanged = normalizePhone(draft.phone) !== customer.phoneDigits;
 
-  function updateDraft(key: keyof typeof draft, value: string) {
+  function updateDraft<Key extends keyof typeof draft>(key: Key, value: (typeof draft)[Key]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  function saveCustomer() {
-    data.updateCustomer(customerId, {
-      ...draft,
-      email: draft.email || undefined,
-      addressLine2: draft.addressLine2 || undefined
-    });
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 1400);
+  async function saveCustomer() {
+    if (normalizePhone(draft.phone).length !== 10) {
+      setSaveError("Enter a valid 10-digit US phone number before saving the customer.");
+      return;
+    }
+    setSaveBusy(true);
+    setSaveError(undefined);
+    try {
+      await data.updateCustomer(customerId, {
+        ...draft,
+        email: draft.email,
+        addressLine2: draft.addressLine2,
+        smsConsentAt: draft.smsConsentAt || null,
+        smsConsentSource: draft.smsConsentSource || null
+      });
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 1400);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "The customer could not be saved.");
+    } finally {
+      setSaveBusy(false);
+    }
   }
 
   return (
@@ -95,16 +120,65 @@ export default function CustomerDetailPage() {
               <p className="eyebrow">Contact</p>
               <h2>{customer.name}</h2>
             </div>
-            {editable ? <Button onClick={saveCustomer}>{saved ? "Saved" : "Save"}</Button> : null}
+            {editable ? <Button onClick={saveCustomer} disabled={saveBusy}>{saveBusy ? "Saving..." : saved ? "Saved" : "Save"}</Button> : null}
           </div>
           <ContactActions customer={customer} subject={`Service for ${customer.name}`} />
           {editable ? (
             <div className="stack editable-panel">
               <TwoColumn>
                 <Field label="Name"><input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} /></Field>
-                <Field label="Phone"><input value={draft.phone} onChange={(event) => updateDraft("phone", event.target.value)} /></Field>
+                <Field label="Phone"><input inputMode="tel" value={draft.phone} onChange={(event) => {
+                  const phone = formatPhoneInput(event.target.value);
+                  setDraft((current) => ({
+                    ...current,
+                    phone,
+                    ...(normalizePhone(phone) !== customer.phoneDigits
+                      ? { smsConsentStatus: "unknown", smsConsentAt: "", smsConsentSource: "" }
+                      : {})
+                  }));
+                }} /></Field>
               </TwoColumn>
               <Field label="Email"><input value={draft.email} onChange={(event) => updateDraft("email", event.target.value)} /></Field>
+              <div className="notification-preferences-panel">
+                <div>
+                  <p className="eyebrow">Service updates</p>
+                  <h3>Customer confirmations</h3>
+                </div>
+                <label className="preference-check">
+                  <input
+                    type="checkbox"
+                    checked={draft.emailNotificationsEnabled}
+                    onChange={(event) => updateDraft("emailNotificationsEnabled", event.target.checked)}
+                  />
+                  <span><strong>Email appointment updates</strong><small>{draft.email ? `Send to ${draft.email}` : "Add an email address to use this channel."}</small></span>
+                </label>
+                <label className="preference-check">
+                  <input
+                    type="checkbox"
+                    checked={draft.smsConsentStatus === "opted_in"}
+                    disabled={phoneChanged}
+                    onChange={(event) => {
+                      const now = new Date().toISOString();
+                      setDraft((current) => ({
+                        ...current,
+                        smsConsentStatus: event.target.checked ? "opted_in" : "opted_out",
+                        smsConsentAt: now,
+                        smsConsentSource: "staff_recorded"
+                      }));
+                    }}
+                  />
+                  <span>
+                    <strong>Customer expressly consented to appointment texts</strong>
+                    <small>{phoneChanged
+                      ? "Save the new phone number first. SMS consent resets whenever the number changes."
+                      : "Check only after the customer agrees to automated Fast Track confirmations and schedule changes at this number. Message frequency varies; message and data rates may apply. Reply STOP to opt out."}</small>
+                  </span>
+                </label>
+                <p className="muted">
+                  SMS status: {draft.smsConsentStatus.replace("_", " ")}
+                  {draft.smsConsentAt ? ` · recorded ${formatDateTime(draft.smsConsentAt)}` : " · no consent recorded"}
+                </p>
+              </div>
               <TwoColumn>
                 <Field label="Address">
                   <AddressAutocomplete
@@ -129,6 +203,7 @@ export default function CustomerDetailPage() {
               </TwoColumn>
               <Field label="Zip"><input value={draft.zip} onChange={(event) => updateDraft("zip", event.target.value)} /></Field>
               <Field label="Notes"><textarea value={draft.notes} onChange={(event) => updateDraft("notes", event.target.value)} /></Field>
+              {saveError ? <p className="field-error" role="alert">{saveError}</p> : null}
             </div>
           ) : (
             <p className="muted">{customer.notes || "No notes yet."}</p>

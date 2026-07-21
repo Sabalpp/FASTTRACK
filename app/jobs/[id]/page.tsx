@@ -14,6 +14,7 @@ import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { LineItemForm } from "@/components/LineItemForm";
 import { PhotoUploader } from "@/components/PhotoUploader";
 import { ServiceWindowBadge } from "@/components/ServiceWindowBadge";
+import { AppointmentConfirmationCard } from "@/components/AppointmentConfirmationCard";
 import { TierColumns } from "@/components/TierColumns";
 import { Button, ButtonLink, Card, EmptyState, Field, PageHeader, StatusPill, TwoColumn } from "@/components/ui";
 import { WorkflowRail } from "@/components/WorkflowRail";
@@ -24,7 +25,8 @@ import {
   isValidServiceWindow
 } from "@/lib/service-window";
 import { useCurrentTime } from "@/lib/use-current-time";
-import type { Job, JobStatus } from "@/lib/types";
+import { dispatchJobConfirmations, fetchJobConfirmations } from "@/lib/appointment-confirmations-client";
+import type { AppointmentNotificationSummary, Job, JobStatus } from "@/lib/types";
 
 export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
@@ -45,7 +47,14 @@ export default function JobDetailPage() {
   const [conflictConfirmed, setConflictConfirmed] = useState(false);
   const [arrivalBusy, setArrivalBusy] = useState(false);
   const [arrivalError, setArrivalError] = useState<string | undefined>();
+  const [confirmations, setConfirmations] = useState<AppointmentNotificationSummary[]>([]);
+  const [confirmationsLoading, setConfirmationsLoading] = useState(true);
+  const [confirmationBusy, setConfirmationBusy] = useState(false);
+  const [confirmationError, setConfirmationError] = useState<string | undefined>();
+  const canManageConfirmations = currentUser.role === "owner" || currentUser.role === "call_center";
+  const canEditCustomerFacingFields = canManageConfirmations;
   const now = useCurrentTime();
+  const confirmationPollingNeeded = shouldPollConfirmationStatus(confirmations, now);
   const scheduledAtIso = localDateTimeIso(scheduledAt);
   const arrivalWindowEndAtIso = localDateTimeIso(arrivalWindowEndAt);
   const validWindow = isValidServiceWindow(scheduledAtIso, arrivalWindowEndAtIso);
@@ -78,6 +87,69 @@ export default function JobDetailPage() {
     setSaveError(undefined);
   }, [job?.id]);
 
+  useEffect(() => {
+    if (!job?.id) return;
+    if (!canManageConfirmations) {
+      setConfirmations([]);
+      setConfirmationsLoading(false);
+      setConfirmationError(undefined);
+      return;
+    }
+    let active = true;
+    setConfirmationsLoading(true);
+    setConfirmationError(undefined);
+
+    const load = dispatchJobConfirmations(job.id, "pending");
+
+    void load
+      .then((result) => {
+        if (active) {
+          setConfirmations(result.notifications);
+          setConfirmationError(undefined);
+        }
+      })
+      .catch((error) => {
+        if (active) setConfirmationError(error instanceof Error ? error.message : "Confirmation history could not be loaded.");
+      })
+      .finally(() => {
+        if (active) setConfirmationsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [canManageConfirmations, job?.id]);
+
+  useEffect(() => {
+    if (!job?.id || !canManageConfirmations || !confirmationPollingNeeded) return;
+    let active = true;
+
+    const poll = () => {
+      if (document.visibilityState !== "visible") return;
+      void fetchJobConfirmations(job.id)
+        .then((result) => {
+          if (!active) return;
+          setConfirmations(result.notifications);
+          setConfirmationError(undefined);
+        })
+        .catch(() => {
+          // Preserve the last known state. Polling never sends or retries a
+          // message, and the next visible pass can recover on its own.
+        });
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") poll();
+    };
+    const pollId = window.setInterval(poll, 20_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    return () => {
+      active = false;
+      window.clearInterval(pollId);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [canManageConfirmations, confirmationPollingNeeded, job?.id]);
+
   if (!job || !canViewJob(currentUser, job)) {
     return (
       <main className="page-shell">
@@ -88,7 +160,10 @@ export default function JobDetailPage() {
 
   const jobRecord = job;
   const canEditSchedule = canScheduleJobs(currentUser.role);
-  const canEditDispatch = canEditSchedule && !job.arrivedAt;
+  const canEditDispatch = canEditSchedule
+    && !job.arrivedAt
+    && status !== "complete"
+    && status !== "cancelled";
   const customer = data.customers.find((candidate) => candidate.id === job.customerId);
   const tech = data.allowedUsers.find((candidate) => candidate.id === job.assignedTechId);
   const activeTechs = data.allowedUsers.filter((user) => user.active && user.role === "tech");
@@ -110,7 +185,9 @@ export default function JobDetailPage() {
     const nextDescription = jobDescription.trim() || jobRecord.description;
     const nextAddress = serviceAddress.trim() || jobRecord.serviceAddress;
     if (nextDescription !== jobRecord.description) patch.description = nextDescription;
-    if (nextAddress !== jobRecord.serviceAddress) patch.serviceAddress = nextAddress;
+    if (canEditCustomerFacingFields && nextAddress !== jobRecord.serviceAddress) {
+      patch.serviceAddress = nextAddress;
+    }
     if (currentUser.role !== "call_center" && notes !== jobRecord.notes) patch.notes = notes;
     if (currentUser.role !== "call_center" && status !== jobRecord.status) patch.status = status;
     if (canEditDispatch) {
@@ -123,6 +200,25 @@ export default function JobDetailPage() {
     setSaveError(undefined);
     try {
       await data.updateJob(jobId, patch);
+      const customerFacingChange = Boolean(
+        patch.scheduledAt !== undefined
+        || patch.arrivalWindowEndAt !== undefined
+        || patch.serviceAddress !== undefined
+        || patch.status === "cancelled"
+        || patch.status === "scheduled"
+      );
+      if (customerFacingChange && (currentUser.role === "owner" || currentUser.role === "call_center")) {
+        setConfirmationBusy(true);
+        setConfirmationError(undefined);
+        try {
+          const result = await dispatchJobConfirmations(jobId, "pending");
+          setConfirmations(result.notifications);
+        } catch (error) {
+          setConfirmationError(error instanceof Error ? error.message : "The job was saved, but the customer update needs attention.");
+        } finally {
+          setConfirmationBusy(false);
+        }
+      }
       setSaved(true);
       window.setTimeout(() => setSaved(false), 1400);
     } catch (error) {
@@ -147,6 +243,19 @@ export default function JobDetailPage() {
       setArrivalError(error instanceof Error ? error.message : "The arrival could not be recorded.");
     } finally {
       setArrivalBusy(false);
+    }
+  }
+
+  async function processConfirmations(mode: "retry" | "resend") {
+    setConfirmationBusy(true);
+    setConfirmationError(undefined);
+    try {
+      const result = await dispatchJobConfirmations(jobId, mode);
+      setConfirmations(result.notifications);
+    } catch (error) {
+      setConfirmationError(error instanceof Error ? error.message : "The confirmation could not be processed.");
+    } finally {
+      setConfirmationBusy(false);
     }
   }
 
@@ -182,6 +291,19 @@ export default function JobDetailPage() {
         </div>
       </section>
       {arrivalError ? <p className="field-error" role="alert">{arrivalError}</p> : null}
+
+      {canManageConfirmations ? (
+        <AppointmentConfirmationCard
+          notifications={confirmations}
+          loading={confirmationsLoading}
+          busy={confirmationBusy || saveBusy}
+          error={confirmationError}
+          canManage
+          activeJob={job.status === "scheduled" || job.status === "cancelled"}
+          onRetry={() => void processConfirmations("retry")}
+          onResend={() => void processConfirmations("resend")}
+        />
+      ) : null}
 
       <Card>
         <div className="section-head">
@@ -224,6 +346,7 @@ export default function JobDetailPage() {
               value={serviceAddress}
               onChange={setServiceAddress}
               onSelect={(address) => setServiceAddress(address.formatted)}
+              disabled={!canEditCustomerFacingFields}
             />
           </Field>
           <Field label="Window starts">
@@ -278,6 +401,7 @@ export default function JobDetailPage() {
                   onClick={() => setStatus(option)}
                   disabled={
                     currentUser.role === "call_center"
+                    || (currentUser.role === "tech" && (option === "scheduled" || option === "cancelled"))
                     || ((option === "in_progress" || option === "complete") && !job.arrivedAt)
                     || (option === "scheduled" && Boolean(job.arrivedAt))
                   }
@@ -404,4 +528,25 @@ function localDateTimeIso(value: string): string | undefined {
   if (!value) return undefined;
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
+}
+
+function shouldPollConfirmationStatus(
+  notifications: AppointmentNotificationSummary[],
+  now: number
+): boolean {
+  const latestSms = [...notifications]
+    .filter((notification) => notification.channel === "sms")
+    .sort((a, b) => Date.parse(b.queuedAt) - Date.parse(a.queuedAt))[0];
+  if (!latestSms) return false;
+
+  if (latestSms.status === "queued" || latestSms.status === "processing") return true;
+  if (latestSms.status !== "accepted") return false;
+
+  const providerStatus = String(latestSms.providerStatus ?? "").toLowerCase();
+  if (["delivered", "read", "failed", "undelivered", "canceled"].includes(providerStatus)) {
+    return false;
+  }
+
+  const acceptedAt = Date.parse(latestSms.acceptedAt ?? latestSms.queuedAt);
+  return Number.isFinite(acceptedAt) && now - acceptedAt < 15 * 60 * 1000;
 }
