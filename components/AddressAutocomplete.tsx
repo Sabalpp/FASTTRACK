@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createId } from "@/lib/id";
 
 type AddressSelection = {
@@ -72,6 +72,8 @@ type GooglePlaceResult = {
 };
 
 type GooglePlacesStatus = "OK" | "ZERO_RESULTS" | string;
+type AddressProvider = Suggestion["provider"] | "manual";
+type SearchStatus = "idle" | "loading" | "results" | "empty" | "unavailable";
 
 type GoogleMapsApi = {
   maps: {
@@ -126,68 +128,122 @@ export function AddressAutocomplete({
   required?: boolean;
   disabled?: boolean;
 }) {
-  const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
-  const provider = googleKey ? "google" : mapboxToken ? "mapbox" : "manual";
+  const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
+  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN?.trim();
+  const configuredProvider: AddressProvider = googleKey ? "google" : mapboxToken ? "mapbox" : "manual";
+  const [provider, setProvider] = useState<AddressProvider>(configuredProvider);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<SearchStatus>(configuredProvider === "manual" ? "unavailable" : "idle");
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const [retryNonce, setRetryNonce] = useState(0);
   const listboxId = useId();
+  const statusId = useId();
   const sessionToken = useMemo(() => createId(), []);
+  const skipSearchValuesRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    setProvider(configuredProvider);
+    setSearchStatus(configuredProvider === "manual" ? "unavailable" : "idle");
+  }, [configuredProvider]);
 
   useEffect(() => {
     if (disabled) {
       setSuggestions([]);
       setOpen(false);
       setBusy(false);
+      setActiveIndex(-1);
+      setSearchStatus("idle");
       return;
     }
+
     const query = value.trim();
+    if (skipSearchValuesRef.current.has(query)) {
+      skipSearchValuesRef.current.clear();
+      setSuggestions([]);
+      setOpen(false);
+      setBusy(false);
+      setActiveIndex(-1);
+      setSearchStatus("idle");
+      return;
+    }
+
     if (query.length < 3 || provider === "manual") {
       setSuggestions([]);
+      setOpen(false);
       setBusy(false);
+      setActiveIndex(-1);
+      setSearchStatus(provider === "manual" ? "unavailable" : "idle");
       return;
     }
 
     const controller = new AbortController();
+    let active = true;
     const timeout = window.setTimeout(() => {
       setBusy(true);
+      setSearchStatus("loading");
       if (provider === "google" && googleKey) {
         void suggestGoogleAddresses(googleKey, query)
           .then((nextSuggestions) => {
+            if (!active) return;
             setSuggestions(nextSuggestions);
             setOpen(nextSuggestions.length > 0);
+            setActiveIndex(-1);
+            setSearchStatus(nextSuggestions.length > 0 ? "results" : "empty");
           })
           .catch((error) => {
-            if ((error as Error).name !== "AbortError") console.warn("Google address autocomplete failed", error);
+            if (!active || (error as Error).name === "AbortError") return;
+            console.warn("Google address suggestions are unavailable.");
             setSuggestions([]);
+            setOpen(false);
+            setActiveIndex(-1);
+            if (mapboxToken) {
+              setProvider("mapbox");
+              setSearchStatus("loading");
+            } else {
+              setSearchStatus("unavailable");
+            }
           })
-          .finally(() => setBusy(false));
+          .finally(() => {
+            if (active) setBusy(false);
+          });
         return;
       }
 
       if (provider === "mapbox" && mapboxToken) {
         void suggestMapboxAddresses(mapboxToken, sessionToken, query, controller.signal)
           .then((nextSuggestions) => {
+            if (!active) return;
             setSuggestions(nextSuggestions);
             setOpen(nextSuggestions.length > 0);
+            setActiveIndex(-1);
+            setSearchStatus(nextSuggestions.length > 0 ? "results" : "empty");
           })
           .catch((error) => {
-            if ((error as Error).name !== "AbortError") console.warn("Mapbox address autocomplete failed", error);
+            if (!active || (error as Error).name === "AbortError") return;
+            console.warn("Address suggestions are unavailable.");
             setSuggestions([]);
+            setOpen(false);
+            setActiveIndex(-1);
+            setSearchStatus("unavailable");
           })
-          .finally(() => setBusy(false));
+          .finally(() => {
+            if (active) setBusy(false);
+          });
       }
     }, 220);
 
     return () => {
+      active = false;
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [disabled, googleKey, mapboxToken, provider, sessionToken, value]);
+  }, [disabled, googleKey, mapboxToken, provider, retryNonce, sessionToken, value]);
 
   async function selectSuggestion(suggestion: Suggestion) {
     setOpen(false);
+    setActiveIndex(-1);
 
     try {
       const selection = suggestion.provider === "google" && googleKey
@@ -195,15 +251,53 @@ export function AddressAutocomplete({
         : suggestion.provider === "mapbox" && mapboxToken
           ? await retrieveMapboxAddress(mapboxToken, sessionToken, suggestion)
           : fallbackAddress(suggestion);
+      skipSearchValuesRef.current = new Set([selection.formatted.trim(), selection.addressLine1.trim()]);
       onChange(selection.formatted);
       onSelect?.(selection);
+      setSuggestions([]);
+      setSearchStatus("idle");
     } catch (error) {
-      console.warn("Address retrieve failed", error);
+      console.warn("The selected address could not be fully retrieved; using its displayed address.");
       const fallback = fallbackAddress(suggestion);
+      skipSearchValuesRef.current = new Set([fallback.formatted.trim(), fallback.addressLine1.trim()]);
       onChange(fallback.formatted);
       onSelect?.(fallback);
+      setSuggestions([]);
+      setSearchStatus("idle");
     }
   }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      setOpen(false);
+      setActiveIndex(-1);
+      return;
+    }
+
+    if (suggestions.length === 0 || (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Enter")) return;
+
+    if (event.key === "Enter") {
+      if (!open || activeIndex < 0) return;
+      event.preventDefault();
+      void selectSuggestion(suggestions[activeIndex]);
+      return;
+    }
+
+    event.preventDefault();
+    setOpen(true);
+    setActiveIndex((current) => {
+      if (event.key === "ArrowDown") return current >= suggestions.length - 1 ? 0 : current + 1;
+      return current <= 0 ? suggestions.length - 1 : current - 1;
+    });
+  }
+
+  const statusMessage = searchStatus === "loading"
+    ? "Finding matching addresses…"
+    : searchStatus === "empty"
+      ? "No matching address found. Keep typing or enter it manually."
+      : searchStatus === "unavailable"
+        ? "Address suggestions are unavailable. You can still enter the address manually."
+        : undefined;
 
   return (
     <div className="address-autocomplete">
@@ -212,27 +306,37 @@ export function AddressAutocomplete({
         disabled={disabled}
         value={value}
         placeholder={placeholder ?? (provider === "manual" ? "Street address" : "Start typing an address")}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => {
+          setOpen(false);
+          setActiveIndex(-1);
+          onChange(event.target.value);
+        }}
         onFocus={() => {
           if (suggestions.length > 0) setOpen(true);
         }}
         onBlur={() => window.setTimeout(() => setOpen(false), 140)}
+        onKeyDown={handleKeyDown}
         autoComplete="street-address"
         role="combobox"
         aria-autocomplete="list"
-        aria-expanded={provider !== "manual" && open && suggestions.length > 0}
-        aria-controls={provider !== "manual" && suggestions.length > 0 ? listboxId : undefined}
+        aria-expanded={open && suggestions.length > 0}
+        aria-controls={suggestions.length > 0 ? listboxId : undefined}
+        aria-activedescendant={open && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined}
+        aria-describedby={statusMessage ? statusId : undefined}
         aria-busy={busy}
       />
       {provider !== "manual" && open && suggestions.length > 0 ? (
         <div className="address-suggestions" id={listboxId} role="listbox" aria-label="Suggested addresses">
-          {suggestions.map((suggestion) => (
+          {suggestions.map((suggestion, index) => (
             <button
               key={suggestion.id}
+              id={`${listboxId}-option-${index}`}
               type="button"
               role="option"
-              aria-selected="false"
+              aria-selected={activeIndex === index}
+              className={activeIndex === index ? "active" : undefined}
               onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setActiveIndex(index)}
               onClick={() => void selectSuggestion(suggestion)}
             >
               <strong>{suggestion.name}</strong>
@@ -242,6 +346,23 @@ export function AddressAutocomplete({
         </div>
       ) : null}
       {busy ? <span className="address-busy" aria-hidden="true" /> : null}
+      {statusMessage ? (
+        <div className={`address-status ${searchStatus === "unavailable" ? "is-warning" : ""}`} id={statusId} role="status" aria-live="polite">
+          <span>{statusMessage}</span>
+          {searchStatus === "unavailable" && configuredProvider !== "manual" ? (
+            <button
+              type="button"
+              onClick={() => {
+                setProvider(configuredProvider);
+                setSearchStatus("idle");
+                setRetryNonce((current) => current + 1);
+              }}
+            >
+              Try again
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -249,7 +370,7 @@ export function AddressAutocomplete({
 async function suggestGoogleAddresses(apiKey: string, query: string): Promise<Suggestion[]> {
   const google = await loadGoogleMaps(apiKey);
   const service = new google.maps.places.AutocompleteService();
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     service.getPlacePredictions(
       {
         input: query,
@@ -258,8 +379,12 @@ async function suggestGoogleAddresses(apiKey: string, query: string): Promise<Su
         types: ["address"]
       },
       (predictions, status) => {
-        if (status !== "OK" || !predictions) {
+        if (status === "ZERO_RESULTS") {
           resolve([]);
+          return;
+        }
+        if (status !== "OK" || !predictions) {
+          reject(new Error("Address suggestions are unavailable."));
           return;
         }
 
@@ -297,19 +422,43 @@ function loadGoogleMaps(apiKey: string): Promise<GoogleMapsApi> {
   if (window.google?.maps?.places) return Promise.resolve(window.google);
   if (window.__fastTrackGoogleMapsPromise) return window.__fastTrackGoogleMapsPromise;
 
-  window.__fastTrackGoogleMapsPromise = new Promise((resolve, reject) => {
+  const loader = new Promise<GoogleMapsApi>((resolve, reject) => {
     const callbackName = `__fastTrackMapsReady_${Date.now()}`;
     const callbacks = window as unknown as Record<string, () => void>;
     const script = document.createElement("script");
+    let settled = false;
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      delete callbacks[callbackName];
+    };
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      script.remove();
+      reject(new Error("Google Places could not be loaded."));
+    };
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&loading=async&libraries=places&callback=${callbackName}`;
     script.async = true;
-    script.onerror = () => reject(new Error("Google Maps script failed to load."));
+    script.dataset.fastTrackGoogleMaps = "true";
+    script.onerror = fail;
     callbacks[callbackName] = () => {
-      delete callbacks[callbackName];
-      if (!window.google?.maps?.places) reject(new Error("Google Places library did not load."));
-      else resolve(window.google);
+      if (settled) return;
+      if (!window.google?.maps?.places) {
+        fail();
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(window.google);
     };
+    const timeout = window.setTimeout(fail, 10_000);
     document.head.appendChild(script);
+  });
+
+  window.__fastTrackGoogleMapsPromise = loader.catch((error) => {
+    window.__fastTrackGoogleMapsPromise = undefined;
+    throw error;
   });
 
   return window.__fastTrackGoogleMapsPromise;
@@ -369,7 +518,7 @@ function parseGoogleAddress(place: GooglePlaceResult, suggestion: Suggestion): A
 function parseMapboxAddress(feature: MapboxFeature | undefined, suggestion: Suggestion): AddressSelection {
   const properties = feature?.properties;
   const context = properties?.context;
-  const addressLine1 = properties?.address ?? properties?.name ?? suggestion.name;
+  const addressLine1 = properties?.name ?? properties?.address ?? suggestion.name;
   const city = context?.place?.name ?? context?.locality?.name ?? context?.district?.name ?? "";
   const state = (context?.region?.region_code ?? context?.region?.name ?? "").replace(/^US-/, "").toUpperCase();
   const zip = context?.postcode?.name ?? "";

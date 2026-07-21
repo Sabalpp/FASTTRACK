@@ -78,6 +78,7 @@ type AppointmentNotificationRow = {
 
 export type JobRow = {
   id: string;
+  workflow_revision?: string | number | null;
   customer_id: string;
   assigned_tech_id: string | null;
   status: Job["status"];
@@ -134,10 +135,12 @@ export type InvoiceRow = {
   job_id: string;
   invoice_number: string;
   selected_tier: Invoice["selectedTier"] | null;
+  subtotal_standard?: string | number;
   subtotal_good: string | number;
   subtotal_better: string | number;
   subtotal_best: string | number;
   tax_rate: string | number;
+  total_standard?: string | number;
   total_good: string | number;
   total_better: string | number;
   total_best: string | number;
@@ -335,6 +338,7 @@ export function appointmentNotificationFromRow(row: AppointmentNotificationRow):
 export function jobFromRow(row: JobRow): Job {
   return {
     id: row.id,
+    workflowRevision: Number(row.workflow_revision ?? 0),
     customerId: row.customer_id,
     assignedTechId: row.assigned_tech_id ?? undefined,
     status: row.status,
@@ -488,10 +492,12 @@ export function invoiceFromRow(row: InvoiceRow): Invoice {
     jobId: row.job_id,
     invoiceNumber: row.invoice_number,
     selectedTier: row.selected_tier ?? undefined,
+    subtotalStandard: Number(row.subtotal_standard ?? 0),
     subtotalGood: Number(row.subtotal_good),
     subtotalBetter: Number(row.subtotal_better),
     subtotalBest: Number(row.subtotal_best),
     taxRate: Number(row.tax_rate),
+    totalStandard: Number(row.total_standard ?? 0),
     totalGood: Number(row.total_good),
     totalBetter: Number(row.total_better),
     totalBest: Number(row.total_best),
@@ -521,10 +527,12 @@ export function invoiceToRow(invoice: Invoice): DbPayload {
     job_id: invoice.jobId,
     invoice_number: invoice.invoiceNumber,
     selected_tier: invoice.selectedTier || null,
+    subtotal_standard: invoice.subtotalStandard ?? 0,
     subtotal_good: invoice.subtotalGood,
     subtotal_better: invoice.subtotalBetter,
     subtotal_best: invoice.subtotalBest,
     tax_rate: invoice.taxRate,
+    total_standard: invoice.totalStandard ?? 0,
     total_good: invoice.totalGood,
     total_better: invoice.totalBetter,
     total_best: invoice.totalBest,
@@ -552,10 +560,12 @@ export function invoicePatchToRow(input: Partial<Invoice>): DbPayload {
   const row: DbPayload = {};
   if (input.invoiceNumber !== undefined) row.invoice_number = input.invoiceNumber;
   if (input.selectedTier !== undefined) row.selected_tier = input.selectedTier || null;
+  if (input.subtotalStandard !== undefined) row.subtotal_standard = input.subtotalStandard;
   if (input.subtotalGood !== undefined) row.subtotal_good = input.subtotalGood;
   if (input.subtotalBetter !== undefined) row.subtotal_better = input.subtotalBetter;
   if (input.subtotalBest !== undefined) row.subtotal_best = input.subtotalBest;
   if (input.taxRate !== undefined) row.tax_rate = input.taxRate;
+  if (input.totalStandard !== undefined) row.total_standard = input.totalStandard;
   if (input.totalGood !== undefined) row.total_good = input.totalGood;
   if (input.totalBetter !== undefined) row.total_better = input.totalBetter;
   if (input.totalBest !== undefined) row.total_best = input.totalBest;

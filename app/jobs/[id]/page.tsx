@@ -16,10 +16,11 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { tierOptions, useAppData } from "@/lib/data-store";
+import { tierLabels, tierOptions, useAppData } from "@/lib/data-store";
 import { canScheduleJobs, canSeeMoney, canSeePhotos, canViewJob } from "@/lib/access";
 import { formatDateTime } from "@/lib/date";
 import { money } from "@/lib/money";
+import { subtotalForTier } from "@/lib/invoice";
 import { formatPhone } from "@/lib/phone";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { LineItemForm } from "@/components/LineItemForm";
@@ -41,7 +42,7 @@ import { dispatchJobConfirmations, fetchJobConfirmations } from "@/lib/appointme
 import { completeProtectedJob, createProtectedInvoiceDraft } from "@/lib/invoices-client";
 import { demoMode } from "@/lib/runtime";
 import { loadSignatures, rejectSignature, saveSignature } from "@/lib/signatures-client";
-import type { AppointmentNotificationSummary, InvoiceSignature, Job, JobStatus } from "@/lib/types";
+import type { AppointmentNotificationSummary, InvoiceSignature, Job, JobStatus, SignaturePurpose, Tier } from "@/lib/types";
 import styles from "./JobDetail.module.css";
 
 export default function JobDetailPage() {
@@ -69,10 +70,12 @@ export default function JobDetailPage() {
   const canEditCustomerFacingFields = canManageConfirmations;
   const [invoiceBusy, setInvoiceBusy] = useState(false);
   const [invoiceError, setInvoiceError] = useState<string | undefined>();
-  const [completionSignatures, setCompletionSignatures] = useState<InvoiceSignature[]>([]);
-  const [signatureLoading, setSignatureLoading] = useState(false);
+  const [jobSignatures, setJobSignatures] = useState<InvoiceSignature[]>([]);
+  const [signatureLoading, setSignatureLoading] = useState(currentUser.role !== "call_center");
   const [signatureError, setSignatureError] = useState<string | undefined>();
-  const [signatureDialogOpen, setSignatureDialogOpen] = useState(false);
+  const [signatureDialogPurpose, setSignatureDialogPurpose] = useState<Extract<SignaturePurpose, "work_authorization" | "work_completion"> | undefined>();
+  const [authorizationTier, setAuthorizationTier] = useState<Tier>("standard");
+  const [visibleEstimateTier, setVisibleEstimateTier] = useState<Tier>("standard");
   const [overrideReason, setOverrideReason] = useState("");
   const [overrideConfirmed, setOverrideConfirmed] = useState(false);
   const [activeStage, setActiveStage] = useState<JobStage>("overview");
@@ -110,9 +113,15 @@ export default function JobDetailPage() {
     setSaveError(undefined);
     setOverrideReason("");
     setOverrideConfirmed(false);
+    setAuthorizationTier("standard");
+    setVisibleEstimateTier(tierOptions.find((tier) => data.jobLineItems.some((item) => item.jobId === job.id && item.tier === tier)) ?? "standard");
+    setJobSignatures([]);
+    setSignatureLoading(currentUser.role !== "call_center");
+    setSignatureError(undefined);
+    setSignatureDialogPurpose(undefined);
     setActiveStage("overview");
     setDispatchEditing(false);
-  }, [job?.id]);
+  }, [currentUser.role, job?.id]);
 
   useEffect(() => {
     if (currentUser.role === "call_center" && activeStage !== "overview") {
@@ -184,13 +193,14 @@ export default function JobDetailPage() {
     };
   }, [canManageConfirmations, confirmationPollingNeeded, job?.id]);
 
-  async function refreshCompletionSignatures() {
+  async function refreshJobSignatures() {
     if (!job?.id) return;
     setSignatureLoading(true);
     setSignatureError(undefined);
     try {
-      setCompletionSignatures(await loadSignatures({ type: "job", id: job.id }));
+      setJobSignatures(await loadSignatures({ type: "job", id: job.id }));
     } catch (error) {
+      setJobSignatures([]);
       setSignatureError(error instanceof Error ? error.message : "The customer signature could not be loaded.");
     } finally {
       setSignatureLoading(false);
@@ -199,7 +209,7 @@ export default function JobDetailPage() {
 
   useEffect(() => {
     if (!job?.id || currentUser.role === "call_center") return;
-    void refreshCompletionSignatures();
+    void refreshJobSignatures();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.id, currentUser.role]);
 
@@ -223,12 +233,26 @@ export default function JobDetailPage() {
   const photos = data.jobPhotos.filter((photo) => photo.jobId === job.id);
   const items = data.jobLineItems.filter((item) => item.jobId === job.id).sort((a, b) => a.sortOrder - b.sortOrder);
   const invoice = data.invoices.find((candidate) => candidate.jobId === job.id);
-  const canEditLineItems = !invoice
-    ? currentUser.role !== "call_center"
-    : currentUser.role === "owner" && invoice.approvalStatus !== "signed";
   const jobId = job.id;
-  const completionSignature = completionSignatures.find((signature) => signature.status === "active" && signature.purpose === "work_completion");
-  const rejectedCompletionSignature = completionSignatures.find((signature) => signature.status === "rejected" && signature.purpose === "work_completion");
+  const authorizationSignature = jobSignatures.find((signature) => signature.status === "active" && signature.purpose === "work_authorization");
+  const rejectedAuthorizationSignature = jobSignatures.find((signature) => signature.status === "rejected" && signature.purpose === "work_authorization");
+  const completionSignature = jobSignatures.find((signature) => signature.status === "active" && signature.purpose === "work_completion");
+  const rejectedCompletionSignature = jobSignatures.find((signature) => signature.status === "rejected" && signature.purpose === "work_completion");
+  const selectedAuthorizationTier = authorizationSignature?.selectedTier ?? authorizationTier;
+  const selectedAuthorizationItems = items.filter((item) => item.tier === selectedAuthorizationTier);
+  const beforePhotos = photos.filter((photo) => photo.kind === "before");
+  const afterPhotos = photos.filter((photo) => photo.kind === "after");
+  const signatureCheckpointUnavailable = signatureLoading || Boolean(signatureError);
+  const completionFieldsLocked = signatureCheckpointUnavailable
+    || Boolean(completionSignature)
+    || status === "complete"
+    || Boolean(job.completedAt)
+    || Boolean(job.completionSignatureOverrideAt);
+  const canEditLineItems = currentUser.role !== "call_center"
+    && !signatureCheckpointUnavailable
+    && !authorizationSignature
+    && status !== "complete"
+    && status !== "cancelled";
   const ownerOverrideReady = currentUser.role === "owner" && overrideConfirmed && overrideReason.trim().length >= 10;
 
   async function saveInspect(statusOverride?: JobStatus): Promise<boolean> {
@@ -241,7 +265,7 @@ export default function JobDetailPage() {
     if (canEditCustomerFacingFields && nextAddress !== jobRecord.serviceAddress) {
       patch.serviceAddress = nextAddress;
     }
-    if (currentUser.role !== "call_center" && notes !== jobRecord.notes) patch.notes = notes;
+    if (currentUser.role !== "call_center" && !completionFieldsLocked && notes !== jobRecord.notes) patch.notes = notes;
     const completingJob = currentUser.role !== "call_center" && nextStatus === "complete" && jobRecord.status !== "complete";
     if (currentUser.role !== "call_center" && nextStatus !== jobRecord.status && !completingJob) patch.status = nextStatus;
     if (canEditDispatch) {
@@ -249,6 +273,18 @@ export default function JobDetailPage() {
       if (nextAssignedTechId !== (jobRecord.assignedTechId ?? null)) patch.assignedTechId = nextAssignedTechId;
       if (scheduledAtIso && scheduledAtIso !== jobRecord.scheduledAt) patch.scheduledAt = scheduledAtIso;
       if (arrivalWindowEndAtIso && arrivalWindowEndAtIso !== jobRecord.arrivalWindowEndAt) patch.arrivalWindowEndAt = arrivalWindowEndAtIso;
+    }
+    if (completingJob && signatureCheckpointUnavailable) {
+      setSaveError("Signature status must load successfully before this job can be completed.");
+      return false;
+    }
+    if (completingJob && !authorizationSignature) {
+      setSaveError("Collect the customer's work authorization before completing this job.");
+      return false;
+    }
+    if (completingJob && afterPhotos.length === 0) {
+      setSaveError("Save at least one after photo before completing this job.");
+      return false;
     }
     if (completingJob && !completionSignature && !ownerOverrideReady) {
       setSaveError(currentUser.role === "owner"
@@ -312,13 +348,20 @@ export default function JobDetailPage() {
   }
 
   async function buildInvoice() {
+    if (jobRecord.status !== "complete") {
+      setInvoiceError("Complete the field workflow before building the invoice.");
+      return;
+    }
     setInvoiceBusy(true);
     setInvoiceError(undefined);
     try {
       const draft = demoMode
         ? data.createOrUpdateInvoiceDraft(jobId, currentUser.id)
         : await createProtectedInvoiceDraft(jobId);
-      if (!demoMode) {
+      if (demoMode && authorizationSignature?.selectedTier && draft.selectedTier !== authorizationSignature.selectedTier) {
+        data.updateInvoice(draft.id, { selectedTier: authorizationSignature.selectedTier });
+        draft.selectedTier = authorizationSignature.selectedTier;
+      } else if (!demoMode) {
         data.setState((current) => ({
           ...current,
           invoices: current.invoices.some((candidate) => candidate.id === draft.id)
@@ -334,10 +377,12 @@ export default function JobDetailPage() {
     }
   }
 
-  async function saveCompletionSignature(input: { signerName: string; signerRole: "customer" | "technician" | "company"; image: Blob; width: number; height: number }) {
+  async function saveJobSignature(input: { signerName: string; signerRole: "customer" | "technician" | "company"; image: Blob; width: number; height: number }) {
+    const purpose = signatureDialogPurpose;
+    if (!purpose) return;
     const saved = await saveSignature({
       target: { type: "job", id: jobId },
-      purpose: "work_completion",
+      purpose,
       signerName: input.signerName,
       signerRole: "customer",
       image: input.image,
@@ -345,21 +390,26 @@ export default function JobDetailPage() {
       height: input.height,
       invoiceId: invoice?.id,
       jobId,
-      collectedBy: currentUser.id
+      collectedBy: currentUser.id,
+      selectedTier: purpose === "work_authorization" ? authorizationTier : undefined
     });
-    setCompletionSignatures((current) => [saved, ...current.map((signature) => (
-      signature.status === "active" && signature.purpose === "work_completion"
+    setJobSignatures((current) => [saved, ...current.map((signature) => (
+      signature.status === "active" && signature.purpose === purpose
         ? { ...signature, status: "rejected" as const, rejectedAt: saved.signedAt, rejectionReason: "Replaced by a newly collected signature." }
         : signature
     ))]);
-    setSignatureDialogOpen(false);
+    setSignatureDialogPurpose(undefined);
     setSignatureError(undefined);
+    if (purpose === "work_authorization") setActiveStage("after");
   }
 
-  async function rejectCompletionSignature(reason: string) {
-    if (!completionSignature) return;
-    const rejected = await rejectSignature({ type: "job", id: jobId }, completionSignature.id, reason);
-    setCompletionSignatures((current) => current.map((signature) => signature.id === rejected.id ? { ...signature, ...rejected } : signature));
+  async function rejectJobSignature(signature: InvoiceSignature, reason: string) {
+    const rejected = await rejectSignature({ type: "job", id: jobId }, signature.id, reason);
+    setJobSignatures((current) => current.map((candidate) => candidate.id === rejected.id ? { ...candidate, ...rejected } : candidate));
+    if (signature.purpose === "work_authorization") {
+      setAuthorizationTier(signature.selectedTier ?? "standard");
+      setActiveStage("work");
+    }
   }
 
   async function markArrived(): Promise<boolean> {
@@ -417,29 +467,49 @@ export default function JobDetailPage() {
     && currentUser.role !== "call_center";
   const stage = jobStages.find((candidate) => candidate.id === activeStage) ?? jobStages[0];
   const stageCounts: Partial<Record<JobStage, number>> = {
-    photos: photos.length,
+    photos: beforePhotos.length,
     work: items.length,
-    approval: completionSignature ? 1 : 0,
+    approval: authorizationSignature ? 1 : 0,
+    after: afterPhotos.length,
+    completion: completionSignature ? 1 : 0,
     invoice: invoice ? 1 : 0
   };
   const stageCompletion: Partial<Record<JobStage, boolean>> = {
     overview: Boolean(job.arrivedAt),
-    photos: photos.length > 0,
+    photos: beforePhotos.length > 0,
     work: items.length > 0,
-    approval: Boolean(completionSignature),
+    approval: Boolean(authorizationSignature),
+    after: afterPhotos.length > 0,
+    completion: Boolean(completionSignature) || job.status === "complete",
     invoice: Boolean(invoice)
   };
   const visibleStages: JobStage[] = currentUser.role === "call_center"
     ? ["overview"]
     : jobStages.map((candidate) => candidate.id);
   const primaryHidden = dispatchEditing || currentUser.role === "call_center";
-  const primaryDisabled = activeStage === "work"
-    ? items.length === 0
-    : activeStage === "approval"
-      ? !job.arrivedAt || status === "cancelled" || (Boolean(completionSignature) && saveBusy)
-      : activeStage === "invoice"
-        ? items.length === 0 || invoiceBusy
-        : arrivalBusy || saveBusy;
+  const disabledStages: JobStage[] = job.status === "complete"
+    ? []
+    : [
+        ...(!job.arrivedAt ? ["photos", "work", "approval", "after", "completion", "invoice"] as JobStage[] : []),
+        ...(beforePhotos.length === 0 ? ["work", "approval", "after", "completion", "invoice"] as JobStage[] : []),
+        ...(items.length === 0 ? ["approval", "after", "completion", "invoice"] as JobStage[] : []),
+        ...(!authorizationSignature ? ["after", "completion", "invoice"] as JobStage[] : []),
+        ...(afterPhotos.length === 0 ? ["completion", "invoice"] as JobStage[] : []),
+        "invoice"
+      ];
+  const primaryDisabled = activeStage === "photos"
+    ? beforePhotos.length === 0
+    : activeStage === "work"
+      ? items.length === 0
+      : activeStage === "approval"
+        ? signatureCheckpointUnavailable || !job.arrivedAt || beforePhotos.length === 0 || selectedAuthorizationItems.length === 0 || status === "cancelled"
+        : activeStage === "after"
+          ? afterPhotos.length === 0
+          : activeStage === "completion"
+            ? signatureCheckpointUnavailable || !authorizationSignature || afterPhotos.length === 0 || status === "cancelled" || saveBusy
+            : activeStage === "invoice"
+              ? job.status !== "complete" || items.length === 0 || invoiceBusy
+              : arrivalBusy || saveBusy;
   const primaryLabel = activeStage === "overview"
     ? status === "cancelled"
       ? "Back to schedule"
@@ -451,16 +521,20 @@ export default function JobDetailPage() {
             ? arrivalBusy ? "Recording arrival…" : "Arrived — start job"
             : "Continue to photos"
     : activeStage === "photos"
-      ? "Continue to work"
+      ? beforePhotos.length === 0 ? "Add a before photo" : "Build estimate"
       : activeStage === "work"
-        ? items.length === 0 ? "Add work to continue" : "Review approval"
+        ? items.length === 0 ? "Add work to continue" : "Review with customer"
         : activeStage === "approval"
-          ? completionSignature
-            ? job.status === "complete" ? "Continue to invoice" : saveBusy ? "Completing…" : "Complete job"
-            : "Collect customer signature"
-          : invoice
-            ? "Open invoice"
-            : invoiceBusy ? "Building invoice…" : "Build invoice";
+          ? authorizationSignature ? "Begin approved work" : "Authorize work"
+          : activeStage === "after"
+            ? afterPhotos.length === 0 ? "Add an after photo" : "Review completed work"
+            : activeStage === "completion"
+              ? completionSignature
+                ? job.status === "complete" ? "Continue to invoice" : saveBusy ? "Completing…" : "Complete job"
+                : "Confirm completed work"
+              : invoice
+                ? "Open invoice"
+                : invoiceBusy ? "Building invoice…" : "Build invoice";
 
   async function handlePrimaryAction() {
     if (activeStage === "overview") {
@@ -486,7 +560,7 @@ export default function JobDetailPage() {
       return;
     }
     if (activeStage === "photos") {
-      setActiveStage("work");
+      if (beforePhotos.length > 0) setActiveStage("work");
       return;
     }
     if (activeStage === "work") {
@@ -494,13 +568,26 @@ export default function JobDetailPage() {
       return;
     }
     if (activeStage === "approval") {
+      if (!authorizationSignature) {
+        setSignatureDialogPurpose("work_authorization");
+        return;
+      }
+      setActiveStage("after");
+      return;
+    }
+    if (activeStage === "after") {
+      if (afterPhotos.length > 0) setActiveStage("completion");
+      return;
+    }
+    if (activeStage === "completion") {
       if (!completionSignature) {
-        setSignatureDialogOpen(true);
+        setSignatureDialogPurpose("work_completion");
         return;
       }
       if (jobRecord.status !== "complete") {
         setStatus("complete");
-        await saveInspect("complete");
+        const completed = await saveInspect("complete");
+        if (completed) setActiveStage("invoice");
         return;
       }
       setActiveStage("invoice");
@@ -521,7 +608,7 @@ export default function JobDetailPage() {
         <div className={styles.heroTop}>
           <div className={styles.heroCopy}>
             <div className={styles.heroEyebrow}>
-              <span>Service job</span>
+              <span>Field visit</span>
               <StatusPill tone={status === "complete" ? "good" : status === "cancelled" ? "bad" : "info"}>{status.replace("_", " ")}</StatusPill>
             </div>
             <h1>{jobDescription || job.description}</h1>
@@ -563,7 +650,7 @@ export default function JobDetailPage() {
         </div>
       </header>
 
-      <JobStageNav active={activeStage} onChange={setActiveStage} counts={stageCounts} completion={stageCompletion} visibleStages={visibleStages} />
+      <JobStageNav active={activeStage} onChange={setActiveStage} counts={stageCounts} completion={stageCompletion} visibleStages={visibleStages} disabledStages={disabledStages} />
 
       {arrivalError ? <p className={styles.errorBanner} role="alert">{arrivalError}</p> : null}
       {invoiceError ? <p className={styles.errorBanner} role="alert">{invoiceError}</p> : null}
@@ -598,7 +685,7 @@ export default function JobDetailPage() {
         {activeStage !== "overview" || dispatchEditing ? (
           <div className={styles.stageHeader}>
             <div><p>{dispatchEditing ? "Dispatch" : stage.label}</p><h2>{dispatchEditing ? "Edit job details" : stageTitle(activeStage)}</h2><span>{dispatchEditing ? "Update the customer-facing service details, arrival window, and assignment." : stageDescription(activeStage)}</span></div>
-            {activeStage === "photos" && photos.length === 0 ? null : activeStage === "overview" ? null : <span className={styles.stageCount}>{activeStage === "photos" ? `${photos.length} saved` : activeStage === "work" ? `${items.length} items` : activeStage === "approval" ? completionSignature ? "Signed" : "Signature needed" : invoice ? "Draft ready" : "Not built"}</span>}
+            {activeStage === "overview" ? null : <span className={styles.stageCount}>{stageStatusLabel(activeStage, { beforeCount: beforePhotos.length, afterCount: afterPhotos.length, itemCount: items.length, authorized: Boolean(authorizationSignature), completed: Boolean(completionSignature), invoice: Boolean(invoice) })}</span>}
           </div>
         ) : null}
 
@@ -631,7 +718,7 @@ export default function JobDetailPage() {
                       {(["scheduled", "in_progress", "complete", "cancelled"] as JobStatus[]).map((option) => (
                         <button key={option} type="button" className={status === option ? "active" : ""} onClick={() => {
                           setStatus(option);
-                          if (option === "complete") setActiveStage("approval");
+                          if (option === "complete") setActiveStage("completion");
                         }} disabled={((option === "in_progress" || option === "complete") && !job.arrivedAt) || (option === "scheduled" && Boolean(job.arrivedAt))}>{option.replace("_", " ")}</button>
                       ))}
                     </div>
@@ -648,7 +735,7 @@ export default function JobDetailPage() {
                 })()} disabled={saveBusy || !validWindow}><Save size={16} aria-hidden="true" />{saveBusy ? "Saving…" : saved ? "Saved" : "Save dispatch"}</Button>
               </div>
             </div>
-          ) : currentUser.role === "tech" ? (
+          ) : currentUser.role === "tech" && !completionFieldsLocked ? (
             <details className={styles.notesDisclosure}>
               <summary><span><strong>Job notes</strong><small>{notes.trim() ? "View or update technician notes" : "Add a technician note"}</small></span><ChevronRight size={18} aria-hidden="true" /></summary>
               <div className={styles.notesEditor}>
@@ -658,18 +745,26 @@ export default function JobDetailPage() {
               </div>
             </details>
           ) : (
-            <div className={styles.readonlyNotes}><small>Job notes</small><p>{notes.trim() || "No technician notes have been added."}</p></div>
+            <div className={styles.readonlyNotes}><small>Job notes{completionFieldsLocked && currentUser.role !== "call_center" ? " · locked" : ""}</small><p>{notes.trim() || "No technician notes have been added."}</p></div>
           )
         ) : null}
 
         {activeStage === "photos" ? (
           canSeePhotos(currentUser.role) ? (
             <div className={styles.stageBody}>
-              <PhotoUploader jobId={job.id} uploadedBy={currentUser.id} />
-              {photos.length > 0 ? (
-                <section className={styles.photoGallery} aria-label="Saved job photos">
-                  <div className={styles.photoGalleryHeader}><strong>Saved photos</strong><span>{photos.length}</span></div>
-                  <div className={styles.photoGrid}>{photos.map((photo) => <article key={photo.id} className={styles.photoCard}>{photo.storagePath.startsWith("data:") || photo.storagePath.startsWith("http") ? <img src={photo.storagePath} alt={photo.caption ?? photo.kind} /> : <div className={styles.photoPlaceholder}>Private photo</div>}<div><strong>{photo.kind}</strong><span>{photo.caption ?? photo.storagePath}</span></div></article>)}</div>
+              <div className={styles.checkpointNotice}><strong>Required before work begins</strong><span>Capture the existing condition so the customer and technician share the same starting point.</span></div>
+              <PhotoUploader
+                jobId={job.id}
+                uploadedBy={currentUser.id}
+                lockedKind="before"
+                checkpointLocked={signatureCheckpointUnavailable || Boolean(authorizationSignature)}
+                lockedTitle={signatureCheckpointUnavailable ? "Checking signed checkpoint" : "Before photos locked by customer authorization"}
+                lockedMessage={signatureError ? "Saved signature status is unavailable. Retry the signature check before changing checkpoint evidence." : signatureLoading ? "Saved signatures are loading. Evidence stays locked until that check finishes." : "Reject the active work authorization before adding more before-work evidence. The signed scope and its starting evidence stay together."}
+              />
+              {beforePhotos.length > 0 ? (
+                <section className={styles.photoGallery} aria-label="Saved before-work photos">
+                  <div className={styles.photoGalleryHeader}><strong>Before-work evidence</strong><span>{beforePhotos.length}</span></div>
+                  <div className={styles.photoGrid}>{beforePhotos.map((photo) => <article key={photo.id} className={styles.photoCard}>{photo.storagePath.startsWith("data:") || photo.storagePath.startsWith("http") ? <img src={photo.storagePath} alt={photo.caption ?? "Before work"} /> : <div className={styles.photoPlaceholder}>Private photo</div>}<div><strong>Before</strong><span>{photo.caption ?? photo.storagePath}</span></div></article>)}</div>
                 </section>
               ) : null}
             </div>
@@ -680,12 +775,12 @@ export default function JobDetailPage() {
           canSeeMoney(currentUser.role) ? (
             <div className={styles.stageBody}>
               <section className={styles.innerPanel}>
-                <div className={styles.subhead}><div><h3>Add work</h3><p>Good, Better, and Best stay here as customer estimate choices.</p></div><span>{items.length} items</span></div>
-                {canEditLineItems ? <LineItemForm jobId={job.id} /> : <p className={styles.inlineNote}>{invoice?.approvalStatus === "signed" ? "Charges are locked to the saved customer approval. An owner must reject that signature before changing work items." : "Invoice charges are owner-controlled after a draft is created."}</p>}
+                <div className={styles.subhead}><div><h3>Build the proposed work</h3><p>Enter the real scope and price for this visit. Technicians can create custom work, change quantities, set prices, and choose any option.</p></div><span>{items.length} items</span></div>
+                {canEditLineItems ? <LineItemForm jobId={job.id} onSaved={setVisibleEstimateTier} /> : <p className={styles.inlineNote}>{signatureCheckpointUnavailable ? "Saved signature status must load successfully before scope or pricing can be edited." : "The customer signed this scope. Reject the authorization first if the work or price needs to change."}</p>}
               </section>
               <section className={styles.innerPanel}>
-                <div className={styles.subhead}><div><h3>Estimate options</h3><p>Review the three service levels with the customer.</p></div><span>Good {tierCounts.good} · Better {tierCounts.better} · Best {tierCounts.best}</span></div>
-                <TierColumns items={items} taxRate={0.06} editable={canEditLineItems} onEdit={canEditLineItems ? data.updateLineItem : undefined} onDelete={canEditLineItems ? data.deleteLineItem : undefined} />
+                <div className={styles.subhead}><div><h3>Customer choices</h3><p>Use Standard for a neutral quote, or offer Good, Better, and Best when choices help.</p></div><span>Standard {tierCounts.standard} · Good {tierCounts.good} · Better {tierCounts.better} · Best {tierCounts.best}</span></div>
+                <TierColumns items={items} taxRate={0.06} editable={canEditLineItems} activeTier={visibleEstimateTier} onActiveTierChange={setVisibleEstimateTier} onEdit={canEditLineItems ? data.updateLineItem : undefined} onDelete={canEditLineItems ? data.deleteLineItem : undefined} />
               </section>
             </div>
           ) : <ProtectedStage />
@@ -695,12 +790,54 @@ export default function JobDetailPage() {
           currentUser.role !== "call_center" ? (
             <div className={styles.stageBody}>
               <section className={styles.approvalPanel}>
-                <div className={styles.approvalIntro}><span><PenLine size={21} aria-hidden="true" /></span><div><h3>Customer work-completion signature</h3><p>Review the completed work together, then let the customer draw their signature on this iPad.</p></div></div>
-                <SignatureStatusCard title="Work reviewed and approved" signature={completionSignature} rejectedSignature={rejectedCompletionSignature} loading={signatureLoading} error={signatureError} drawLabel="Collect customer signature" onDraw={() => setSignatureDialogOpen(true)} onRetry={() => void refreshCompletionSignatures()} canReject={currentUser.role === "owner" && job.status !== "complete"} onReject={completionSignature ? rejectCompletionSignature : undefined} drawDisabled={!job.arrivedAt || job.status === "complete" || job.status === "cancelled"} />
-                <p className={styles.inlineNote}>{!job.arrivedAt ? "Record the technician arrival before collecting the customer completion signature." : completionSignature ? "Signature saved. The job is ready to complete." : currentUser.role === "owner" ? "A signature is required unless the owner records an explicit audited override." : "A saved customer signature is required before completion."}</p>
+                <div className={styles.approvalIntro}><span><PenLine size={21} aria-hidden="true" /></span><div><h3>Choose and authorize the work</h3><p>Review the exact scope and total with the customer. Work cannot begin until the customer signs.</p></div></div>
+                <div className={styles.authorizationOptions} role="radiogroup" aria-label="Estimate option to authorize">
+                  {tierOptions.map((tier) => {
+                    const optionItems = items.filter((item) => item.tier === tier);
+                    const optionSubtotal = subtotalForTier(items, tier);
+                    const selected = selectedAuthorizationTier === tier;
+                    return <button key={tier} type="button" role="radio" aria-checked={selected} data-selected={selected || undefined} disabled={Boolean(authorizationSignature) || optionItems.length === 0} onClick={() => setAuthorizationTier(tier)}><span>{tierLabels[tier]}</span><strong>{optionItems.length === 0 ? "No work" : money(optionSubtotal * 1.06)}</strong><small>{optionItems.length} {optionItems.length === 1 ? "item" : "items"} · includes tax</small></button>;
+                  })}
+                </div>
+                <SignatureStatusCard title="Customer authorization before work" signature={authorizationSignature} rejectedSignature={rejectedAuthorizationSignature} loading={signatureLoading} error={signatureError} drawLabel="Authorize selected work" onDraw={() => setSignatureDialogPurpose("work_authorization")} onRetry={() => void refreshJobSignatures()} canReject={Boolean(authorizationSignature) && job.status !== "complete"} onReject={authorizationSignature ? (reason) => rejectJobSignature(authorizationSignature, reason) : undefined} drawDisabled={signatureCheckpointUnavailable || !job.arrivedAt || beforePhotos.length === 0 || selectedAuthorizationItems.length === 0 || job.status === "complete" || job.status === "cancelled"} />
+                <p className={styles.inlineNote}>{authorizationSignature ? `${tierLabels[selectedAuthorizationTier]} work is authorized. The signed scope is now locked.` : selectedAuthorizationItems.length === 0 ? "Choose an option that contains at least one work item." : "Pass the iPad to the customer. Saving the signature locks only the selected scope."}</p>
               </section>
-              {!completionSignature && currentUser.role === "owner" && job.status !== "complete" ? (
-                <section className={styles.overridePanel}><h3>Owner completion override</h3><p>Use only when the customer cannot sign. The reason and owner identity remain in the audit record.</p><Field label="Override reason"><textarea value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Explain why a customer signature could not be collected." /></Field><label className={styles.overrideCheck}><input type="checkbox" checked={overrideConfirmed} onChange={(event) => setOverrideConfirmed(event.target.checked)} />I am explicitly overriding the required customer signature as the owner.</label>{ownerOverrideReady ? <button className={styles.overrideAction} type="button" onClick={() => void saveInspect("complete")} disabled={saveBusy}>{saveBusy ? "Completing…" : "Complete with owner override"}</button> : null}</section>
+            </div>
+          ) : <ProtectedStage />
+        ) : null}
+
+        {activeStage === "after" ? (
+          canSeePhotos(currentUser.role) ? (
+            <div className={styles.stageBody}>
+              <div className={styles.checkpointNotice}><strong>Finish the approved work, then document it</strong><span>Capture at least one clear after photo before asking the customer to confirm completion.</span></div>
+              <PhotoUploader
+                jobId={job.id}
+                uploadedBy={currentUser.id}
+                lockedKind="after"
+                checkpointLocked={completionFieldsLocked}
+                lockedTitle={signatureCheckpointUnavailable ? "Checking signed checkpoint" : "After photos locked by completed work"}
+                lockedMessage={signatureError ? "Saved signature status is unavailable. Retry the signature check before changing checkpoint evidence." : signatureLoading ? "Saved signatures are loading. Evidence stays locked until that check finishes." : job.status === "complete" || job.completedAt || job.completionSignatureOverrideAt ? "This job is complete, so its after-work evidence is part of the permanent record." : "The customer confirmed completion against this evidence. An owner must reject that confirmation before after-work evidence can change."}
+              />
+              {afterPhotos.length > 0 ? (
+                <section className={styles.photoGallery} aria-label="Saved after-work photos">
+                  <div className={styles.photoGalleryHeader}><strong>After-work evidence</strong><span>{afterPhotos.length}</span></div>
+                  <div className={styles.photoGrid}>{afterPhotos.map((photo) => <article key={photo.id} className={styles.photoCard}>{photo.storagePath.startsWith("data:") || photo.storagePath.startsWith("http") ? <img src={photo.storagePath} alt={photo.caption ?? "After work"} /> : <div className={styles.photoPlaceholder}>Private photo</div>}<div><strong>After</strong><span>{photo.caption ?? photo.storagePath}</span></div></article>)}</div>
+                </section>
+              ) : null}
+            </div>
+          ) : <ProtectedStage />
+        ) : null}
+
+        {activeStage === "completion" ? (
+          currentUser.role !== "call_center" ? (
+            <div className={styles.stageBody}>
+              <section className={styles.approvalPanel}>
+                <div className={styles.approvalIntro}><span><PenLine size={21} aria-hidden="true" /></span><div><h3>Confirm the completed work</h3><p>Review the finished work and after photo together, then let the customer sign on this iPad.</p></div></div>
+                <SignatureStatusCard title="Customer completion confirmation" signature={completionSignature} rejectedSignature={rejectedCompletionSignature} loading={signatureLoading} error={signatureError} drawLabel="Confirm completed work" onDraw={() => setSignatureDialogPurpose("work_completion")} onRetry={() => void refreshJobSignatures()} canReject={currentUser.role === "owner" && job.status !== "complete"} onReject={completionSignature ? (reason) => rejectJobSignature(completionSignature, reason) : undefined} drawDisabled={signatureCheckpointUnavailable || !authorizationSignature || afterPhotos.length === 0 || job.status === "complete" || job.status === "cancelled"} />
+                <p className={styles.inlineNote}>{completionSignature ? "Completion is signed. Save the completed job, then build the invoice." : "This is a separate confirmation from the authorization signed before work."}</p>
+              </section>
+              {!signatureCheckpointUnavailable && !completionSignature && currentUser.role === "owner" && job.status !== "complete" ? (
+                <section className={styles.overridePanel}><h3>Owner completion override</h3><p>Use only when the customer cannot sign. The reason and owner identity remain in the audit record.</p><Field label="Override reason"><textarea value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Explain why a customer signature could not be collected." /></Field><label className={styles.overrideCheck}><input type="checkbox" checked={overrideConfirmed} onChange={(event) => setOverrideConfirmed(event.target.checked)} />I am explicitly overriding the required customer completion signature as the owner.</label>{ownerOverrideReady ? <button className={styles.overrideAction} type="button" onClick={() => void saveInspect("complete")} disabled={saveBusy}>{saveBusy ? "Completing…" : "Complete with owner override"}</button> : null}</section>
               ) : null}
               {saveError ? <p className={styles.errorBanner} role="alert">{saveError}</p> : null}
             </div>
@@ -710,7 +847,7 @@ export default function JobDetailPage() {
         {activeStage === "invoice" ? (
           canSeeMoney(currentUser.role) ? (
             <div className={styles.stageBody}>
-              {items.length === 0 ? <EmptyState title="Add work first" description="At least one work item is required before an invoice draft can be built." action={<button type="button" className={styles.quietAction} onClick={() => setActiveStage("work")}>Go to work items</button>} /> : (
+              {job.status !== "complete" ? <EmptyState title="Complete the field workflow first" description="Authorization, before and after photos, and the customer completion confirmation stay connected to the invoice." action={<button type="button" className={styles.quietAction} onClick={() => setActiveStage("completion")}>Return to completion</button>} /> : items.length === 0 ? <EmptyState title="Add work first" description="At least one work item is required before an invoice draft can be built." action={<button type="button" className={styles.quietAction} onClick={() => setActiveStage("work")}>Go to work items</button>} /> : (
                 <section className={styles.invoiceReady} data-ready={Boolean(invoice) || undefined}>
                   <span className={styles.invoiceIcon}>{invoice ? <Check size={24} aria-hidden="true" /> : <FileText size={24} aria-hidden="true" />}</span>
                   <div><small>{invoice ? "Invoice draft ready" : "Ready to build"}</small><h3>{invoice ? "Review the saved invoice" : "Create an invoice from this work"}</h3><p>{invoice ? "The draft includes the current work items, tax, and saved customer details." : "Fast Track will build a professional draft using the work and customer information already saved."}</p></div>
@@ -731,19 +868,19 @@ export default function JobDetailPage() {
 
       {!primaryHidden ? (
         <aside className={styles.stickyAction} aria-label="Next job action">
-          <div><small>Next action</small><strong>{primaryHelper(activeStage, { canMarkEnRoute, canRecordArrival, completionSignature: Boolean(completionSignature), invoice: Boolean(invoice), jobComplete: job.status === "complete", jobCancelled: job.status === "cancelled" })}</strong></div>
-          <button type="button" className={styles.primaryAction} onClick={() => void handlePrimaryAction()} disabled={primaryDisabled}>{activeStage === "overview" && currentUser.role === "call_center" ? <Save size={18} aria-hidden="true" /> : activeStage === "approval" && !completionSignature ? <PenLine size={18} aria-hidden="true" /> : null}{primaryLabel}<ChevronRight size={18} aria-hidden="true" /></button>
+          <div><small>Next action</small><strong>{primaryHelper(activeStage, { canMarkEnRoute, canRecordArrival, authorizationSignature: Boolean(authorizationSignature), completionSignature: Boolean(completionSignature), invoice: Boolean(invoice), jobComplete: job.status === "complete", jobCancelled: job.status === "cancelled" })}</strong></div>
+          <button type="button" className={styles.primaryAction} onClick={() => void handlePrimaryAction()} disabled={primaryDisabled}>{activeStage === "overview" && currentUser.role === "call_center" ? <Save size={18} aria-hidden="true" /> : (activeStage === "approval" && !authorizationSignature) || (activeStage === "completion" && !completionSignature) ? <PenLine size={18} aria-hidden="true" /> : null}{primaryLabel}<ChevronRight size={18} aria-hidden="true" /></button>
         </aside>
       ) : null}
 
       <SignatureDialog
-        open={signatureDialogOpen}
-        title="Customer work approval"
-        description="The customer confirms that the completed work was reviewed and approved. Saving must finish before the job can be completed."
+        open={Boolean(signatureDialogPurpose)}
+        title={signatureDialogPurpose === "work_authorization" ? "Authorize proposed work" : "Confirm completed work"}
+        description={signatureDialogPurpose === "work_authorization" ? `The customer authorizes the ${tierLabels[authorizationTier]} scope and total before work begins. Saving must finish before the technician continues.` : "The customer confirms the approved work was completed and reviewed. Saving must finish before the job can be completed."}
         signerRole="customer"
         defaultSignerName={customer?.name}
-        onCancel={() => setSignatureDialogOpen(false)}
-        onSave={saveCompletionSignature}
+        onCancel={() => setSignatureDialogPurpose(undefined)}
+        onSave={saveJobSignature}
       />
     </main>
   );
@@ -767,23 +904,27 @@ function roleLabel(role: string): string {
 
 function stageTitle(stage: JobStage): string {
   if (stage === "overview") return "Customer and dispatch";
-  if (stage === "photos") return "Photos and job proof";
-  if (stage === "work") return "Work and estimate options";
-  if (stage === "approval") return "Customer approval";
+  if (stage === "photos") return "Before-work photo";
+  if (stage === "work") return "Build the estimate";
+  if (stage === "approval") return "Authorize before work";
+  if (stage === "after") return "After-work photo";
+  if (stage === "completion") return "Customer completion";
   return "Invoice handoff";
 }
 
 function stageDescription(stage: JobStage): string {
   if (stage === "overview") return "Confirm who, where, and when before the technician starts.";
-  if (stage === "photos") return "Keep clear visual proof without leaving the job workflow.";
-  if (stage === "work") return "Build the service scope and customer choices in one place.";
-  if (stage === "approval") return "Review the completed work and capture a saved signature.";
+  if (stage === "photos") return "Document the starting condition before proposing or beginning work.";
+  if (stage === "work") return "Create the scope and price with full technician flexibility.";
+  if (stage === "approval") return "The customer chooses and signs the exact scope before work begins.";
+  if (stage === "after") return "Document the finished work before customer completion confirmation.";
+  if (stage === "completion") return "Capture a separate confirmation that the approved work is complete.";
   return "Create or open the invoice using the work already saved.";
 }
 
 function primaryHelper(
   stage: JobStage,
-  state: { canMarkEnRoute: boolean; canRecordArrival: boolean; completionSignature: boolean; invoice: boolean; jobComplete: boolean; jobCancelled: boolean }
+  state: { canMarkEnRoute: boolean; canRecordArrival: boolean; authorizationSignature: boolean; completionSignature: boolean; invoice: boolean; jobComplete: boolean; jobCancelled: boolean }
 ): string {
   if (stage === "overview") {
     if (state.jobCancelled) return "Return to your service schedule";
@@ -791,13 +932,23 @@ function primaryHelper(
     if (state.canMarkEnRoute) return "Mark the trip started before you leave";
     return state.canRecordArrival ? "Record the real arrival time and begin work" : "Move to photo documentation";
   }
-  if (stage === "photos") return "Continue when the job proof is ready";
-  if (stage === "work") return "Review the saved scope with the customer";
+  if (stage === "photos") return "Save at least one before photo";
+  if (stage === "work") return "Review the proposed scope and total with the customer";
   if (stage === "approval") {
-    if (!state.completionSignature) return "Pass the iPad to the customer";
-    return state.jobComplete ? "The signed job is ready to invoice" : "Save the completed job to the audit record";
+    return state.authorizationSignature ? "The signed scope is locked; begin the approved work" : "Pass the iPad to the customer before work begins";
   }
+  if (stage === "after") return "Save proof of the completed work";
+  if (stage === "completion") return state.completionSignature ? "Complete the job and continue to invoicing" : "Review the finished work, then pass the iPad to the customer";
   return state.invoice ? "Continue in the invoice workspace" : "Use the saved customer and work details";
+}
+
+function stageStatusLabel(stage: JobStage, state: { beforeCount: number; afterCount: number; itemCount: number; authorized: boolean; completed: boolean; invoice: boolean }): string {
+  if (stage === "photos") return state.beforeCount > 0 ? `${state.beforeCount} saved` : "Required";
+  if (stage === "work") return `${state.itemCount} ${state.itemCount === 1 ? "item" : "items"}`;
+  if (stage === "approval") return state.authorized ? "Authorized" : "Signature required";
+  if (stage === "after") return state.afterCount > 0 ? `${state.afterCount} saved` : "Required";
+  if (stage === "completion") return state.completed ? "Signed" : "Signature required";
+  return state.invoice ? "Draft ready" : "Not built";
 }
 
 function mapsHref(address: string): string {

@@ -51,23 +51,24 @@ describe("invoice PDF viewer integrity", () => {
     expect(screen.getByText("Generate the signed invoice to preview it here.")).toBeTruthy();
   });
 
-  it("does not invalidate an invoice PDF when only the separate work-completion signature changes", async () => {
-    clientMocks.loadProtectedInvoicePdf.mockResolvedValue(new Blob(["current pdf"], { type: "application/pdf" }));
+  it("invalidates and reloads a saved invoice PDF when a field signature changes", async () => {
+    clientMocks.loadProtectedInvoicePdf
+      .mockResolvedValueOnce(new Blob(["current pdf"], { type: "application/pdf" }))
+      .mockRejectedValueOnce(new Error("Field signatures changed after PDF generation."));
     const original = props();
     const view = render(<InvoicePdfViewer {...original} />);
     await screen.findByTitle(`${original.invoice.invoiceNumber} PDF preview`);
 
     const workCompletion: InvoiceSignature = {
-      ...original.signatures[0],
-      id: "work-completion-1",
-      purpose: "work_completion",
-      invoiceId: original.invoice.id,
+      ...original.signatures[1],
+      id: "work-completion-2",
       signedAt: "2026-07-21T17:00:00.000Z"
     };
-    view.rerender(<InvoicePdfViewer {...original} signatures={[...original.signatures, workCompletion]} />);
+    view.rerender(<InvoicePdfViewer {...original} signatures={[original.signatures[0], workCompletion]} />);
 
-    expect(screen.getByTitle(`${original.invoice.invoiceNumber} PDF preview`)).toBeTruthy();
-    expect(clientMocks.loadProtectedInvoicePdf).toHaveBeenCalledTimes(1);
+    await screen.findByText("Field signatures changed after PDF generation.");
+    expect(screen.queryByTitle(`${original.invoice.invoiceNumber} PDF preview`)).toBeNull();
+    expect(clientMocks.loadProtectedInvoicePdf).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -147,10 +148,9 @@ function props(): {
       sortOrder: 1
     }],
     signatures: [{
-      id: "signature-1",
-      invoiceId: "invoice-1",
+      id: "work-authorization-1",
       jobId: "job-1",
-      purpose: "invoice_approval",
+      purpose: "work_authorization",
       signerName: "Jordan Customer",
       signerRole: "customer",
       status: "active",
@@ -158,7 +158,20 @@ function props(): {
       documentSha256: "c".repeat(64),
       signedAt: "2026-07-21T16:00:00.000Z",
       collectedBy: "tech-1",
-      createdAt: "2026-07-21T16:00:00.000Z"
+      createdAt: "2026-07-21T16:00:00.000Z",
+      selectedTier: "better"
+    }, {
+      id: "work-completion-1",
+      jobId: "job-1",
+      purpose: "work_completion",
+      signerName: "Jordan Customer",
+      signerRole: "customer",
+      status: "active",
+      contentSha256: "d".repeat(64),
+      documentSha256: "e".repeat(64),
+      signedAt: "2026-07-21T16:00:30.000Z",
+      collectedBy: "tech-1",
+      createdAt: "2026-07-21T16:00:30.000Z"
     }],
     canGenerate: true
   };

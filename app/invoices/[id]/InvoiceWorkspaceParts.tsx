@@ -8,7 +8,6 @@ import styles from "./InvoiceWorkspace.module.css";
 
 export type InvoiceWorkspaceActionId =
   | "save_review"
-  | "collect_customer_signature"
   | "generate_pdf"
   | "record_sent"
   | "open_payment"
@@ -31,35 +30,44 @@ export function resolveInvoiceWorkspaceAction(input: {
   canManageInvoice: boolean;
   selectedSaved: boolean;
   reviewDirty: boolean;
-  approvalSaved: boolean;
+  fieldSignaturesReady: boolean;
   pdfGenerated: boolean;
   deliveryRecorded: boolean;
   paymentStatus: InvoicePaymentStatus;
   paymentEditorOpen: boolean;
 }): InvoiceWorkspaceAction {
-  if (!input.selectedSaved || input.reviewDirty) {
+  if (!input.fieldSignaturesReady) {
+    return {
+      id: "return_to_job",
+      label: "Finish field workflow",
+      title: "Field signatures needed",
+      helper: "Collect authorization before work and completion acknowledgment after work. The invoice does not add a third customer signature."
+    };
+  }
+
+  if (!input.selectedSaved) {
+    return {
+      id: "return_to_job",
+      label: "Refresh invoice from job",
+      title: "Authorized scope conflict",
+      helper: "This draft does not match the customer's signed work authorization. Refresh it from the completed job."
+    };
+  }
+
+  if (input.reviewDirty) {
     if (!input.canManageInvoice) {
       return {
         id: "return_to_job",
         label: "Return to job",
         title: "Owner review needed",
-        helper: "An owner must choose and save the invoice scope before approval can continue."
+        helper: "An owner must save the invoice label and notes before the PDF can be created."
       };
     }
     return {
       id: "save_review",
       label: "Save invoice details",
-      title: input.selectedSaved ? "Save your changes" : "Choose the invoice scope",
-      helper: "Save the chosen work and total before asking the customer to approve it."
-    };
-  }
-
-  if (!input.approvalSaved) {
-    return {
-      id: "collect_customer_signature",
-      label: "Add customer signature",
-      title: "Customer approval",
-      helper: "Ask the customer to review the chosen scope and balance, then sign."
+      title: "Save your changes",
+      helper: "The signed scope and technician pricing stay locked; the owner can edit only the invoice label and notes."
     };
   }
 
@@ -143,11 +151,13 @@ export function InvoiceScopeEditor({
   onSelect: (tier: Tier) => void;
 }) {
   if (locked) {
+    const itemCount = selectedTier ? itemCountByTier[selectedTier] : 0;
     return (
       <div className={styles.lockedScope} data-testid="locked-invoice-scope">
-        <span>Chosen scope</span>
+        <span>Authorized scope</span>
         <strong>{neutralLabel}</strong>
-        <p>The approved document keeps one neutral service scope. Reject the saved signature before changing signed content.</p>
+        {selectedTier ? <small>{money(totalByTier[selectedTier])} · {itemCount} item{itemCount === 1 ? "" : "s"}</small> : null}
+        <p>Locked to the customer&apos;s field authorization. Technician-entered descriptions, quantities, and prices remain unchanged.</p>
       </div>
     );
   }

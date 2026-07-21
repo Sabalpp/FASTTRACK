@@ -3,12 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { JobStageNav, jobStages } from "@/components/JobStageNav";
 
 describe("Phase 5 job stage navigation", () => {
-  it("presents the five field-work stages as labeled tabs without a numbered rail", () => {
+  it("presents the seven field-work checkpoints as labeled tabs without a numbered rail", () => {
     render(<JobStageNav active="overview" onChange={vi.fn()} />);
 
-    expect(screen.getAllByRole("tab")).toHaveLength(5);
+    expect(screen.getAllByRole("tab")).toHaveLength(7);
     for (const stage of jobStages) {
-      expect(screen.getByRole("tab", { name: new RegExp(stage.label, "i") })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: new RegExp(stage.shortLabel, "i") })).toBeTruthy();
     }
     expect(screen.queryByText(/^1$/)).toBeNull();
     expect(screen.getByRole("tab", { name: /overview/i }).getAttribute("aria-selected")).toBe("true");
@@ -26,7 +26,7 @@ describe("Phase 5 job stage navigation", () => {
     );
 
     expect(screen.getByText("3")).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: /work/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /estimate/i }));
     expect(onChange).toHaveBeenCalledWith("work");
   });
 });

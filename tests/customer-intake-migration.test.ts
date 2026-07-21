@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const migration = read("../supabase/migrations/20260721170000_allow_technician_customer_intake.sql");
+const standardEstimateMigration = read("../supabase/migrations/20260721200000_add_standard_estimate_option.sql");
+const twoSignatureMigration = read("../supabase/migrations/20260721220000_add_two_signature_workflow.sql");
 const schema = read("../supabase/schema.sql");
 
 describe("technician customer intake database contract", () => {
@@ -21,8 +23,14 @@ describe("technician customer intake database contract", () => {
     }
   });
 
-  it("keeps technician intake as the latest fresh-install contract", () => {
-    expect(schema.endsWith(migration)).toBe(true);
+  it("keeps technician intake in order before newer fresh-install contracts", () => {
+    const intakeIndex = schema.indexOf(migration);
+    const standardEstimateIndex = schema.indexOf(standardEstimateMigration);
+    const twoSignatureIndex = schema.indexOf(twoSignatureMigration);
+
+    expect(intakeIndex).toBeGreaterThanOrEqual(0);
+    expect(standardEstimateIndex).toBeGreaterThan(intakeIndex);
+    expect(twoSignatureIndex).toBeGreaterThan(standardEstimateIndex);
   });
 });
 

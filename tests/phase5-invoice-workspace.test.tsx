@@ -7,26 +7,26 @@ import {
 } from "@/app/invoices/[id]/InvoiceWorkspaceParts";
 
 describe("Phase 5 invoice workspace", () => {
-  it("advances one primary action through review, approval, PDF, delivery, and payment", () => {
+  it("uses the two field signatures and never asks for a third customer invoice signature", () => {
     const base = {
       canManageInvoice: true,
-      selectedSaved: false,
+      selectedSaved: true,
       reviewDirty: false,
-      approvalSaved: false,
+      fieldSignaturesReady: true,
       pdfGenerated: false,
       deliveryRecorded: false,
       paymentStatus: "unpaid" as const,
       paymentEditorOpen: false
     };
 
-    expect(resolveInvoiceWorkspaceAction(base).id).toBe("save_review");
-    expect(resolveInvoiceWorkspaceAction({ ...base, selectedSaved: true }).id).toBe("collect_customer_signature");
-    expect(resolveInvoiceWorkspaceAction({ ...base, selectedSaved: true, approvalSaved: true }).id).toBe("generate_pdf");
+    expect(resolveInvoiceWorkspaceAction({ ...base, fieldSignaturesReady: false }).id).toBe("return_to_job");
+    expect(resolveInvoiceWorkspaceAction({ ...base, selectedSaved: false }).id).toBe("return_to_job");
+    expect(resolveInvoiceWorkspaceAction({ ...base, reviewDirty: true }).id).toBe("save_review");
+    expect(resolveInvoiceWorkspaceAction(base).id).toBe("generate_pdf");
 
     const delivery = resolveInvoiceWorkspaceAction({
       ...base,
       selectedSaved: true,
-      approvalSaved: true,
       pdfGenerated: true
     });
     expect(delivery.id).toBe("record_sent");
@@ -36,7 +36,6 @@ describe("Phase 5 invoice workspace", () => {
     const payment = resolveInvoiceWorkspaceAction({
       ...base,
       selectedSaved: true,
-      approvalSaved: true,
       pdfGenerated: true,
       deliveryRecorded: true
     });
@@ -46,7 +45,6 @@ describe("Phase 5 invoice workspace", () => {
     const savePayment = resolveInvoiceWorkspaceAction({
       ...base,
       selectedSaved: true,
-      approvalSaved: true,
       pdfGenerated: true,
       deliveryRecorded: true,
       paymentEditorOpen: true
@@ -57,7 +55,6 @@ describe("Phase 5 invoice workspace", () => {
     const savePaymentBeforeDelivery = resolveInvoiceWorkspaceAction({
       ...base,
       selectedSaved: true,
-      approvalSaved: true,
       pdfGenerated: true,
       deliveryRecorded: false,
       paymentEditorOpen: true
@@ -67,7 +64,6 @@ describe("Phase 5 invoice workspace", () => {
     expect(resolveInvoiceWorkspaceAction({
       ...base,
       selectedSaved: true,
-      approvalSaved: true,
       pdfGenerated: true,
       deliveryRecorded: true,
       paymentStatus: "paid"
@@ -79,13 +75,14 @@ describe("Phase 5 invoice workspace", () => {
     const props = {
       canEdit: true,
       selectedTier: "better" as const,
-      totalByTier: { good: 106, better: 212, best: 318 },
-      itemCountByTier: { good: 1, better: 2, best: 3 },
+      totalByTier: { standard: 89, good: 106, better: 212, best: 318 },
+      itemCountByTier: { standard: 1, good: 1, better: 2, best: 3 },
       neutralLabel: "Approved work",
       onSelect
     };
     const view = render(<InvoiceScopeEditor {...props} locked={false} />);
 
+    expect(screen.getByRole("button", { name: /Use Standard estimate/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Use Good estimate/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Use Better estimate/i }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: /Use Best estimate/i }));
@@ -94,6 +91,7 @@ describe("Phase 5 invoice workspace", () => {
 
     view.rerender(<InvoiceScopeEditor {...props} locked />);
     expect(screen.getByTestId("locked-invoice-scope").textContent).toContain("Approved work");
+    expect(screen.queryByText(/Standard estimate/i)).toBeNull();
     expect(screen.queryByText(/Good estimate/i)).toBeNull();
     expect(screen.queryByText(/Better estimate/i)).toBeNull();
     expect(screen.queryByText(/Best estimate/i)).toBeNull();

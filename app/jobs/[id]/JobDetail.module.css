@@ -716,6 +716,27 @@
   line-height: 1.45;
 }
 
+.checkpointNotice {
+  display: grid;
+  gap: 4px;
+  padding: 13px 15px;
+  border: 1px solid #c9dde2;
+  border-radius: 12px;
+  color: #31515c;
+  background: #f0f7f8;
+}
+
+.checkpointNotice strong {
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.checkpointNotice span {
+  color: #627681;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
 .conflict {
   display: grid;
   gap: 5px;
@@ -924,6 +945,79 @@
   margin: 0;
   border-color: #dde4eb;
   box-shadow: none;
+}
+
+.authorizationOptions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.authorizationOptions button {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  min-height: 92px;
+  padding: 13px;
+  border: 1px solid #d8e0e7;
+  border-radius: 12px;
+  color: #516071;
+  background: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease, transform 120ms ease;
+}
+
+.authorizationOptions button:hover:not(:disabled) {
+  border-color: #93aeb7;
+  background: #f7fafb;
+}
+
+.authorizationOptions button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.authorizationOptions button:focus-visible {
+  outline: 3px solid rgba(21, 63, 75, 0.18);
+  outline-offset: 2px;
+}
+
+.authorizationOptions button[data-selected] {
+  border-color: #28758a;
+  color: #173f4a;
+  background: #eaf4f6;
+  box-shadow: inset 0 0 0 1px #28758a;
+}
+
+.authorizationOptions button:disabled:not([data-selected]) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.authorizationOptions button span,
+.authorizationOptions button strong,
+.authorizationOptions button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.authorizationOptions button span {
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.authorizationOptions button strong {
+  color: #24333f;
+  font-size: 0.9rem;
+}
+
+.authorizationOptions button small {
+  color: #758291;
+  font-size: 0.67rem;
+  line-height: 1.35;
 }
 
 .overridePanel {
@@ -1220,6 +1314,10 @@
     padding: 14px;
   }
 
+  .authorizationOptions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .stageBody :global(.segmented-control) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1266,6 +1364,12 @@
     width: 100%;
     min-width: 0;
     min-height: 50px;
+  }
+}
+
+@media (max-width: 540px) {
+  .authorizationOptions {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

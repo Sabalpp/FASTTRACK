@@ -7,7 +7,8 @@ import {
   assertSignatureDocumentCurrent,
   invoiceDocumentHash,
   jobCompletionDocumentHash,
-  type InvoiceBundle
+  type InvoiceBundle,
+  type WorkAuthorizationBinding
 } from "@/lib/invoice-server";
 import type { Customer, Invoice, Job, JobLineItem } from "@/lib/types";
 
@@ -106,9 +107,32 @@ describe("signed document integrity", () => {
   it("detects job changes after a completion signature was collected", () => {
     const job = { ...invoiceBundle().job, arrivedAt: "2026-07-21T14:02:00.000Z" };
     const changed = { ...job, notes: "Additional work was completed after signing." };
-    expect(jobCompletionDocumentHash(changed)).not.toBe(jobCompletionDocumentHash(job));
+    expect(jobCompletionDocumentHash(changed, authorizationBinding())).not.toBe(
+      jobCompletionDocumentHash(job, authorizationBinding())
+    );
+  });
+
+  it("binds completion to the exact customer authorization record", () => {
+    const job = { ...invoiceBundle().job, arrivedAt: "2026-07-21T14:02:00.000Z" };
+    const changedAuthorization = { ...authorizationBinding(), id: "authorization-2" };
+    expect(jobCompletionDocumentHash(job, changedAuthorization)).not.toBe(
+      jobCompletionDocumentHash(job, authorizationBinding())
+    );
   });
 });
+
+function authorizationBinding(): WorkAuthorizationBinding {
+  return {
+    id: "authorization-1",
+    selectedTier: "better",
+    documentSha256: "a".repeat(64),
+    termsVersion: "fast-track-work-authorization-v1",
+    subtotal: 200,
+    taxRate: 0.06,
+    taxAmount: 12,
+    total: 212
+  };
+}
 
 function materialInvoiceChanges(): Array<[string, (bundle: InvoiceBundle) => void]> {
   return [

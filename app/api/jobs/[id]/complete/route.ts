@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertSignatureDocumentCurrent, jobCompletionDocumentHash, loadJobForActor } from "@/lib/invoice-server";
+import {
+  assertCompletionAuthorizationBinding,
+  assertSignatureDocumentCurrent,
+  jobCompletionDocumentHash,
+  loadJobForActor,
+  workAuthorizationBindingFromSignatureRow
+} from "@/lib/invoice-server";
 import { HttpError, requireServerActor, routeErrorResponse } from "@/lib/server-auth";
 import { jobFromRow, type JobRow } from "@/lib/supabase-mappers";
 
@@ -18,18 +24,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
       throw new HttpError(409, "Only an arrived job in progress can be completed.");
     }
 
-    const { data: signature, error: signatureError } = await actor.supabase
-      .from("invoice_signatures")
-      .select("id,document_sha256")
-      .eq("job_id", id)
-      .eq("purpose", "work_completion")
-      .eq("status", "active")
-      .maybeSingle();
-    if (signatureError) throw new HttpError(503, "The customer signature could not be checked.");
+    const [
+      { data: authorization, error: authorizationError },
+      { data: signature, error: signatureError },
+      { count: afterPhotoCount, error: afterPhotoError }
+    ] = await Promise.all([
+      actor.supabase.from("invoice_signatures").select("id,selected_tier,document_sha256,authorization_terms_version,authorization_subtotal,authorization_tax_rate,authorization_tax_amount,authorization_total").eq("job_id", id).eq("purpose", "work_authorization").eq("status", "active").maybeSingle(),
+      actor.supabase.from("invoice_signatures").select("id,document_sha256,selected_tier,authorization_signature_id").eq("job_id", id).eq("purpose", "work_completion").eq("status", "active").maybeSingle(),
+      actor.supabase.from("job_photos").select("id", { count: "exact", head: true }).eq("job_id", id).eq("kind", "after")
+    ]);
+    if (authorizationError || signatureError || afterPhotoError) throw new HttpError(503, "The field-work evidence could not be checked.");
+    if (!authorization) throw new HttpError(409, "Collect customer work authorization before completing this job.");
+    if (!afterPhotoCount) throw new HttpError(409, "Save at least one after photo before completing this job.");
+    const authorizationBinding = workAuthorizationBindingFromSignatureRow(authorization);
     if (signature) {
+      assertCompletionAuthorizationBinding(signature, authorizationBinding);
       assertSignatureDocumentCurrent(
         signature.document_sha256,
-        jobCompletionDocumentHash(job),
+        jobCompletionDocumentHash(job, authorizationBinding),
         "The job changed after the customer signed. Reject and collect the completion signature again."
       );
     }

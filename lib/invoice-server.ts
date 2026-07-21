@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { branding } from "@/lib/branding";
 import { HttpError, assertOwnerOrAssignedTech, type ServerActor } from "@/lib/server-auth";
 import {
   customerFromRow,
@@ -11,7 +12,7 @@ import {
   type JobLineItemRow,
   type JobRow
 } from "@/lib/supabase-mappers";
-import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem, SignaturePurpose } from "@/lib/types";
+import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem, SignaturePurpose, Tier } from "@/lib/types";
 
 export type InvoiceBundle = {
   invoice: Invoice;
@@ -27,6 +28,47 @@ export type SignatureImageIntegrityMetadata = {
   height: number;
   byteSize: number;
   contentSha256: string;
+};
+
+export type InvoiceFieldSignatureRow = {
+  id: string;
+  purpose: SignaturePurpose;
+  status: string;
+  selected_tier?: string | null;
+  document_sha256?: string | null;
+  content_sha256?: string | null;
+  signed_at?: string | null;
+  created_at?: string | null;
+  rejected_at?: string | null;
+  authorization_signature_id?: string | null;
+  authorization_terms_version?: string | null;
+  authorization_subtotal?: string | number | null;
+  authorization_tax_rate?: string | number | null;
+  authorization_tax_amount?: string | number | null;
+  authorization_total?: string | number | null;
+};
+
+export const WORK_AUTHORIZATION_TERMS_VERSION = "fast-track-work-authorization-v1";
+export const WORK_COMPLETION_TERMS_VERSION = "fast-track-work-completion-v1";
+
+export type WorkAuthorizationBinding = {
+  id: string;
+  selectedTier: Tier;
+  documentSha256: string;
+  termsVersion: string;
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  total: number;
+};
+
+export type WorkAuthorizationPricing = Omit<WorkAuthorizationBinding, "id" | "selectedTier" | "documentSha256">;
+
+export type InvoiceFieldWorkflow = {
+  authorizedTier: Tier;
+  authorization: InvoiceFieldSignatureRow;
+  completion?: InvoiceFieldSignatureRow;
+  completionOverridden: boolean;
 };
 
 export async function loadInvoiceBundle(actor: ServerActor, invoiceId: string): Promise<InvoiceBundle> {
@@ -85,14 +127,18 @@ export function invoiceDocumentHash(bundle: InvoiceBundle) {
       sortOrder: item.sortOrder
     }));
 
-  const selectedSubtotal = invoice.selectedTier === "good"
+  const selectedSubtotal = invoice.selectedTier === "standard"
+    ? invoice.subtotalStandard ?? 0
+    : invoice.selectedTier === "good"
     ? invoice.subtotalGood
     : invoice.selectedTier === "better"
       ? invoice.subtotalBetter
       : invoice.selectedTier === "best"
         ? invoice.subtotalBest
         : 0;
-  const selectedTotal = invoice.selectedTier === "good"
+  const selectedTotal = invoice.selectedTier === "standard"
+    ? invoice.totalStandard ?? 0
+    : invoice.selectedTier === "good"
     ? invoice.totalGood
     : invoice.selectedTier === "better"
       ? invoice.totalBetter
@@ -149,6 +195,87 @@ export function assertSignatureDocumentCurrent(
   if (signatureDocumentSha256 !== currentDocumentSha256) throw new HttpError(409, message);
 }
 
+/**
+ * Invoices are a rendering of the customer's field authorization, not a new
+ * opportunity to choose a different estimate. This validates that boundary
+ * and the separate completion evidence before a PDF can be generated or sent.
+ */
+export function assertInvoiceFieldWorkflow(
+  bundle: InvoiceBundle,
+  signatureRows: InvoiceFieldSignatureRow[]
+): InvoiceFieldWorkflow {
+  const authorization = signatureRows.find((signature) => (
+    signature.purpose === "work_authorization" && signature.status === "active"
+  ));
+  if (!authorization) {
+    throw new HttpError(409, "Customer work authorization is required before invoicing.");
+  }
+
+  const authorizedTier = authorization.selected_tier;
+  if (!isTier(authorizedTier)) {
+    throw new HttpError(409, "The customer work authorization is missing its approved estimate option. Collect it again.");
+  }
+  if (bundle.invoice.selectedTier !== authorizedTier) {
+    throw new HttpError(409, "The invoice scope does not match the customer's authorized work. Refresh the invoice draft.");
+  }
+  assertSignatureDocumentCurrent(
+    authorization.document_sha256,
+    jobAuthorizationDocumentHash(bundle.job, bundle.items, authorizedTier),
+    "The authorized work changed after the customer signed. Reopen the job and collect authorization again."
+  );
+  const authorizationBinding = workAuthorizationBindingFromSignatureRow(authorization);
+  assertWorkAuthorizationBindingCurrent(authorizationBinding, bundle.items, authorizedTier);
+
+  const completion = signatureRows.find((signature) => (
+    signature.purpose === "work_completion" && signature.status === "active"
+  ));
+  const completionOverridden = hasAuditedCompletionOverride(bundle.job);
+  if (!completion && !completionOverridden) {
+    throw new HttpError(409, "Customer completion acknowledgment is required before invoicing.");
+  }
+  if (completion) {
+    assertCompletionAuthorizationBinding(completion, authorizationBinding);
+    assertSignatureDocumentCurrent(
+      completion.document_sha256,
+      jobCompletionDocumentHash(bundle.job, authorizationBinding),
+      "The completed work changed after the customer signed. Reopen the job and collect completion acknowledgment again."
+    );
+  }
+
+  return { authorizedTier, authorization, completion, completionOverridden };
+}
+
+export function invoiceSignatureSnapshot(signatureRows: InvoiceFieldSignatureRow[]) {
+  return signatureRows
+    .map((signature) => [
+      signature.id,
+      signature.purpose,
+      signature.status,
+      signature.selected_tier ?? "",
+      signature.authorization_signature_id ?? "",
+      signature.authorization_terms_version ?? "",
+      signature.authorization_subtotal ?? "",
+      signature.authorization_tax_rate ?? "",
+      signature.authorization_tax_amount ?? "",
+      signature.authorization_total ?? "",
+      signature.document_sha256 ?? "",
+      signature.content_sha256 ?? "",
+      signature.signed_at ?? "",
+      signature.created_at ?? "",
+      signature.rejected_at ?? ""
+    ].join(":"))
+    .sort()
+    .join("|");
+}
+
+export function hasAuditedCompletionOverride(job: Job) {
+  return Boolean(
+    job.completionSignatureOverrideAt
+    && job.completionSignatureOverrideBy
+    && job.completionSignatureOverrideReason?.trim()
+  );
+}
+
 export function assertInvoicePdfIntegrity(invoice: Invoice, bytes: Uint8Array) {
   if (!invoice.pdfSha256 || invoice.pdfSizeBytes === undefined) {
     throw new HttpError(409, "The saved invoice PDF is missing integrity metadata. Generate it again.");
@@ -162,15 +289,150 @@ export function assertInvoicePdfIntegrity(invoice: Invoice, bytes: Uint8Array) {
   }
 }
 
-export function jobCompletionDocumentHash(job: Job) {
+export function jobCompletionDocumentHash(job: Job, authorization: WorkAuthorizationBinding) {
   return sha256Json({
-    jobId: job.id,
-    customerId: job.customerId,
-    serviceAddress: job.serviceAddress,
-    description: job.description,
-    notes: job.notes,
-    arrivedAt: job.arrivedAt ?? null
+    version: 2,
+    termsVersion: WORK_COMPLETION_TERMS_VERSION,
+    job: {
+      id: job.id,
+      customerId: job.customerId,
+      serviceAddress: job.serviceAddress,
+      description: job.description,
+      notes: job.notes,
+      arrivedAt: job.arrivedAt ?? null
+    },
+    authorization
   });
+}
+
+export function jobAuthorizationDocumentHash(
+  job: Job,
+  items: JobLineItem[],
+  selectedTier: Tier,
+  taxRate = branding.taxRate
+) {
+  const selectedItems = items
+    .filter((item) => item.tier === selectedTier)
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))
+    .map((item) => ({
+      id: item.id,
+      tier: item.tier,
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      sortOrder: item.sortOrder
+    }));
+
+  return sha256Json({
+    version: 2,
+    termsVersion: WORK_AUTHORIZATION_TERMS_VERSION,
+    selectedTier,
+    pricing: workAuthorizationPricing(items, selectedTier, taxRate),
+    job: {
+      id: job.id,
+      customerId: job.customerId,
+      serviceAddress: job.serviceAddress,
+      description: job.description,
+      scheduledAt: job.scheduledAt,
+      arrivalWindowEndAt: job.arrivalWindowEndAt,
+      arrivedAt: job.arrivedAt ?? null
+    },
+    selectedItems
+  });
+}
+
+export function workAuthorizationPricing(
+  items: JobLineItem[],
+  selectedTier: Tier,
+  taxRate = branding.taxRate
+): WorkAuthorizationPricing {
+  if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 1) {
+    throw new HttpError(500, "The configured work-authorization tax rate is invalid.");
+  }
+  const subtotal = roundMoney(items
+    .filter((item) => item.tier === selectedTier)
+    .reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0));
+  const taxAmount = roundMoney(subtotal * taxRate);
+  return {
+    termsVersion: WORK_AUTHORIZATION_TERMS_VERSION,
+    subtotal,
+    taxRate,
+    taxAmount,
+    total: roundMoney(subtotal + taxAmount)
+  };
+}
+
+export function workAuthorizationBindingFromSignatureRow(
+  row: Pick<
+    InvoiceFieldSignatureRow,
+    | "id"
+    | "selected_tier"
+    | "document_sha256"
+    | "authorization_terms_version"
+    | "authorization_subtotal"
+    | "authorization_tax_rate"
+    | "authorization_tax_amount"
+    | "authorization_total"
+  >
+): WorkAuthorizationBinding {
+  if (!isTier(row.selected_tier) || typeof row.document_sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(row.document_sha256)) {
+    throw new HttpError(409, "The saved work authorization is missing its signed scope. Collect it again.");
+  }
+  const termsVersion = row.authorization_terms_version;
+  const subtotal = finiteNumber(row.authorization_subtotal);
+  const taxRate = finiteNumber(row.authorization_tax_rate);
+  const taxAmount = finiteNumber(row.authorization_tax_amount);
+  const total = finiteNumber(row.authorization_total);
+  if (
+    termsVersion !== WORK_AUTHORIZATION_TERMS_VERSION
+    || subtotal === undefined
+    || taxRate === undefined
+    || taxAmount === undefined
+    || total === undefined
+  ) {
+    throw new HttpError(409, "The saved work authorization predates the current price and terms record. Collect it again.");
+  }
+  return {
+    id: row.id,
+    selectedTier: row.selected_tier,
+    documentSha256: row.document_sha256,
+    termsVersion,
+    subtotal,
+    taxRate,
+    taxAmount,
+    total
+  };
+}
+
+export function assertCompletionAuthorizationBinding(
+  completion: Pick<InvoiceFieldSignatureRow, "authorization_signature_id" | "selected_tier">,
+  authorization: WorkAuthorizationBinding
+) {
+  if (
+    completion.authorization_signature_id !== authorization.id
+    || completion.selected_tier !== authorization.selectedTier
+  ) {
+    throw new HttpError(409, "The completion signature is not bound to the active customer work authorization. Collect it again.");
+  }
+}
+
+export function assertWorkAuthorizationBindingCurrent(
+  authorization: WorkAuthorizationBinding,
+  items: JobLineItem[],
+  selectedTier: Tier
+) {
+  if (
+    authorization.selectedTier !== selectedTier
+    || !sameAuthorizationPricing(authorization, workAuthorizationPricing(items, selectedTier))
+  ) {
+    throw new HttpError(409, "The signed authorization price or terms no longer match the approved work. Collect it again.");
+  }
+}
+
+export function assertJobCanAcceptAuthorization(job: Job) {
+  if (job.status !== "in_progress" || !job.arrivedAt) {
+    throw new HttpError(409, "Record the technician arrival before collecting work authorization.");
+  }
 }
 
 export function assertJobCanAcceptCompletionSignature(job: Job) {
@@ -199,6 +461,14 @@ export async function listSignatures(
 }
 
 export function signatureFromRow(row: Record<string, unknown>, imageUrl?: string): InvoiceSignature {
+  const auditMetadata = row.audit_metadata && typeof row.audit_metadata === "object"
+    ? row.audit_metadata as Record<string, unknown>
+    : undefined;
+  const selectedTier = isTier(row.selected_tier)
+    ? row.selected_tier
+    : isTier(auditMetadata?.selectedTier)
+      ? auditMetadata.selectedTier
+      : undefined;
   return {
     id: String(row.id),
     invoiceId: row.invoice_id ? String(row.invoice_id) : undefined,
@@ -214,10 +484,15 @@ export function signatureFromRow(row: Record<string, unknown>, imageUrl?: string
     signedAt: String(row.signed_at),
     collectedBy: String(row.collected_by),
     createdAt: String(row.created_at),
+    selectedTier,
     rejectedAt: row.rejected_at ? String(row.rejected_at) : undefined,
     rejectedBy: row.rejected_by ? String(row.rejected_by) : undefined,
     rejectionReason: row.rejection_reason ? String(row.rejection_reason) : undefined
   };
+}
+
+function isTier(value: unknown): value is Tier {
+  return value === "standard" || value === "good" || value === "better" || value === "best";
 }
 
 export async function signatureDataUrl(
@@ -265,4 +540,21 @@ export function assertSignatureImageIntegrity(
 
 function sha256Json(value: unknown) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function finiteNumber(value: unknown) {
+  const number = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function sameAuthorizationPricing(left: WorkAuthorizationPricing, right: WorkAuthorizationPricing) {
+  return left.termsVersion === right.termsVersion
+    && left.subtotal === right.subtotal
+    && left.taxRate === right.taxRate
+    && left.taxAmount === right.taxAmount
+    && left.total === right.total;
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }

@@ -38,7 +38,7 @@ const verbActions: Record<WorkflowVerb, { title: string; body: string; cta: stri
   },
   Charge: {
     title: "Add the work in plain language",
-    body: "Pick from the catalog or type a manual line item, then assign it to Good, Better, or Best.",
+    body: "Type any custom line item and price, then keep one Standard scope or offer Good, Better, and Best choices.",
     cta: "Add line item"
   },
   Case: {
@@ -47,8 +47,8 @@ const verbActions: Record<WorkflowVerb, { title: string; body: string; cta: stri
     cta: "Upload photo"
   },
   Secure: {
-    title: "Present Good / Better / Best",
-    body: "The customer gets three clear options. The tech does not need to rebuild a quote from scratch.",
+    title: "Present Standard or options",
+    body: "Use one clear Standard scope, or present Good, Better, and Best when choices help the customer.",
     cta: "Show options"
   },
   Invoice: {
@@ -119,6 +119,7 @@ export function FramerShowcase() {
             <div className="mini-tier-strip">
               {tierOptions.map((tier) => {
                 const invoiceTotals = {
+                  standard: featuredInvoice?.totalStandard,
                   good: featuredInvoice?.totalGood,
                   better: featuredInvoice?.totalBetter,
                   best: featuredInvoice?.totalBest

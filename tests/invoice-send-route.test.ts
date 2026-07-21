@@ -5,6 +5,7 @@ const routeHarness = vi.hoisted(() => ({
   requireOwner: vi.fn(),
   loadInvoiceBundle: vi.fn(),
   assertInvoicePdfIntegrity: vi.fn(),
+  assertInvoiceFieldWorkflow: vi.fn(),
   assertSignatureDocumentCurrent: vi.fn(),
   invoiceDocumentHash: vi.fn(),
   sendInvoiceEmail: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock("@/lib/invoice-server", async (importOriginal) => {
     ...actual,
     loadInvoiceBundle: routeHarness.loadInvoiceBundle,
     assertInvoicePdfIntegrity: routeHarness.assertInvoicePdfIntegrity,
+    assertInvoiceFieldWorkflow: routeHarness.assertInvoiceFieldWorkflow,
     assertSignatureDocumentCurrent: routeHarness.assertSignatureDocumentCurrent,
     invoiceDocumentHash: routeHarness.invoiceDocumentHash
   };
@@ -52,6 +54,7 @@ describe("invoice send API", () => {
   beforeEach(() => {
     for (const mock of Object.values(routeHarness)) mock.mockReset();
     routeHarness.invoiceDocumentHash.mockReturnValue("document-hash");
+    routeHarness.assertInvoiceFieldWorkflow.mockReturnValue({ authorizedTier: "better" });
     routeHarness.loadInvoiceBundle.mockResolvedValue(invoiceBundle());
     routeHarness.invoiceFromRow.mockImplementation((row) => row);
   });
@@ -145,10 +148,19 @@ function createDatabase() {
   signatureQuery.eq.mockReturnValue(signatureQuery);
   signatureQuery.in.mockResolvedValue({
     data: [{
-      purpose: "invoice_approval",
+      id: "authorization-1",
+      purpose: "work_authorization",
       status: "active",
-      document_sha256: "document-hash",
+      selected_tier: "better",
+      document_sha256: "authorization-hash",
       created_at: "2026-07-21T12:00:00.000Z",
+      rejected_at: null
+    }, {
+      id: "completion-1",
+      purpose: "work_completion",
+      status: "active",
+      document_sha256: "completion-hash",
+      created_at: "2026-07-21T12:30:00.000Z",
       rejected_at: null
     }],
     error: null

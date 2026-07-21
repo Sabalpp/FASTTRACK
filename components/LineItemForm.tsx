@@ -6,7 +6,7 @@ import { tierLabels, tierOptions, useAppData } from "@/lib/data-store";
 import { sameLineItemService } from "@/lib/line-items";
 import type { Tier } from "@/lib/types";
 
-export function LineItemForm({ jobId }: { jobId: string }) {
+export function LineItemForm({ jobId, onSaved }: { jobId: string; onSaved?: (tier: Tier) => void }) {
   const data = useAppData();
   const activeParts = data.parts.filter((part) => part.active);
   const [partId, setPartId] = useState(activeParts[0]?.id ?? "manual");
@@ -14,7 +14,9 @@ export function LineItemForm({ jobId }: { jobId: string }) {
   const [description, setDescription] = useState(selectedPart?.name ?? "");
   const [quantity, setQuantity] = useState("1");
   const [unitPrice, setUnitPrice] = useState(String(selectedPart?.defaultPrice ?? 0));
-  const [tier, setTier] = useState<Tier>("good");
+  const [tier, setTier] = useState<Tier>("standard");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | undefined>();
 
   function handlePartChange(value: string) {
     setPartId(value);
@@ -28,15 +30,29 @@ export function LineItemForm({ jobId }: { jobId: string }) {
     }
   }
 
-  function submit(event: React.FormEvent) {
+  async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!description.trim()) return;
+    if (saving) return;
+    const nextQuantity = Number(quantity);
+    const nextUnitPrice = Number(unitPrice);
+    if (!description.trim()) {
+      setError("Enter a description before saving this line item.");
+      return;
+    }
+    if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) {
+      setError("Quantity must be greater than zero.");
+      return;
+    }
+    if (!Number.isFinite(nextUnitPrice) || nextUnitPrice < 0) {
+      setError("Unit price must be zero or greater.");
+      return;
+    }
     const nextItem = {
       jobId,
       partId: selectedPart?.id,
       description: description.trim(),
-      quantity: Number(quantity),
-      unitPrice: Number(unitPrice),
+      quantity: nextQuantity,
+      unitPrice: nextUnitPrice,
       tier,
       isManual: !selectedPart
     };
@@ -45,19 +61,28 @@ export function LineItemForm({ jobId }: { jobId: string }) {
       && sameLineItemService(item, nextItem)
     ));
     const [matchingItem, ...duplicateItems] = matchingItems;
-    if (matchingItem) {
-      data.updateLineItem(matchingItem.id, nextItem);
-      duplicateItems.forEach((item) => data.deleteLineItem(item.id));
-    } else {
-      data.addLineItem(nextItem);
+    setSaving(true);
+    setError(undefined);
+    try {
+      if (matchingItem) {
+        await data.updateLineItem(matchingItem.id, nextItem);
+        for (const item of duplicateItems) await data.deleteLineItem(item.id);
+      } else {
+        await data.addLineItem(nextItem);
+      }
+      onSaved?.(tier);
+      setDescription(selectedPart?.name ?? "");
+      setQuantity("1");
+      setUnitPrice(String(selectedPart?.defaultPrice ?? 0));
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "The line item could not be saved.");
+    } finally {
+      setSaving(false);
     }
-    setDescription(selectedPart?.name ?? "");
-    setQuantity("1");
-    setUnitPrice(String(selectedPart?.defaultPrice ?? 0));
   }
 
   return (
-    <form className="stack line-item-entry-form" onSubmit={submit}>
+    <form className="stack line-item-entry-form" onSubmit={(event) => void submit(event)}>
       <TwoColumn>
         <Field label="Part or service">
           <select value={partId} onChange={(event) => handlePartChange(event.target.value)}>
@@ -69,6 +94,7 @@ export function LineItemForm({ jobId }: { jobId: string }) {
           <select value={tier} onChange={(event) => setTier(event.target.value as Tier)}>
             {tierOptions.map((option) => <option key={option} value={option}>{tierLabels[option]}</option>)}
           </select>
+          <small className="muted">Use Standard for one straightforward scope. Good, Better, and Best are optional customer choices.</small>
         </Field>
       </TwoColumn>
       <Field label="Description">
@@ -81,11 +107,12 @@ export function LineItemForm({ jobId }: { jobId: string }) {
         <Field label="Unit price ($)">
           <div className="money-input">
             <span>$</span>
-            <input type="number" step="0.01" min="0" value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} />
+            <input aria-label="Unit price ($)" type="number" step="0.01" min="0" value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} />
           </div>
         </Field>
       </TwoColumn>
-      <Button type="submit">Save line item</Button>
+      {error ? <p className="field-error" role="alert">{error}</p> : null}
+      <Button type="submit" disabled={saving}>{saving ? "Saving line item…" : "Save line item"}</Button>
     </form>
   );
 }

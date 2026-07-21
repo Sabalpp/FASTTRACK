@@ -27,9 +27,9 @@ import { SignatureStatusCard } from "@/components/SignatureStatusCard";
 import { Button, Card, EmptyState } from "@/components/ui";
 import { canSendInvoices, canViewInvoice } from "@/lib/access";
 import { useAuth } from "@/lib/auth";
-import { useAppData } from "@/lib/data-store";
+import { tierLabels, useAppData } from "@/lib/data-store";
 import { formatDate, formatDateTime } from "@/lib/date";
-import { balanceDue, firstPopulatedTier, invoiceOptionLabels } from "@/lib/invoice";
+import { balanceDue, invoiceOptionLabels, selectedTotal } from "@/lib/invoice";
 import {
   loadProtectedInvoice,
   markProtectedInvoiceSent,
@@ -154,7 +154,7 @@ export default function InvoiceDetailPage() {
 
   useEffect(() => {
     if (!invoice) return;
-    setSelectedTier(firstPopulatedTier(invoice));
+    setSelectedTier(invoice.selectedTier);
     setOptionLabel(invoice.optionLabel);
     setNotes(invoice.notes);
     setPaymentStatus(invoice.paymentStatus);
@@ -164,11 +164,17 @@ export default function InvoiceDetailPage() {
   }, [customer?.email, invoice?.id, invoice?.updatedAt]);
 
   async function refreshSignatures() {
-    if (!invoiceId) return;
+    if (!job?.id || !invoiceId) return;
     setSignaturesLoading(true);
     setSignatureError(undefined);
     try {
-      setSignatures(await loadSignatures({ type: "invoice", id: invoiceId }));
+      const [jobSignatures, invoiceSignatures] = await Promise.all([
+        loadSignatures({ type: "job", id: job.id }),
+        loadSignatures({ type: "invoice", id: invoiceId })
+      ]);
+      setSignatures(Array.from(
+        new Map([...jobSignatures, ...invoiceSignatures].map((signature) => [signature.id, signature])).values()
+      ));
     } catch (error) {
       setSignatureError(error instanceof Error ? error.message : "Signatures could not be loaded.");
     } finally {
@@ -177,10 +183,21 @@ export default function InvoiceDetailPage() {
   }
 
   useEffect(() => {
-    if (!invoice?.id) return;
+    if (!job?.id) return;
     void refreshSignatures();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoice?.id]);
+  }, [job?.id]);
+
+  const workAuthorization = signatures.find((signature) => signature.status === "active" && signature.purpose === "work_authorization");
+  const rejectedWorkAuthorization = signatures.find((signature) => signature.status === "rejected" && signature.purpose === "work_authorization");
+  const workCompletion = signatures.find((signature) => signature.status === "active" && signature.purpose === "work_completion");
+  const rejectedWorkCompletion = signatures.find((signature) => signature.status === "rejected" && signature.purpose === "work_completion");
+  const technicianSignature = signatures.find((signature) => signature.status === "active" && signature.purpose === "technician_acknowledgement");
+  const rejectedTechnicianSignature = signatures.find((signature) => signature.status === "rejected" && signature.purpose === "technician_acknowledgement");
+
+  useEffect(() => {
+    if (workAuthorization?.selectedTier) setSelectedTier(workAuthorization.selectedTier);
+  }, [workAuthorization?.id, workAuthorization?.selectedTier]);
 
   if (!data.loaded || (detailLoading && !invoice)) {
     return (
@@ -214,34 +231,37 @@ export default function InvoiceDetailPage() {
 
   const invoiceRecord = invoice;
   const jobRecord = job;
-  const customerRecord = customer;
   const canEdit = canSendInvoices(currentUser.role);
-  const approval = signatures.find((signature) => signature.status === "active" && signature.purpose === "invoice_approval");
-  const rejectedApproval = signatures.find((signature) => signature.status === "rejected" && signature.purpose === "invoice_approval");
-  const technicianSignature = signatures.find((signature) => signature.status === "active" && signature.purpose === "technician_acknowledgement");
-  const rejectedTechnicianSignature = signatures.find((signature) => signature.status === "rejected" && signature.purpose === "technician_acknowledgement");
   const previewInvoice: Invoice = { ...invoice, selectedTier, optionLabel, notes };
-  const totalByTier = { good: invoice.totalGood, better: invoice.totalBetter, best: invoice.totalBest };
+  const totalByTier = {
+    standard: invoice.totalStandard ?? 0,
+    good: invoice.totalGood,
+    better: invoice.totalBetter,
+    best: invoice.totalBest
+  };
   const itemCountByTier = {
+    standard: items.filter((item) => item.tier === "standard").length,
     good: items.filter((item) => item.tier === "good").length,
     better: items.filter((item) => item.tier === "better").length,
     best: items.filter((item) => item.tier === "best").length
   };
-  const selectedSaved = Boolean(invoice.selectedTier);
-  const reviewDirty = selectedTier !== invoice.selectedTier
-    || optionLabel !== invoice.optionLabel
+  const authorizedTier = workAuthorization?.selectedTier;
+  const completionOverridden = Boolean(job.completionSignatureOverrideAt && job.completionSignatureOverrideBy && job.completionSignatureOverrideReason?.trim());
+  const fieldSignaturesReady = Boolean(workAuthorization && (workCompletion || completionOverridden));
+  const tierConflict = Boolean(authorizedTier && invoice.selectedTier !== authorizedTier);
+  const selectedSaved = Boolean(authorizedTier && invoice.selectedTier === authorizedTier);
+  const reviewDirty = optionLabel !== invoice.optionLabel
     || notes.trim() !== invoice.notes;
-  const readyToSign = selectedSaved && !reviewDirty;
+  const readyToFinalize = selectedSaved && fieldSignaturesReady && !reviewDirty && !tierConflict;
   const generated = Boolean(invoice.pdfStoragePath && invoice.pdfGeneratedAt);
   const displayTotal = selectedTier ? totalByTier[selectedTier] : 0;
   const displayBalance = selectedTier ? balanceDue(previewInvoice) : 0;
-  const approvalSaved = Boolean(approval);
   const deliveryRecorded = Boolean(invoice.sentAt);
   const primaryAction = resolveInvoiceWorkspaceAction({
     canManageInvoice: canEdit,
     selectedSaved,
     reviewDirty,
-    approvalSaved,
+    fieldSignaturesReady,
     pdfGenerated: generated,
     deliveryRecorded,
     paymentStatus: invoice.paymentStatus,
@@ -249,17 +269,20 @@ export default function InvoiceDetailPage() {
   });
 
   async function saveReview() {
-    if (!selectedTier) return;
+    if (!authorizedTier) return;
     setReviewBusy(true);
     setMessage(undefined);
     setActionError(undefined);
     try {
+      if (invoiceRecord.selectedTier !== authorizedTier) {
+        throw new Error("The invoice scope does not match the customer's authorized work. Refresh the invoice draft.");
+      }
       const next = demoMode
-        ? { ...invoiceRecord, selectedTier, optionLabel, notes: notes.trim(), updatedAt: new Date().toISOString(), pdfStoragePath: undefined, pdfGeneratedAt: undefined, pdfSha256: undefined, pdfSizeBytes: undefined }
-        : await saveProtectedInvoiceReview(invoiceRecord.id, { selectedTier, optionLabel, notes: notes.trim() });
+        ? { ...invoiceRecord, optionLabel, notes: notes.trim(), updatedAt: new Date().toISOString(), pdfStoragePath: undefined, pdfGeneratedAt: undefined, pdfSha256: undefined, pdfSizeBytes: undefined }
+        : await saveProtectedInvoiceReview(invoiceRecord.id, { selectedTier: authorizedTier, optionLabel, notes: notes.trim() });
       if (demoMode) data.updateInvoice(invoiceRecord.id, next);
       replaceInvoice(next);
-      setMessage("Invoice details saved. Customer approval is next.");
+      setMessage("Invoice label and notes saved. The field signatures remain attached to this work.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "The invoice review could not be saved.");
     } finally {
@@ -330,9 +353,6 @@ export default function InvoiceDetailPage() {
     ))]);
     const next: Invoice = {
       ...invoiceRecord,
-      ...(saved.purpose === "invoice_approval"
-        ? { approvalStatus: "signed" as const, approvedAt: saved.signedAt }
-        : {}),
       pdfStoragePath: undefined,
       pdfGeneratedAt: undefined,
       pdfSha256: undefined,
@@ -352,9 +372,6 @@ export default function InvoiceDetailPage() {
     const rejectedAt = rejected.rejectedAt ?? new Date().toISOString();
     const next: Invoice = {
       ...invoiceRecord,
-      ...(signature.purpose === "invoice_approval"
-        ? { approvalStatus: "not_signed" as const, approvedAt: undefined }
-        : {}),
       pdfStoragePath: undefined,
       pdfGeneratedAt: undefined,
       pdfSha256: undefined,
@@ -365,16 +382,6 @@ export default function InvoiceDetailPage() {
     if (demoMode) data.updateInvoice(invoiceRecord.id, next);
     else await Promise.all([refreshInvoice(), refreshSignatures()]);
     setMessage("Signature rejected. A new signature is required.");
-  }
-
-  function openCustomerSignature() {
-    setDialog({
-      purpose: "invoice_approval",
-      signerRole: "customer",
-      title: "Customer invoice approval",
-      description: "Ask the customer to review the approved work and total, then sign in the box.",
-      defaultSignerName: customerRecord.name
-    });
   }
 
   function openTechnicianSignature() {
@@ -402,9 +409,6 @@ export default function InvoiceDetailPage() {
       case "save_review":
         await saveReview();
         return;
-      case "collect_customer_signature":
-        openCustomerSignature();
-        return;
       case "generate_pdf":
         setDocumentView("pdf");
         setPdfGenerationRequest((current) => current + 1);
@@ -429,9 +433,8 @@ export default function InvoiceDetailPage() {
   const customerEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const primaryBusy = reviewBusy || paymentBusy || sendBusy || pdfBusy;
   const primaryDisabled = primaryBusy
-    || (primaryAction.id === "save_review" && (!canEdit || !selectedTier || Boolean(approval)))
-    || (primaryAction.id === "collect_customer_signature" && !readyToSign)
-    || (primaryAction.id === "generate_pdf" && !approvalSaved)
+    || (primaryAction.id === "save_review" && (!canEdit || !authorizedTier || tierConflict))
+    || (primaryAction.id === "generate_pdf" && !readyToFinalize)
     || (primaryAction.id === "record_sent" && (!canEdit || !customerEmailValid))
     || (primaryAction.id === "save_payment" && (!canEdit || !selectedSaved));
   const primaryLabel = primaryBusy
@@ -531,7 +534,7 @@ export default function InvoiceDetailPage() {
                   customer={customer}
                   items={items}
                   signatures={signatures}
-                  canGenerate={Boolean(approval && selectedSaved)}
+                  canGenerate={readyToFinalize}
                   generationRequest={pdfGenerationRequest}
                   onBusyChange={setPdfBusy}
                   onGenerated={async () => {
@@ -591,8 +594,9 @@ export default function InvoiceDetailPage() {
               </div>
 
               <div className={styles.progressList} aria-label="Invoice readiness">
-                <ProgressRow label="Chosen scope" state={reviewDirty ? "Unsaved changes" : selectedSaved ? "Saved" : "Not chosen"} complete={selectedSaved && !reviewDirty} />
-                <ProgressRow label="Customer approval" state={approval ? "Signed" : "Not signed"} complete={approvalSaved} />
+                <ProgressRow label="Authorized scope" state={tierConflict ? "Conflict" : selectedSaved ? tierLabels[authorizedTier!] : "Missing"} complete={selectedSaved && !tierConflict} />
+                <ProgressRow label="Work authorization" state={workAuthorization ? "Signed in field" : "Missing"} complete={Boolean(workAuthorization)} />
+                <ProgressRow label="Completion record" state={workCompletion ? "Signed in field" : completionOverridden ? "Owner override" : "Missing"} complete={Boolean(workCompletion || completionOverridden)} />
                 <ProgressRow label="Final PDF" state={generated ? `Version ${invoice.pdfVersion}` : "Not generated"} complete={generated} />
                 <ProgressRow label="Invoice email" state={invoice.sentAt ? "Provider accepted" : "Not sent"} complete={deliveryRecorded} />
                 <ProgressRow label="Payment" state={humanizeState(invoice.paymentStatus)} complete={invoice.paymentStatus === "paid"} />
@@ -688,66 +692,65 @@ export default function InvoiceDetailPage() {
                 </summary>
                 <div className={styles.utilityContent}>
                   <InvoiceScopeEditor
-                    locked={approvalSaved}
-                    canEdit={canEdit}
-                    selectedTier={selectedTier}
+                    locked
+                    canEdit={false}
+                    selectedTier={authorizedTier}
                     totalByTier={totalByTier}
                     itemCountByTier={itemCountByTier}
-                    neutralLabel={invoiceOptionLabels[optionLabel]}
-                    onSelect={setSelectedTier}
+                    neutralLabel={authorizedTier ? `${tierLabels[authorizedTier]} authorized work` : "Authorization missing"}
+                    onSelect={() => undefined}
                   />
-                  {!approval ? (
-                    <>
-                      <label className={styles.field}>
-                        <span>Invoice service label</span>
-                        <select value={optionLabel} onChange={(event) => setOptionLabel(event.target.value as InvoiceOptionLabel)} disabled={!canEdit}>
-                          {Object.entries(invoiceOptionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                        </select>
-                      </label>
-                      <label className={styles.field}>
-                        <span>Work summary and invoice notes</span>
-                        <textarea
-                          value={notes}
-                          onChange={(event) => setNotes(event.target.value)}
-                          disabled={!canEdit}
-                          placeholder="Summarize completed work, warranty details, or payment instructions."
-                        />
-                      </label>
-                      {reviewDirty ? <p className={styles.warningNote}>Use the primary action to save these changes before collecting customer approval.</p> : null}
-                    </>
-                  ) : (
-                    <div className={styles.lockedScope}>
-                      <span>Approved work summary</span>
-                      <strong>{notes || "No additional invoice notes."}</strong>
-                    </div>
-                  )}
+                  {tierConflict ? <p className={styles.errorNote}>This draft does not match the signed field authorization. Refresh the invoice before continuing.</p> : null}
+                  <label className={styles.field}>
+                    <span>Invoice service label</span>
+                    <select value={optionLabel} onChange={(event) => setOptionLabel(event.target.value as InvoiceOptionLabel)} disabled={!canEdit}>
+                      {Object.entries(invoiceOptionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </label>
+                  <label className={styles.field}>
+                    <span>Work summary and invoice notes</span>
+                    <textarea
+                      value={notes}
+                      onChange={(event) => setNotes(event.target.value)}
+                      disabled={!canEdit}
+                      placeholder="Summarize completed work, warranty details, or payment instructions."
+                    />
+                  </label>
+                  {reviewDirty ? <p className={styles.warningNote}>Save the label and notes before generating the final PDF.</p> : null}
                 </div>
               </details>
 
               <details className={styles.utilityDetails}>
                 <summary className={styles.utilitySummary}>
                   <PenLine size={18} aria-hidden="true" />
-                  Signatures and approval
+                  Field signatures
                   <ChevronDown size={17} aria-hidden="true" />
                 </summary>
                 <div className={styles.utilityContent}>
-                  {reviewDirty ? <p className={styles.warningNote}>Save invoice changes before collecting a signature.</p> : null}
+                  <p className={styles.truthNote}>These signatures were collected during the field workflow. The invoice does not ask the customer to sign a third time.</p>
                   <div className="invoice-signature-grid">
-                    <SignatureStatusCard
-                      title="Customer approval"
-                      signature={approval}
-                      rejectedSignature={rejectedApproval}
+                    <FieldSignatureCard
+                      title="Authorization of repair"
+                      signature={workAuthorization}
+                      rejectedSignature={rejectedWorkAuthorization}
                       loading={signaturesLoading}
                       error={signatureError}
-                      onRetry={() => void refreshSignatures()}
-                      onDraw={openCustomerSignature}
-                      drawLabel="Draw customer signature"
-                      drawDisabled={!readyToSign}
-                      canReject={canEdit}
-                      onReject={approval ? (reason) => rejectSavedSignature(approval, reason) : undefined}
+                      detail={authorizedTier ? `${tierLabels[authorizedTier]} scope authorized before work began.` : "Return to the job to collect authorization."}
+                    />
+                    <FieldSignatureCard
+                      title="Completion of work"
+                      signature={workCompletion}
+                      rejectedSignature={rejectedWorkCompletion}
+                      loading={signaturesLoading}
+                      error={signatureError}
+                      override={completionOverridden ? {
+                        at: job.completionSignatureOverrideAt!,
+                        reason: job.completionSignatureOverrideReason!
+                      } : undefined}
+                      detail="Customer acknowledgment collected after the repair and after photo."
                     />
                     <SignatureStatusCard
-                      title="Technician / company"
+                      title="Technician / company (optional)"
                       signature={technicianSignature}
                       rejectedSignature={rejectedTechnicianSignature}
                       loading={signaturesLoading}
@@ -755,7 +758,7 @@ export default function InvoiceDetailPage() {
                       onRetry={() => void refreshSignatures()}
                       onDraw={openTechnicianSignature}
                       drawLabel="Add technician signature"
-                      drawDisabled={!readyToSign}
+                      drawDisabled={!readyToFinalize}
                       canReject={canEdit}
                       onReject={technicianSignature ? (reason) => rejectSavedSignature(technicianSignature, reason) : undefined}
                     />
@@ -784,7 +787,7 @@ export default function InvoiceDetailPage() {
                     </div>
                     <div className={styles.identityRow}>
                       <FileCheck2 size={18} aria-hidden="true" />
-                      <div><strong>{generated ? `PDF version ${invoice.pdfVersion}` : "Final PDF not generated"}</strong><span>{invoice.pdfGeneratedAt ? formatDateTime(invoice.pdfGeneratedAt) : "Generate after approval and after any payment changes."}</span></div>
+                      <div><strong>{generated ? `PDF version ${invoice.pdfVersion}` : "Final PDF not generated"}</strong><span>{invoice.pdfGeneratedAt ? formatDateTime(invoice.pdfGeneratedAt) : "Generate after both field checkpoints and any payment changes."}</span></div>
                     </div>
                   </div>
 
@@ -795,7 +798,7 @@ export default function InvoiceDetailPage() {
                         <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" />
                       </label>
                       <p className={styles.truthNote}>This sends the same signed PDF. The audit record updates only after provider acceptance.</p>
-                      <button className={styles.secondaryButton} type="button" onClick={() => void sendInvoicePdf()} disabled={!generated || !approval || !customerEmailValid || sendBusy}>
+                      <button className={styles.secondaryButton} type="button" onClick={() => void sendInvoicePdf()} disabled={!generated || !fieldSignaturesReady || !customerEmailValid || sendBusy}>
                         <Mail size={17} aria-hidden="true" />
                         {sendBusy ? "Sending invoice..." : "Email invoice PDF"}
                       </button>
@@ -828,6 +831,46 @@ export default function InvoiceDetailPage() {
   );
 }
 
+function FieldSignatureCard({
+  title,
+  signature,
+  rejectedSignature,
+  loading,
+  error,
+  override,
+  detail
+}: {
+  title: string;
+  signature?: InvoiceSignature;
+  rejectedSignature?: InvoiceSignature;
+  loading: boolean;
+  error?: string;
+  override?: { at: string; reason: string };
+  detail: string;
+}) {
+  const complete = Boolean(signature || override);
+  return (
+    <section className={styles.fieldSignatureCard} data-complete={complete}>
+      <div className={styles.fieldSignatureHeading}>
+        <span aria-hidden="true">{complete ? <CheckCircle2 size={20} /> : <Clock3 size={20} />}</span>
+        <div>
+          <p>{title}</p>
+          <strong>{loading ? "Loading..." : signature ? "Customer signed" : override ? "Audited owner override" : "Required"}</strong>
+        </div>
+      </div>
+      {signature?.imageUrl ? <img src={signature.imageUrl} alt={`Signature from ${signature.signerName}`} /> : null}
+      <p className={styles.fieldSignatureDetail}>{detail}</p>
+      {signature ? (
+        <span className={styles.fieldSignatureMeta}>{signature.signerName} · {formatDateTime(signature.signedAt)}</span>
+      ) : override ? (
+        <span className={styles.fieldSignatureMeta}>{formatDateTime(override.at)} · {override.reason}</span>
+      ) : (
+        <span className={styles.fieldSignatureMeta}>{error ?? rejectedSignature?.rejectionReason ?? "Finish this checkpoint from the job."}</span>
+      )}
+    </section>
+  );
+}
+
 function ProgressRow({ label, state, complete }: { label: string; state: string; complete: boolean }) {
   return (
     <div className={styles.progressRow} data-complete={complete}>
@@ -840,7 +883,6 @@ function ProgressRow({ label, state, complete }: { label: string; state: string;
 
 function PrimaryActionIcon({ action }: { action: InvoiceWorkspaceActionId }) {
   if (action === "save_review") return <FileCheck2 size={18} aria-hidden="true" />;
-  if (action === "collect_customer_signature") return <PenLine size={18} aria-hidden="true" />;
   if (action === "generate_pdf" || action === "view_pdf") return <FileText size={18} aria-hidden="true" />;
   if (action === "record_sent") return <Mail size={18} aria-hidden="true" />;
   if (action === "open_payment" || action === "save_payment") return <CircleDollarSign size={18} aria-hidden="true" />;
@@ -854,7 +896,7 @@ function humanizeState(value: string) {
 
 function demoPaymentInvoice(invoice: Invoice, status: InvoicePaymentStatus, requestedAmount: number): Invoice {
   if (!invoice.selectedTier) throw new Error("Select approved work before recording payment.");
-  const total = invoice.selectedTier === "good" ? invoice.totalGood : invoice.selectedTier === "best" ? invoice.totalBest : invoice.totalBetter;
+  const total = selectedTotal(invoice);
   let amountPaid = 0;
   if (status === "paid") amountPaid = total;
   if (status === "partially_paid") {

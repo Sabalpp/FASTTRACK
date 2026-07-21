@@ -6,7 +6,7 @@
 
 .optionTabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 7px;
   min-width: 0;
   padding: 5px;
@@ -63,6 +63,7 @@
 
 .optionTabs button:focus-visible,
 .editDetails summary:focus-visible,
+.saveButton:focus-visible,
 .deleteButton:focus-visible {
   outline: 3px solid rgba(21, 63, 75, 0.2);
   outline-offset: 2px;
@@ -148,13 +149,6 @@
   font-size: 0.69rem;
 }
 
-.descriptionInput {
-  width: 100%;
-  min-height: 39px !important;
-  padding: 7px 9px !important;
-  font-size: 0.8rem !important;
-}
-
 .editDetails {
   margin-top: 7px;
 }
@@ -185,7 +179,7 @@
 
 .editControls {
   display: grid;
-  grid-template-columns: minmax(84px, 0.6fr) minmax(110px, 0.8fr) minmax(120px, 1fr) auto;
+  grid-template-columns: minmax(160px, 1.5fr) minmax(84px, 0.55fr) minmax(110px, 0.75fr) minmax(120px, 0.9fr);
   gap: 8px;
   align-items: end;
   padding: 10px;
@@ -214,6 +208,14 @@
   font-size: 0.75rem !important;
 }
 
+.editActions {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.saveButton,
 .deleteButton {
   display: inline-flex;
   gap: 6px;
@@ -229,6 +231,26 @@
   font-size: 0.68rem;
   font-weight: 680;
   cursor: pointer;
+}
+
+.saveButton {
+  border-color: #194b57;
+  color: #fff;
+  background: #194b57;
+}
+
+.saveButton:disabled,
+.deleteButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.editError {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #9f3030;
+  font-size: 0.7rem;
+  font-weight: 680;
 }
 
 .totals {
@@ -287,6 +309,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .saveButton,
   .deleteButton {
     min-height: 44px;
   }

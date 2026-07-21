@@ -8,20 +8,23 @@ type SignatureStroke = { points: SignaturePoint[]; pointerType: string };
 export type SignaturePadHandle = {
   clear: () => void;
   undo: () => void;
+  setTypedName: (name: string) => void;
   isEmpty: () => boolean;
   exportPng: () => Promise<{ blob: Blob; width: number; height: number }>;
 };
 
 export const SignaturePad = forwardRef<SignaturePadHandle, {
   onStrokeCountChange?: (count: number) => void;
-}>(function SignaturePad({ onStrokeCountChange }, ref) {
+  onSignatureMethodChange?: (method: "drawn" | "typed" | undefined) => void;
+}>(function SignaturePad({ onStrokeCountChange, onSignatureMethodChange }, ref) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const strokesRef = useRef<SignatureStroke[]>([]);
   const activeStrokeRef = useRef<SignatureStroke | null>(null);
+  const typedNameRef = useRef("");
   const [strokeCount, setStrokeCount] = useState(0);
 
   function publishCount() {
-    const count = strokesRef.current.length;
+    const count = strokesRef.current.length || (typedNameRef.current ? 1 : 0);
     setStrokeCount(count);
     onStrokeCountChange?.(count);
   }
@@ -39,7 +42,7 @@ export const SignaturePad = forwardRef<SignaturePadHandle, {
       canvas.height = height;
     }
     context.clearRect(0, 0, canvas.width, canvas.height);
-    drawStrokes(context, strokesRef.current, canvas.width, canvas.height, ratio);
+    drawSignature(context, strokesRef.current, typedNameRef.current, canvas.width, canvas.height, ratio);
   }
 
   useEffect(() => {
@@ -55,20 +58,33 @@ export const SignaturePad = forwardRef<SignaturePadHandle, {
     clear() {
       strokesRef.current = [];
       activeStrokeRef.current = null;
+      typedNameRef.current = "";
       publishCount();
       redraw();
+      onSignatureMethodChange?.(undefined);
     },
     undo() {
-      strokesRef.current = strokesRef.current.slice(0, -1);
+      if (typedNameRef.current) typedNameRef.current = "";
+      else strokesRef.current = strokesRef.current.slice(0, -1);
       activeStrokeRef.current = null;
       publishCount();
       redraw();
+      onSignatureMethodChange?.(strokesRef.current.length > 0 ? "drawn" : undefined);
+    },
+    setTypedName(name: string) {
+      const cleanName = name.trim();
+      strokesRef.current = [];
+      activeStrokeRef.current = null;
+      typedNameRef.current = cleanName;
+      publishCount();
+      redraw();
+      onSignatureMethodChange?.(cleanName ? "typed" : undefined);
     },
     isEmpty() {
-      return strokesRef.current.length === 0;
+      return strokesRef.current.length === 0 && !typedNameRef.current;
     },
     exportPng() {
-      return exportSignature(strokesRef.current);
+      return exportSignature(strokesRef.current, typedNameRef.current);
     }
   }));
 
@@ -86,10 +102,15 @@ export const SignaturePad = forwardRef<SignaturePadHandle, {
     if (event.button !== 0 && event.pointerType === "mouse") return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    if (typedNameRef.current) {
+      typedNameRef.current = "";
+      strokesRef.current = [];
+    }
     const stroke: SignatureStroke = { points: [pointForEvent(event)], pointerType: event.pointerType };
     strokesRef.current = [...strokesRef.current, stroke];
     activeStrokeRef.current = stroke;
     publishCount();
+    onSignatureMethodChange?.("drawn");
     redraw();
   }
 
@@ -124,7 +145,9 @@ export const SignaturePad = forwardRef<SignaturePadHandle, {
       <canvas
         ref={canvasRef}
         className="signature-pad-canvas"
-        aria-label="Signature drawing area"
+        aria-label="Signature drawing area. Draw with touch, stylus, mouse, or trackpad, or use the typed signature button."
+        aria-describedby="signature-pad-hint"
+        tabIndex={0}
         onPointerDown={startStroke}
         onPointerMove={continueStroke}
         onPointerUp={finishStroke}
@@ -132,7 +155,7 @@ export const SignaturePad = forwardRef<SignaturePadHandle, {
         onContextMenu={(event) => event.preventDefault()}
       />
       <span className="signature-pad-line" aria-hidden="true" />
-      <span className="signature-pad-hint">Sign above · touch, stylus, mouse, or trackpad</span>
+      <span className="signature-pad-hint" id="signature-pad-hint">Sign above · touch, stylus, mouse, or trackpad</span>
       <span className="sr-only" aria-live="polite">{strokeCount > 0 ? "Signature in progress" : "Signature pad is empty"}</span>
     </div>
   );
@@ -171,8 +194,27 @@ function drawStrokes(
   }
 }
 
-async function exportSignature(strokes: SignatureStroke[]) {
-  if (strokes.length === 0) throw new Error("Draw a signature before saving.");
+function drawSignature(
+  context: CanvasRenderingContext2D,
+  strokes: SignatureStroke[],
+  typedName: string,
+  width: number,
+  height: number,
+  pixelRatio: number
+) {
+  drawStrokes(context, strokes, width, height, pixelRatio);
+  if (!typedName || strokes.length > 0) return;
+  context.save();
+  context.fillStyle = "#102a36";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.font = `italic 700 ${Math.max(22, Math.round(height * 0.24))}px cursive`;
+  context.fillText(typedName, width / 2, height * 0.48, width * 0.86);
+  context.restore();
+}
+
+async function exportSignature(strokes: SignatureStroke[], typedName: string) {
+  if (strokes.length === 0 && !typedName) throw new Error("Draw a signature or use the typed signature option before saving.");
   const width = 1600;
   const height = 600;
   const canvas = document.createElement("canvas");
@@ -180,7 +222,7 @@ async function exportSignature(strokes: SignatureStroke[]) {
   canvas.height = height;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("The signature image could not be prepared.");
-  drawStrokes(context, strokes, width, height, 2);
+  drawSignature(context, strokes, typedName, width, height, 2);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("The signature image could not be prepared.");
   return { blob, width, height };

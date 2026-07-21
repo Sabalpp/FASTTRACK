@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Check, ImagePlus, X } from "lucide-react";
+import { Camera, Check, ImagePlus, LockKeyhole, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { photoKinds, useAppData } from "@/lib/data-store";
 import { createPhotoPreview } from "@/lib/photo-preview";
@@ -8,16 +8,31 @@ import { demoMode } from "@/lib/runtime";
 import type { PhotoKind } from "@/lib/types";
 import styles from "./PhotoUploader.module.css";
 
-export function PhotoUploader({ jobId, uploadedBy }: { jobId: string; uploadedBy: string }) {
+export function PhotoUploader({
+  jobId,
+  uploadedBy,
+  lockedKind,
+  checkpointLocked = false,
+  lockedTitle,
+  lockedMessage
+}: {
+  jobId: string;
+  uploadedBy: string;
+  lockedKind?: PhotoKind;
+  checkpointLocked?: boolean;
+  lockedTitle?: string;
+  lockedMessage?: string;
+}) {
   const data = useAppData();
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [kind, setKind] = useState<PhotoKind>("before");
+  const [kind, setKind] = useState<PhotoKind>(lockedKind ?? "before");
   const [caption, setCaption] = useState("");
   const [fileName, setFileName] = useState("");
   const [dataUrl, setDataUrl] = useState("");
   const [file, setFile] = useState<File | undefined>();
   const [processing, setProcessing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
@@ -26,6 +41,20 @@ export function PhotoUploader({ jobId, uploadedBy }: { jobId: string; uploadedBy
     const timeout = window.setTimeout(() => setSaved(false), 1600);
     return () => window.clearTimeout(timeout);
   }, [saved]);
+
+  useEffect(() => {
+    if (lockedKind) setKind(lockedKind);
+  }, [lockedKind]);
+
+  useEffect(() => {
+    if (!checkpointLocked) return;
+    setFile(undefined);
+    setFileName("");
+    setDataUrl("");
+    setCaption("");
+    setError(undefined);
+    if (inputRef.current) inputRef.current.value = "";
+  }, [checkpointLocked]);
 
   async function handleFile(nextFile: File | undefined) {
     if (!nextFile) return;
@@ -52,25 +81,47 @@ export function PhotoUploader({ jobId, uploadedBy }: { jobId: string; uploadedBy
     if (inputRef.current) inputRef.current.value = "";
   }
 
-  function submit(event: React.FormEvent) {
+  async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!file || !dataUrl) return;
-    data.addPhoto({
-      jobId,
-      uploadedBy,
-      kind,
-      caption: caption.trim() || fileName || undefined,
-      storagePath: dataUrl || `${jobId}/${Date.now()}_${fileName || "photo.jpg"}`,
-      file
-    });
-    setCaption("");
-    setKind("before");
-    clearSelection();
-    setSaved(true);
+    if (!file || !dataUrl || checkpointLocked || saving) return;
+    setSaving(true);
+    setSaved(false);
+    setError(undefined);
+    try {
+      await data.addPhoto({
+        jobId,
+        uploadedBy,
+        kind,
+        caption: caption.trim() || fileName || undefined,
+        storagePath: dataUrl || `${jobId}/${Date.now()}_${fileName || "photo.jpg"}`,
+        file
+      });
+      setCaption("");
+      setKind(lockedKind ?? "before");
+      clearSelection();
+      setSaved(true);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "The photo could not be saved. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (checkpointLocked) {
+    const kindLabel = lockedKind === "after" ? "After photos" : "Before photos";
+    return (
+      <section className={styles.lockedState} role="status" aria-label={`${kindLabel} locked`}>
+        <span><LockKeyhole size={20} aria-hidden="true" /></span>
+        <div>
+          <strong>{lockedTitle ?? `${kindLabel} locked`}</strong>
+          <p>{lockedMessage ?? "This evidence is attached to a saved customer signature and cannot be changed."}</p>
+        </div>
+      </section>
+    );
   }
 
   return (
-    <form className={styles.uploader} onSubmit={submit}>
+    <form className={styles.uploader} onSubmit={(event) => void submit(event)}>
       <div className={styles.captureControl}>
         <input
           ref={inputRef}
@@ -100,22 +151,29 @@ export function PhotoUploader({ jobId, uploadedBy }: { jobId: string; uploadedBy
           </div>
 
           <div className={styles.details}>
-            <fieldset className={styles.kindControl}>
-              <legend>Photo type</legend>
-              <div>
-                {photoKinds.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    className={kind === option ? styles.kindActive : undefined}
-                    aria-pressed={kind === option}
-                    onClick={() => setKind(option)}
-                  >
-                    {option}
-                  </button>
-                ))}
+            {lockedKind ? (
+              <div className={styles.lockedKind}>
+                <span>Photo type</span>
+                <strong>{lockedKind === "before" ? "Before work" : lockedKind === "after" ? "After work" : "Job proof"}</strong>
               </div>
-            </fieldset>
+            ) : (
+              <fieldset className={styles.kindControl}>
+                <legend>Photo type</legend>
+                <div>
+                  {photoKinds.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={kind === option ? styles.kindActive : undefined}
+                      aria-pressed={kind === option}
+                      onClick={() => setKind(option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            )}
 
             <label className={styles.caption}>
               <span>Caption <small>optional</small></span>
@@ -126,9 +184,9 @@ export function PhotoUploader({ jobId, uploadedBy }: { jobId: string; uploadedBy
               />
             </label>
 
-            <button className={styles.saveButton} type="submit" disabled={processing}>
+            <button className={styles.saveButton} type="submit" disabled={processing || saving}>
               <Check size={19} aria-hidden="true" />
-              {demoMode ? "Save photo" : "Upload photo"}
+              {saving ? (demoMode ? "Saving…" : "Uploading…") : demoMode ? "Save photo" : "Upload photo"}
             </button>
             {demoMode ? null : <p className={styles.privateNote}>Photos are stored privately with this job.</p>}
           </div>

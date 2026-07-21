@@ -14,6 +14,13 @@ function isTransientPhoto(photo: JobPhoto) {
   return photo.storagePath.startsWith("blob:");
 }
 
+function retainedProofMarker(photo: JobPhoto): JobPhoto {
+  return {
+    ...photo,
+    storagePath: `demo-proof:${photo.id}`
+  };
+}
+
 /**
  * Keeps hosted demo data comfortably below Safari's small localStorage quota.
  * Remote photos are always retained. Newest embedded previews are retained only
@@ -23,9 +30,9 @@ export function compactDemoStateForStorage(state: AppState): AppState {
   let embeddedCount = 0;
   let embeddedChars = 0;
 
-  const jobPhotos = state.jobPhotos.filter((photo) => {
-    if (isTransientPhoto(photo)) return false;
-    if (!isEmbeddedPhoto(photo)) return true;
+  const jobPhotos = state.jobPhotos.map((photo) => {
+    if (isTransientPhoto(photo)) return retainedProofMarker(photo);
+    if (!isEmbeddedPhoto(photo)) return photo;
 
     const photoChars = photo.storagePath.length;
     if (
@@ -33,21 +40,24 @@ export function compactDemoStateForStorage(state: AppState): AppState {
       || embeddedCount >= MAX_EMBEDDED_PHOTOS
       || embeddedChars + photoChars > MAX_EMBEDDED_MEDIA_CHARS
     ) {
-      return false;
+      return retainedProofMarker(photo);
     }
 
     embeddedCount += 1;
     embeddedChars += photoChars;
-    return true;
+    return photo;
   });
 
-  return jobPhotos.length === state.jobPhotos.length ? state : { ...state, jobPhotos };
+  const changed = jobPhotos.some((photo, index) => photo !== state.jobPhotos[index]);
+  return changed ? { ...state, jobPhotos } : state;
 }
 
 function withoutEmbeddedPhotos(state: AppState): AppState {
   return {
     ...state,
-    jobPhotos: state.jobPhotos.filter((photo) => !isEmbeddedPhoto(photo) && !isTransientPhoto(photo))
+    jobPhotos: state.jobPhotos.map((photo) => (
+      isEmbeddedPhoto(photo) || isTransientPhoto(photo) ? retainedProofMarker(photo) : photo
+    ))
   };
 }
 

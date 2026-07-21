@@ -1329,7 +1329,12 @@ body {
   gap: 14px;
 }
 
-.mini-tier-strip,
+.mini-tier-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .quote-ladder {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -4996,7 +5001,8 @@ label {
 }
 
 .address-suggestions button:hover,
-.address-suggestions button:focus {
+.address-suggestions button:focus,
+.address-suggestions button.active {
   background: #f6f8fb;
 }
 
@@ -5015,6 +5021,38 @@ label {
   border-radius: 999px;
   background: var(--brand);
   transform: translateY(-50%);
+}
+
+.address-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 7px 2px 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.address-status.is-warning {
+  color: #6b7280;
+}
+
+.address-status button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--brand);
+  font: inherit;
+  cursor: pointer;
+}
+
+.address-status button:hover,
+.address-status button:focus-visible {
+  background: rgba(22, 78, 99, 0.08);
 }
 
 @media (max-width: 760px) {

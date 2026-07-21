@@ -6,7 +6,11 @@ import type { Role } from "@/lib/types";
 
 const roleOrder: Role[] = ["owner", "tech", "call_center"];
 
-export function RoleSwitcher() {
+export function RoleSwitcher({
+  onRoleChange
+}: {
+  onRoleChange?: (role: Role, userId: string) => void;
+} = {}) {
   const { currentUser, setCurrentUserId, isDemoMode } = useAuth();
   const { allowedUsers } = useAppData();
 
@@ -24,7 +28,10 @@ export function RoleSwitcher() {
             type="button"
             className={user.id === currentUser.id ? "active" : ""}
             title={role === "call_center" ? "Desk" : roleLabels[role]}
-            onClick={() => setCurrentUserId(user.id)}
+            onClick={() => {
+              setCurrentUserId(user.id);
+              onRoleChange?.(role, user.id);
+            }}
           >
             <strong>{role === "call_center" ? "Desk" : roleLabels[role]}</strong>
           </button>

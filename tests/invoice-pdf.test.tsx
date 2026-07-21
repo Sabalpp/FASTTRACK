@@ -13,7 +13,7 @@ import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem } from "@/li
 describe("invoice PDF pagination", () => {
   it("keeps a signed service invoice on one true US Letter page", async () => {
     const items = [item(1, "Diagnostic visit and complete HVAC system evaluation"), item(2, "Approved capacitor replacement"), item(3, "System performance verification")];
-    const pdf = await render(items, [signature()]);
+    const pdf = await render(items, fieldSignatures());
 
     expect(pdf.getPageCount()).toBe(1);
     expectLetterPages(pdf);
@@ -28,7 +28,7 @@ describe("invoice PDF pagination", () => {
           ? "Replacement part, installation labor, system setup, and operational verification"
           : "Preventive maintenance task with drain, airflow, electrical, and safety checks"}`
     ));
-    const pdf = await render(items, [signature()]);
+    const pdf = await render(items, fieldSignatures());
 
     expect(pdf.getPageCount()).toBe(4);
     expectLetterPages(pdf);
@@ -84,20 +84,24 @@ function item(index: number, description: string): JobLineItem {
   };
 }
 
-function signature(): InvoiceSignature {
+function fieldSignatures(): InvoiceSignature[] {
+  return [signature("work_authorization", "2026-07-20T15:00:00.000Z"), signature("work_completion", "2026-07-20T16:22:00.000Z")];
+}
+
+function signature(purpose: "work_authorization" | "work_completion", signedAt: string): InvoiceSignature {
   return {
-    id: "signature-id",
-    invoiceId: "invoice-id",
+    id: `signature-${purpose}`,
     jobId: job.id,
-    purpose: "invoice_approval",
+    purpose,
     signerName: customer.name,
     signerRole: "customer",
     status: "active",
     contentSha256: "a".repeat(64),
     documentSha256: "b".repeat(64),
-    signedAt: "2026-07-20T16:22:00.000Z",
+    signedAt,
     collectedBy: "tech-id",
-    createdAt: "2026-07-20T16:22:00.000Z"
+    createdAt: signedAt,
+    selectedTier: purpose === "work_authorization" ? "good" : undefined
   };
 }
 

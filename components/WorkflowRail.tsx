@@ -6,7 +6,7 @@ export const workflowSteps: { verb: WorkflowVerb; label: string; detail: string 
   { verb: "Inspect", label: "Job", detail: "Customer, address, time, status, and notes." },
   { verb: "Case", label: "Photos", detail: "Before, after, serial numbers, and job proof." },
   { verb: "Charge", label: "Items", detail: "Parts, labor, diagnostic, and custom work." },
-  { verb: "Secure", label: "Options", detail: "Good, Better, Best customer choices." },
+  { verb: "Secure", label: "Scope", detail: "Standard work or Good, Better, Best choices." },
   { verb: "Invoice", label: "Invoice", detail: "Paper-style PDF draft." },
   { verb: "Email", label: "Send", detail: "Owner marks sent and downloads the PDF." }
 ];

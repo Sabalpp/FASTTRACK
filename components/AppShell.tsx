@@ -17,7 +17,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { roleLabels, useAppData } from "@/lib/data-store";
 import { RoleSwitcher } from "@/components/RoleSwitcher";
@@ -51,12 +51,58 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const loadingWorkspace = !isDemoMode && isAuthenticated && !workspaceLoaded && !loadError && !isLogin;
   const failedWorkspace = !isDemoMode && isAuthenticated && Boolean(loadError) && !isLogin;
   const isRestrictedCustomerIntake = currentUser.role === "tech" && pathname === "/customers/new";
+  const accountMenuRef = useRef<HTMLDetailsElement>(null);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+
+  const closeAccountMenu = useCallback((restoreFocus = false) => {
+    const menu = accountMenuRef.current;
+    if (!menu) return;
+
+    const focusWasInside = menu.contains(document.activeElement);
+    menu.open = false;
+    setAccountMenuOpen(false);
+
+    if (restoreFocus || focusWasInside) {
+      menu.querySelector<HTMLElement>("summary")?.focus({ preventScroll: true });
+    }
+  }, []);
 
   useEffect(() => {
     if (blockedAuth) {
       router.replace("/");
     }
   }, [blockedAuth, router]);
+
+  useEffect(() => {
+    closeAccountMenu();
+  }, [closeAccountMenu, pathname]);
+
+  useEffect(() => {
+    const closeAfterViewportGesture = () => {
+      if (!accountMenuRef.current?.open) return;
+      const focusIsInside = Boolean(accountMenuRef.current?.contains(document.activeElement));
+      closeAccountMenu(focusIsInside);
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      if (accountMenuRef.current?.open && !accountMenuRef.current.contains(event.target as Node)) closeAccountMenu();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !accountMenuRef.current?.open) return;
+      event.preventDefault();
+      closeAccountMenu(true);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("touchmove", closeAfterViewportGesture, { passive: true });
+    window.addEventListener("scroll", closeAfterViewportGesture, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("touchmove", closeAfterViewportGesture);
+      window.removeEventListener("scroll", closeAfterViewportGesture, true);
+    };
+  }, [closeAccountMenu]);
 
   if (loadingAuth || blockedAuth) {
     return (
@@ -106,7 +152,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className={isLogin ? "ft5-auth" : isRestrictedCustomerIntake ? "ft5-app ft5-customer-intake" : "ft5-app"}>
       {!isLogin && !isRestrictedCustomerIntake ? (
         <header className="app-header ft5-header">
-          <Link className="ft5-brand" href="/dashboard" aria-label={`${branding.businessName} home`}>
+          <Link className="ft5-brand" href="/dashboard" aria-label={`${branding.businessName} home`} onClick={() => closeAccountMenu()}>
             <span className="ft5-brand-mark" aria-hidden="true">
               <Image src={branding.logoPath} alt="" width={44} height={34} priority />
             </span>
@@ -124,6 +170,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   href={item.href}
                   className={(item.exact ? pathname === item.href : pathname.startsWith(item.href)) ? "active" : ""}
                   aria-current={(item.exact ? pathname === item.href : pathname.startsWith(item.href)) ? "page" : undefined}
+                  onClick={() => closeAccountMenu()}
                 >
                   <item.Icon size={18} aria-hidden="true" />
                   <span>{item.label}</span>
@@ -131,8 +178,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ))}
           </nav>
           <div className="header-actions ft5-header-actions">
-            <details className="ft5-account-menu">
-              <summary aria-label="Open account menu">
+            <details
+              className="ft5-account-menu"
+              ref={accountMenuRef}
+              onToggle={() => setAccountMenuOpen(Boolean(accountMenuRef.current?.open))}
+            >
+              <summary aria-label="Open account menu" aria-expanded={accountMenuOpen}>
                 <span className="ft5-avatar" aria-hidden="true">
                   {(currentUser.displayName || currentUser.email || "FT").slice(0, 1).toUpperCase()}
                 </span>
@@ -150,24 +201,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {isDemoMode ? (
                   <div className="ft5-demo-role">
                     <span>Preview role</span>
-                    <RoleSwitcher />
+                    <RoleSwitcher onRoleChange={() => closeAccountMenu(true)} />
                   </div>
                 ) : null}
                 {secondaryNavItems
                   .filter((item) => item.roles.includes(currentUser.role))
                   .map((item) => (
-                    <Link key={item.href} href={item.href}>
+                    <Link key={item.href} href={item.href} onClick={() => closeAccountMenu()}>
                       <item.Icon size={17} aria-hidden="true" />
                       <span>{item.label}</span>
                     </Link>
                   ))}
                 {isDemoMode ? (
-                  <button type="button" onClick={resetDemoData}>
+                  <button type="button" onClick={() => { closeAccountMenu(); resetDemoData(); }}>
                     <RotateCcw size={17} aria-hidden="true" />
                     <span>Reset demo data</span>
                   </button>
                 ) : null}
-                <button type="button" onClick={() => void signOut()} disabled={authBusy}>
+                <button type="button" onClick={() => { closeAccountMenu(); void signOut(); }} disabled={authBusy}>
                   <LogOut size={17} aria-hidden="true" />
                   <span>{authBusy ? "Signing out…" : "Sign out"}</span>
                 </button>

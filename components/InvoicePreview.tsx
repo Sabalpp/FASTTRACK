@@ -26,7 +26,11 @@ export function InvoicePreview({
   const subtotal = selectedTier ? selectedSubtotal(selectedInvoice) : 0;
   const total = selectedTier ? selectedTotal(selectedInvoice) : 0;
   const selectedTax = total - subtotal;
-  const approval = signatures.find((signature) => signature.status === "active" && signature.purpose === "invoice_approval");
+  const authorization = signatures.find((signature) => signature.status === "active" && signature.purpose === "work_authorization");
+  const completion = signatures.find((signature) => signature.status === "active" && signature.purpose === "work_completion");
+  const completionOverride = !completion && job.completionSignatureOverrideAt && job.completionSignatureOverrideReason
+    ? { at: job.completionSignatureOverrideAt, reason: job.completionSignatureOverrideReason }
+    : undefined;
 
   return (
     <article className="invoice-preview invoice-review-preview" aria-label="Invoice review preview">
@@ -99,17 +103,50 @@ export function InvoicePreview({
           </div>
         </div>
 
-        <div className={`invoice-signature-preview ${approval ? "signed" : "pending"}`}>
-          <div className="invoice-signature-state">
-            {approval ? <CheckCircle2 size={19} aria-hidden="true" /> : <Clock3 size={19} aria-hidden="true" />}
-            <div>
-              <strong>{approval ? "Customer approval saved" : "Customer signature not saved"}</strong>
-              <span>{approval ? `${approval.signerName} · ${formatDateTime(approval.signedAt)}` : "Draw and save the signature before generating the PDF."}</span>
-            </div>
-          </div>
-          {approval?.imageUrl ? <img src={approval.imageUrl} alt={`Signature from ${approval.signerName}`} /> : null}
+        <div className="invoice-signature-grid">
+          <FieldSignaturePreview
+            title="Authorization of repair"
+            signature={authorization}
+            pending="Collect before work begins."
+          />
+          <FieldSignaturePreview
+            title="Completion of work"
+            signature={completion}
+            override={completionOverride}
+            pending="Collect after the repair and after photo."
+          />
         </div>
       </div>
     </article>
+  );
+}
+
+function FieldSignaturePreview({
+  title,
+  signature,
+  override,
+  pending
+}: {
+  title: string;
+  signature?: InvoiceSignature;
+  override?: { at: string; reason: string };
+  pending: string;
+}) {
+  const complete = Boolean(signature || override);
+  return (
+    <div className={`invoice-signature-preview ${complete ? "signed" : "pending"}`}>
+      <div className="invoice-signature-state">
+        {complete ? <CheckCircle2 size={19} aria-hidden="true" /> : <Clock3 size={19} aria-hidden="true" />}
+        <div>
+          <strong>{title}</strong>
+          <span>{signature
+            ? `${signature.signerName} · ${formatDateTime(signature.signedAt)}`
+            : override
+              ? `Owner override · ${formatDateTime(override.at)} · ${override.reason}`
+              : pending}</span>
+        </div>
+      </div>
+      {signature?.imageUrl ? <img src={signature.imageUrl} alt={`Signature from ${signature.signerName}`} /> : null}
+    </div>
   );
 }

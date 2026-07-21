@@ -12,7 +12,10 @@ export async function POST(request: NextRequest) {
     const jobId = typeof body.jobId === "string" ? body.jobId : "";
     if (!isUuid(jobId)) throw new HttpError(400, "A valid job is required.");
 
-    await loadJobForActor(actor, jobId);
+    const job = await loadJobForActor(actor, jobId);
+    if (job.status !== "complete") {
+      throw new HttpError(409, "Complete the field workflow before building an invoice.");
+    }
     const { count, error: countError } = await actor.supabase
       .from("job_line_items")
       .select("id", { count: "exact", head: true })

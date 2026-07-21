@@ -68,7 +68,7 @@ export function InvoicePdfViewer({
   }, [invoice.id, invoice.pdfStoragePath, showBlob]);
 
   const signatureRevision = signatures
-    .filter((signature) => signature.purpose === "invoice_approval" || signature.purpose === "technician_acknowledgement")
+    .filter((signature) => ["work_authorization", "work_completion", "technician_acknowledgement"].includes(signature.purpose))
     .map((signature) => [
       signature.id,
       signature.status,
@@ -122,7 +122,7 @@ export function InvoicePdfViewer({
           <p className="muted">
             {invoice.pdfGeneratedAt
               ? `Saved PDF version ${invoice.pdfVersion}. Regenerate after payment changes.`
-              : "The final PDF is generated from protected server data after customer approval."}
+              : "The final PDF is generated from protected server data after the two field checkpoints."}
           </p>
         </div>
         <div className="pdf-toolbar-actions">
@@ -153,7 +153,7 @@ export function InvoicePdfViewer({
       {!canGenerate ? (
         <div className="pdf-prerequisite" role="status">
           <FileCheck2 size={19} aria-hidden="true" />
-          Save the customer approval signature before generating the final PDF.
+          Finish authorization and completion in the field workflow before generating the final PDF.
         </div>
       ) : null}
 

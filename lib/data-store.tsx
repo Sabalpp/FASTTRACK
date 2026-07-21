@@ -11,6 +11,7 @@ import { createId } from "@/lib/id";
 import { demoMode } from "@/lib/runtime";
 import { defaultServiceWindowEndAt } from "@/lib/service-window";
 import { compactDemoStateForStorage, persistDemoState } from "@/lib/demo-storage";
+import { clearDemoSignatures, loadSignatures } from "@/lib/signatures-client";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import {
   allowedUserFromRow,
@@ -76,10 +77,10 @@ type AppDataContextValue = AppState & {
   updateJob: (id: string, input: Partial<Job>) => Promise<void>;
   markJobEnRoute: (id: string) => Promise<void>;
   markJobArrived: (id: string) => Promise<void>;
-  addPhoto: (input: NewPhotoInput) => JobPhoto;
-  addLineItem: (input: NewLineItemInput) => JobLineItem;
-  updateLineItem: (id: string, input: Partial<JobLineItem>) => void;
-  deleteLineItem: (id: string) => void;
+  addPhoto: (input: NewPhotoInput) => Promise<JobPhoto>;
+  addLineItem: (input: NewLineItemInput) => Promise<JobLineItem>;
+  updateLineItem: (id: string, input: Partial<JobLineItem>) => Promise<void>;
+  deleteLineItem: (id: string) => Promise<void>;
   createPart: (input: NewPartInput) => Part;
   createOrUpdateInvoiceDraft: (jobId: string, createdBy: string) => Invoice;
   updateInvoice: (id: string, input: Partial<Invoice>) => void;
@@ -106,6 +107,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       ? `${auth?.sessionUserId ?? auth?.currentUser.id}:${auth?.sessionRevision ?? 0}`
       : undefined;
   const activeWorkspaceKeyRef = useRef<string | undefined>(authenticatedUserKey);
+  const lineItemMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
   activeWorkspaceKeyRef.current = authenticatedUserKey;
 
   useEffect(() => {
@@ -191,6 +193,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   }, [authReady, authenticatedUserKey, isAuthenticated, loadAttempt, supabase]);
 
   const value = useMemo<AppDataContextValue>(() => {
+    function queueLineItemMutation<T>(action: () => Promise<T>): Promise<T> {
+      const result = lineItemMutationQueueRef.current.then(action, action);
+      lineItemMutationQueueRef.current = result.then(() => undefined, () => undefined);
+      return result;
+    }
+
     function persistSupabase(label: string, action: () => Promise<unknown>) {
       if (demoMode || !supabase) return;
       const requestWorkspaceKey = activeWorkspaceKeyRef.current;
@@ -206,6 +214,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     function resetDemoData() {
       if (!demoMode) return;
 
+      clearDemoSignatures();
       setState(demoState);
       persistDemoState(window.localStorage, STORAGE_KEY, demoState);
     }
@@ -347,6 +356,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (demoMode) {
+        const changesCompletionDetails = input.notes !== undefined
+          || input.description !== undefined
+          || input.serviceAddress !== undefined;
+        if (changesCompletionDetails) {
+          const signatures = await loadSignatures({ type: "job", id });
+          const completionLocked = existingJob.status === "complete"
+            || Boolean(existingJob.completedAt)
+            || Boolean(existingJob.completionSignatureOverrideAt)
+            || signatures.some((signature) => signature.status === "active" && signature.purpose === "work_completion");
+          if (completionLocked) {
+            throw new Error("Completion-bound job details are locked after customer confirmation or job completion.");
+          }
+        }
         setState((current) => ({
           ...current,
           jobs: current.jobs.map((job) => job.id === id ? { ...job, ...patch } : job)
@@ -440,58 +462,81 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       }));
     }
 
-    function addPhoto(input: NewPhotoInput) {
+    async function addPhoto(input: NewPhotoInput) {
       const requestWorkspaceKey = activeWorkspaceKeyRef.current;
       const photoId = createId();
       const uploadedAt = new Date().toISOString();
       const storagePath = !demoMode && input.file ? `${input.jobId}/${photoId}${safeFileExtension(input.file.name)}` : input.storagePath;
-      const previewPath = !demoMode && input.file ? URL.createObjectURL(input.file) : input.storagePath;
       const photo: JobPhoto = {
         id: photoId,
         jobId: input.jobId,
-        storagePath: previewPath,
+        storagePath: input.storagePath,
         kind: input.kind,
         caption: input.caption,
         uploadedBy: input.uploadedBy,
         uploadedAt
       };
 
-      setState((current) => ({ ...current, jobPhotos: [photo, ...current.jobPhotos] }));
-      persistSupabase("photo upload", async () => {
+      if (demoMode) {
+        const signatures = await loadSignatures({ type: "job", id: input.jobId });
+        const targetJob = state.jobs.find((job) => job.id === input.jobId);
+        const completedWorkflow = Boolean(
+          targetJob?.status === "complete"
+          || targetJob?.completedAt
+          || targetJob?.completionSignatureOverrideAt
+        );
+        if (input.kind === "after" && completedWorkflow) {
+          throw new Error("After-work evidence is locked because this job has already been completed.");
+        }
+        const lockedBy = input.kind === "before"
+          ? signatures.some((signature) => signature.status === "active" && signature.purpose === "work_authorization")
+          : input.kind === "after"
+            ? signatures.some((signature) => signature.status === "active" && signature.purpose === "work_completion")
+            : false;
+        if (lockedBy) {
+          throw new Error(input.kind === "before"
+            ? "Reject the saved customer work authorization before adding before-work evidence."
+            : "Reject the saved completion signature before adding after-work evidence.");
+        }
+        setState((current) => ({ ...current, jobPhotos: [photo, ...current.jobPhotos] }));
+        return photo;
+      }
+
+      if (!supabase) throw new Error("Supabase credentials are not configured.");
+
+      try {
         let displayPath = storagePath;
         if (input.file) {
-          const { error: uploadError } = await supabase!.storage.from("job-photos").upload(storagePath, input.file, {
+          const { error: uploadError } = await supabase.storage.from("job-photos").upload(storagePath, input.file, {
             cacheControl: "3600",
             upsert: false
           });
           if (uploadError) throw uploadError;
 
-          const { data: signedData, error: signedError } = await supabase!.storage.from("job-photos").createSignedUrl(storagePath, 60 * 60);
+          const { data: signedData, error: signedError } = await supabase.storage.from("job-photos").createSignedUrl(storagePath, 60 * 60);
           if (!signedError && signedData?.signedUrl) displayPath = signedData.signedUrl;
         }
 
-        const { error } = await supabase!.from("job_photos").insert(jobPhotoToRow({ ...photo, storagePath }));
+        const { error } = await supabase.from("job_photos").insert(jobPhotoToRow({ ...photo, storagePath }));
         if (error) throw error;
-
         if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) {
-          if (previewPath.startsWith("blob:")) URL.revokeObjectURL(previewPath);
-          return;
+          throw new Error("The signed-in account changed before the photo was saved.");
         }
 
-        setState((current) => ({
-          ...current,
-          jobPhotos: current.jobPhotos.map((candidate) =>
-            candidate.id === photo.id ? { ...candidate, storagePath: displayPath } : candidate
-          )
-        }));
-
-        if (previewPath.startsWith("blob:")) URL.revokeObjectURL(previewPath);
-      });
-
-      return photo;
+        const persistedPhoto = { ...photo, storagePath: displayPath };
+        setState((current) => ({ ...current, jobPhotos: [persistedPhoto, ...current.jobPhotos] }));
+        setLastError(undefined);
+        return persistedPhoto;
+      } catch (error) {
+        if (activeWorkspaceKeyRef.current === requestWorkspaceKey) {
+          const message = error instanceof Error ? error.message : "The photo could not be saved.";
+          setLastError(message);
+        }
+        throw error;
+      }
     }
 
-    function addLineItem(input: NewLineItemInput) {
+    async function addLineItem(input: NewLineItemInput) {
       const existingCount = state.jobLineItems.filter((item) => item.jobId === input.jobId).length;
       const lineItem: JobLineItem = {
         ...input,
@@ -500,40 +545,94 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         unitPrice: Number(input.unitPrice),
         sortOrder: existingCount + 1
       };
-      const nextLineItems = [...state.jobLineItems, lineItem];
-      const invoicePatch = invoiceTotalsPatchForJob(state.invoices, nextLineItems, input.jobId);
+      if (demoMode) {
+        setState((current) => applyLineItemAdd(current, lineItem));
+        return lineItem;
+      }
 
-      setState((current) => ({
-        ...current,
-        jobLineItems: nextLineItems,
-        invoices: invoicePatch
-          ? current.invoices.map((invoice) => (invoice.id === invoicePatch.id ? { ...invoice, ...invoicePatch.patch } : invoice))
-          : current.invoices
-      }));
-      persistSupabase("line item insert", async () => {
-        const { error } = await supabase!.from("job_line_items").insert(lineItemToRow(lineItem));
-        if (error) throw error;
+      if (!supabase) throw new Error("Supabase credentials are not configured.");
+      return queueLineItemMutation(async () => {
+        const requestWorkspaceKey = activeWorkspaceKeyRef.current;
+        try {
+          const { data, error } = await supabase
+            .from("job_line_items")
+            .insert(lineItemToRow(lineItem))
+            .select("*")
+            .single();
+          if (error) throw error;
+          if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) {
+            throw new Error("The signed-in account changed before the line item was saved.");
+          }
+          const persistedLineItem = lineItemFromRow(data);
+          setState((current) => applyLineItemAdd(current, persistedLineItem));
+          setLastError(undefined);
+          return persistedLineItem;
+        } catch (error) {
+          if (activeWorkspaceKeyRef.current === requestWorkspaceKey) {
+            setLastError(error instanceof Error ? error.message : "The line item could not be saved.");
+          }
+          throw error;
+        }
       });
-      return lineItem;
     }
 
-    function updateLineItem(id: string, input: Partial<JobLineItem>) {
-      setState((current) => ({
-        ...applyLineItemUpdate(current, id, input)
-      }));
-      persistSupabase("line item update", async () => {
-        const { error } = await supabase!.from("job_line_items").update(lineItemPatchToRow(input)).eq("id", id);
-        if (error) throw error;
+    async function updateLineItem(id: string, input: Partial<JobLineItem>) {
+      if (Object.keys(input).length === 0) return;
+      if (demoMode) {
+        setState((current) => applyLineItemUpdate(current, id, input));
+        return;
+      }
+
+      if (!supabase) throw new Error("Supabase credentials are not configured.");
+      return queueLineItemMutation(async () => {
+        const requestWorkspaceKey = activeWorkspaceKeyRef.current;
+        try {
+          const { data, error } = await supabase
+            .from("job_line_items")
+            .update(lineItemPatchToRow(input))
+            .eq("id", id)
+            .select("*")
+            .maybeSingle();
+          if (error) throw error;
+          if (!data) throw new Error("The line item could not be updated. Refresh and confirm your access.");
+          if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) {
+            throw new Error("The signed-in account changed before the line item was updated.");
+          }
+          const persistedLineItem = lineItemFromRow(data);
+          setState((current) => applyLineItemUpdate(current, id, persistedLineItem));
+          setLastError(undefined);
+        } catch (error) {
+          if (activeWorkspaceKeyRef.current === requestWorkspaceKey) {
+            setLastError(error instanceof Error ? error.message : "The line item could not be updated.");
+          }
+          throw error;
+        }
       });
     }
 
-    function deleteLineItem(id: string) {
-      setState((current) => ({
-        ...applyLineItemDelete(current, id)
-      }));
-      persistSupabase("line item delete", async () => {
-        const { error } = await supabase!.from("job_line_items").delete().eq("id", id);
-        if (error) throw error;
+    async function deleteLineItem(id: string) {
+      if (demoMode) {
+        setState((current) => applyLineItemDelete(current, id));
+        return;
+      }
+
+      if (!supabase) throw new Error("Supabase credentials are not configured.");
+      return queueLineItemMutation(async () => {
+        const requestWorkspaceKey = activeWorkspaceKeyRef.current;
+        try {
+          const { error } = await supabase.from("job_line_items").delete().eq("id", id);
+          if (error) throw error;
+          if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) {
+            throw new Error("The signed-in account changed before the line item was removed.");
+          }
+          setState((current) => applyLineItemDelete(current, id));
+          setLastError(undefined);
+        } catch (error) {
+          if (activeWorkspaceKeyRef.current === requestWorkspaceKey) {
+            setLastError(error instanceof Error ? error.message : "The line item could not be removed.");
+          }
+          throw error;
+        }
       });
     }
 
@@ -701,13 +800,14 @@ export const roleLabels: Record<Role, string> = {
 };
 
 export const tierLabels: Record<Tier, string> = {
+  standard: "Standard",
   good: "Good",
   better: "Better",
   best: "Best"
 };
 
 export const unitOptions: Unit[] = ["each", "hour", "lb", "visit", "other"];
-export const tierOptions: Tier[] = ["good", "better", "best"];
+export const tierOptions: Tier[] = ["standard", "good", "better", "best"];
 export const roleOptions: Role[] = ["owner", "tech", "call_center"];
 export const photoKinds: PhotoKind[] = ["before", "after", "other"];
 
@@ -799,6 +899,18 @@ function applyLineItemUpdate(state: AppState, id: string, input: Partial<JobLine
     unitPrice: input.unitPrice === undefined ? item.unitPrice : Number(input.unitPrice)
   } : item);
   const invoicePatch = invoiceTotalsPatchForJob(state.invoices, nextLineItems, existingItem.jobId);
+  return {
+    ...state,
+    jobLineItems: nextLineItems,
+    invoices: invoicePatch
+      ? state.invoices.map((invoice) => invoice.id === invoicePatch.id ? { ...invoice, ...invoicePatch.patch } : invoice)
+      : state.invoices
+  };
+}
+
+function applyLineItemAdd(state: AppState, lineItem: JobLineItem): AppState {
+  const nextLineItems = [...state.jobLineItems.filter((item) => item.id !== lineItem.id), lineItem];
+  const invoicePatch = invoiceTotalsPatchForJob(state.invoices, nextLineItems, lineItem.jobId);
   return {
     ...state,
     jobLineItems: nextLineItems,

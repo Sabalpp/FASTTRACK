@@ -36,6 +36,19 @@
   background: #f5f7f9;
 }
 
+.tab:disabled {
+  color: #9aa4b0;
+  background: transparent;
+  cursor: not-allowed;
+  opacity: 0.64;
+  transform: none;
+}
+
+.tab:disabled .icon {
+  color: #98a3af;
+  background: #f6f7f8;
+}
+
 .tab:active {
   transform: translateY(1px);
 }

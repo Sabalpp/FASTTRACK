@@ -76,7 +76,7 @@ export function InvoiceWorkspacePdf({
   }, [invoice.id, invoice.pdfStoragePath, showBlob]);
 
   const signatureRevision = signatures
-    .filter((signature) => signature.purpose === "invoice_approval" || signature.purpose === "technician_acknowledgement")
+    .filter((signature) => ["work_authorization", "work_completion", "technician_acknowledgement"].includes(signature.purpose))
     .map((signature) => [
       signature.id,
       signature.status,
@@ -189,7 +189,7 @@ export function InvoiceWorkspacePdf({
 
       {!canGenerate ? (
         <p className={styles.warningNote} role="status">
-          Save the customer approval signature before generating the final PDF.
+          Finish authorization and completion in the field workflow before generating the final PDF.
         </p>
       ) : null}
 

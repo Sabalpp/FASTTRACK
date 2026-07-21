@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { branding } from "@/lib/branding";
 import {
   buildInvoiceEmailMessage,
@@ -8,9 +9,11 @@ import {
 } from "@/lib/invoice-delivery";
 import {
   assertInvoicePdfIntegrity,
+  assertInvoiceFieldWorkflow,
   assertSignatureDocumentCurrent,
   invoiceDocumentHash,
-  loadInvoiceBundle
+  loadInvoiceBundle,
+  type InvoiceFieldSignatureRow
 } from "@/lib/invoice-server";
 import { selectedTotal } from "@/lib/invoice";
 import { money } from "@/lib/money";
@@ -22,7 +25,7 @@ export const runtime = "nodejs";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-const tiers: Tier[] = ["good", "better", "best"];
+const tiers: Tier[] = ["standard", "good", "better", "best"];
 const optionLabels: InvoiceOptionLabel[] = ["standard_service", "approved_work", "selected_option", "custom_estimate"];
 const paymentStatuses: InvoicePaymentStatus[] = ["unpaid", "partially_paid", "paid", "refunded", "void"];
 
@@ -30,7 +33,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const actor = await requireServerActor(request);
     const { id } = await context.params;
-    const { invoice } = await loadInvoiceBundle(actor, id);
+    const bundle = await loadInvoiceBundle(actor, id);
+    const signatureRows = await loadInvoiceSignatureAuditRows(actor.supabase, id, bundle.job.id);
+    assertInvoiceFieldWorkflow(bundle, signatureRows);
+    const { invoice } = bundle;
     return NextResponse.json({ ok: true, invoice }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     return routeErrorResponse(error);
@@ -43,6 +49,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     requireOwner(actor);
     const { id } = await context.params;
     const bundle = await loadInvoiceBundle(actor, id);
+    const signatureRows = await loadInvoiceSignatureAuditRows(actor.supabase, id, bundle.job.id);
+    const fieldWorkflow = assertInvoiceFieldWorkflow(bundle, signatureRows);
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const action = body.action;
 
@@ -53,13 +61,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       const optionLabel = body.optionLabel as InvoiceOptionLabel;
       const notes = typeof body.notes === "string" ? body.notes.trim() : "";
       if (!tiers.includes(selectedTier)) throw new HttpError(400, "Choose a valid estimate option.");
+      if (selectedTier !== fieldWorkflow.authorizedTier) {
+        throw new HttpError(409, "The invoice scope must match the customer's authorized work.");
+      }
       if (!optionLabels.includes(optionLabel)) throw new HttpError(400, "Choose a valid invoice label.");
       if (notes.length > 4000) throw new HttpError(400, "Invoice notes must be 4,000 characters or fewer.");
       if (!bundle.items.some((item) => item.tier === selectedTier)) {
         throw new HttpError(409, "The selected estimate option has no line items.");
       }
       patch = {
-        selected_tier: selectedTier,
         option_label: optionLabel,
         notes,
         pdf_storage_path: null,
@@ -97,31 +107,24 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)) {
         throw new HttpError(400, "A valid invoice email request ID is required.");
       }
-      if (bundle.invoice.approvalStatus !== "signed") throw new HttpError(409, "Save the customer approval signature before sending.");
       if (!bundle.invoice.pdfStoragePath || !bundle.invoice.pdfGeneratedAt) throw new HttpError(409, "Generate the signed PDF before sending.");
-
-      const { data: signatureRows, error: signaturesError } = await actor.supabase
-        .from("invoice_signatures")
-        .select("purpose,status,document_sha256,created_at,rejected_at")
-        .eq("invoice_id", id)
-        .in("purpose", ["invoice_approval", "technician_acknowledgement"]);
-      if (signaturesError) throw new HttpError(503, "Saved signatures could not be checked before sending.");
-      const approval = signatureRows?.find((signature) => (
-        signature.purpose === "invoice_approval" && signature.status === "active"
+      const technicianAcknowledgement = signatureRows.find((signature) => (
+        signature.purpose === "technician_acknowledgement" && signature.status === "active"
       ));
-      if (!approval) throw new HttpError(409, "Save the customer approval signature before sending.");
-      assertSignatureDocumentCurrent(
-        approval.document_sha256,
-        invoiceDocumentHash(bundle),
-        "The invoice changed after it was signed. Reject and collect the customer signature again."
-      );
+      if (technicianAcknowledgement) {
+        assertSignatureDocumentCurrent(
+          technicianAcknowledgement.document_sha256,
+          invoiceDocumentHash(bundle),
+          "The invoice changed after the technician acknowledgment. Collect it again or remove it."
+        );
+      }
 
       const generatedAt = Date.parse(bundle.invoice.pdfGeneratedAt);
-      const signaturesChangedAfterGeneration = !Number.isFinite(generatedAt) || (signatureRows ?? []).some((signature) => (
+      const signaturesChangedAfterGeneration = !Number.isFinite(generatedAt) || signatureRows.some((signature) => (
         timestampAfter(signature.created_at, generatedAt) || timestampAfter(signature.rejected_at, generatedAt)
-      ));
+      )) || timestampAfter(bundle.job.completionSignatureOverrideAt, generatedAt);
       if (signaturesChangedAfterGeneration) {
-        throw new HttpError(409, "Invoice signatures changed after the PDF was generated. Generate the signed PDF again.");
+        throw new HttpError(409, "Field signatures changed after the PDF was generated. Generate the signed PDF again.");
       }
 
       requiredSignedPdfPath = bundle.invoice.pdfStoragePath;
@@ -173,12 +176,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     let updateQuery = actor.supabase.from("invoices").update(patch).eq("id", id);
     if (requiredSignedPdfPath) {
       updateQuery = updateQuery
-        .eq("approval_status", "signed")
+        .eq("selected_tier", fieldWorkflow.authorizedTier)
         .eq("pdf_storage_path", requiredSignedPdfPath);
     }
     const { data, error } = await updateQuery.select("*").maybeSingle();
     if (error || !data) {
-      const signedConflict = error?.message?.includes("Reject the saved customer approval");
+      const signedConflict = error?.message?.includes("authorized");
       const staleSend = Boolean(requiredSignedPdfPath && !data && !error);
       throw new HttpError(signedConflict || staleSend ? 409 : 503, error?.message ?? (staleSend
         ? "The signature or generated PDF changed. Review the invoice before sending."
@@ -188,6 +191,33 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   } catch (error) {
     return routeErrorResponse(error);
   }
+}
+
+async function loadInvoiceSignatureAuditRows(
+  supabase: SupabaseClient,
+  invoiceId: string,
+  jobId: string
+): Promise<InvoiceFieldSignatureRow[]> {
+  const fields = "id,purpose,status,selected_tier,document_sha256,content_sha256,signed_at,created_at,rejected_at,authorization_signature_id,authorization_terms_version,authorization_subtotal,authorization_tax_rate,authorization_tax_amount,authorization_total";
+  const [fieldResult, acknowledgementResult] = await Promise.all([
+    supabase
+      .from("invoice_signatures")
+      .select(fields)
+      .eq("job_id", jobId)
+      .in("purpose", ["work_authorization", "work_completion"]),
+    supabase
+      .from("invoice_signatures")
+      .select(fields)
+      .eq("invoice_id", invoiceId)
+      .eq("purpose", "technician_acknowledgement")
+  ]);
+  if (fieldResult.error || acknowledgementResult.error) {
+    throw new HttpError(503, "Saved field signatures could not be checked.");
+  }
+  return [
+    ...((fieldResult.data ?? []) as InvoiceFieldSignatureRow[]),
+    ...((acknowledgementResult.data ?? []) as InvoiceFieldSignatureRow[])
+  ];
 }
 
 function timestampAfter(value: unknown, reference: number) {

@@ -2,12 +2,12 @@ export type Role = "owner" | "tech" | "call_center";
 export type JobStatus = "scheduled" | "in_progress" | "complete" | "cancelled";
 export type PhotoKind = "before" | "after" | "other";
 export type Unit = "each" | "hour" | "lb" | "visit" | "other";
-export type Tier = "good" | "better" | "best";
+export type Tier = "standard" | "good" | "better" | "best";
 export type InvoiceStatus = "draft" | "sent" | "paid" | "cancelled";
 export type InvoiceOptionLabel = "standard_service" | "approved_work" | "selected_option" | "custom_estimate";
 export type InvoicePaymentStatus = "unpaid" | "partially_paid" | "paid" | "refunded" | "void";
 export type InvoiceApprovalStatus = "not_signed" | "signed";
-export type SignaturePurpose = "invoice_approval" | "work_completion" | "technician_acknowledgement";
+export type SignaturePurpose = "work_authorization" | "work_completion" | "invoice_approval" | "technician_acknowledgement";
 export type SignatureSignerRole = "customer" | "technician" | "company";
 export type SignatureStatus = "active" | "rejected";
 export type CallDirection = "inbound" | "outbound";
@@ -48,6 +48,8 @@ export type Customer = {
 
 export type Job = {
   id: string;
+  /** Monotonic server revision for authorization-bound job evidence and scope. */
+  workflowRevision?: number;
   customerId: string;
   assignedTechId?: string | null;
   status: JobStatus;
@@ -104,10 +106,14 @@ export type Invoice = {
   jobId: string;
   invoiceNumber: string;
   selectedTier?: Tier;
+  /** Optional while older cached/demo invoice records roll forward. */
+  subtotalStandard?: number;
   subtotalGood: number;
   subtotalBetter: number;
   subtotalBest: number;
   taxRate: number;
+  /** Optional while older cached/demo invoice records roll forward. */
+  totalStandard?: number;
   totalGood: number;
   totalBetter: number;
   totalBest: number;
@@ -145,6 +151,7 @@ export type InvoiceSignature = {
   signedAt: string;
   collectedBy: string;
   createdAt: string;
+  selectedTier?: Tier;
   rejectedAt?: string;
   rejectedBy?: string;
   rejectionReason?: string;

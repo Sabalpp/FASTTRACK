@@ -1,7 +1,7 @@
 import { demoMode } from "@/lib/runtime";
 import { createId } from "@/lib/id";
 import { protectedJson } from "@/lib/protected-api-client";
-import type { InvoiceSignature, SignaturePurpose, SignatureSignerRole } from "@/lib/types";
+import type { InvoiceSignature, SignaturePurpose, SignatureSignerRole, Tier } from "@/lib/types";
 
 const DEMO_SIGNATURES_KEY = "hvac-plumbing-mvp-signatures-v1";
 
@@ -18,6 +18,7 @@ export type SaveSignatureInput = {
   invoiceId?: string;
   jobId: string;
   collectedBy: string;
+  selectedTier?: Tier;
 };
 
 export async function loadSignatures(target: SignatureTarget): Promise<InvoiceSignature[]> {
@@ -44,6 +45,7 @@ export async function saveSignature(input: SaveSignatureInput): Promise<InvoiceS
   form.set("signerRole", input.signerRole);
   form.set("width", String(input.width));
   form.set("height", String(input.height));
+  if (input.selectedTier) form.set("selectedTier", input.selectedTier);
 
   const result = await protectedJson<{ signature: InvoiceSignature }>(
     `/api/${input.target.type === "invoice" ? "invoices" : "jobs"}/${input.target.id}/signatures`,
@@ -74,6 +76,15 @@ export async function rejectSignature(target: SignatureTarget, signatureId: stri
   return result.signature;
 }
 
+export function clearDemoSignatures() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(DEMO_SIGNATURES_KEY);
+  } catch (error) {
+    console.warn("Demo signatures could not be cleared on this device.", error);
+  }
+}
+
 async function saveDemoSignature(input: SaveSignatureInput) {
   const imageUrl = await blobToDataUrl(input.image);
   const bytes = new Uint8Array(await input.image.arrayBuffer());
@@ -83,7 +94,7 @@ async function saveDemoSignature(input: SaveSignatureInput) {
   const current = readDemoSignatures().map((signature) => (
     signature.status === "active"
     && signature.purpose === input.purpose
-    && (input.purpose === "work_completion" ? signature.jobId === input.jobId : signature.invoiceId === input.invoiceId)
+    && (["work_authorization", "work_completion"].includes(input.purpose) ? signature.jobId === input.jobId : signature.invoiceId === input.invoiceId)
       ? { ...signature, status: "rejected" as const, rejectedAt: now, rejectionReason: "Replaced by a newly collected signature." }
       : signature
   ));
@@ -100,7 +111,8 @@ async function saveDemoSignature(input: SaveSignatureInput) {
     documentSha256: hash,
     signedAt: now,
     collectedBy: input.collectedBy,
-    createdAt: now
+    createdAt: now,
+    selectedTier: input.selectedTier
   };
   persistDemoSignatures([signature, ...current]);
   return signature;

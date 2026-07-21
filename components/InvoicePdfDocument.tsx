@@ -2,7 +2,7 @@ import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/render
 import React from "react";
 import { branding } from "@/lib/branding";
 import { formatDate, formatDateTime } from "@/lib/date";
-import { balanceDue, firstPopulatedTier, invoiceOptionLabels, selectedSubtotal, selectedTotal } from "@/lib/invoice";
+import { balanceDue, invoiceOptionLabels, selectedSubtotal, selectedTotal } from "@/lib/invoice";
 import { money, percent } from "@/lib/money";
 import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem, Tier } from "@/lib/types";
 
@@ -20,30 +20,43 @@ type InvoiceViewModel = {
   customer: Customer;
   selectedTier?: Tier;
   subtotal: number;
+  jobCost: number;
+  serviceCall: number;
   tax: number;
   total: number;
-  customerSignature?: InvoiceSignature;
+  authorizationSignature?: InvoiceSignature;
+  completionSignature?: InvoiceSignature;
   technicianSignature?: InvoiceSignature;
 };
 
 export function InvoicePdfDocument({ invoice, job, customer, items, signatures = [] }: InvoicePdfDocumentProps) {
-  const selectedTier = firstPopulatedTier(invoice);
+  const activeSignatures = signatures.filter((signature) => signature.status === "active");
+  const authorizationSignature = activeSignatures.find((signature) => signature.purpose === "work_authorization");
+  if (authorizationSignature?.selectedTier && invoice.selectedTier !== authorizationSignature.selectedTier) {
+    throw new Error("Invoice scope does not match the customer-authorized work.");
+  }
+  const selectedTier = authorizationSignature?.selectedTier ?? invoice.selectedTier;
   const selectedInvoice = selectedTier ? { ...invoice, selectedTier } : invoice;
   const selectedItems = selectedTier
     ? items.filter((item) => item.tier === selectedTier).sort((left, right) => left.sortOrder - right.sortOrder)
     : [];
   const subtotal = selectedTier ? selectedSubtotal(selectedInvoice) : 0;
   const total = selectedTier ? selectedTotal(selectedInvoice) : 0;
-  const activeSignatures = signatures.filter((signature) => signature.status === "active");
+  const serviceCall = selectedItems
+    .filter((item) => /service call|diagnostic|dispatch|trip charge/i.test(item.description))
+    .reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const viewModel: InvoiceViewModel = {
     invoice: selectedInvoice,
     job,
     customer,
     selectedTier,
     subtotal,
+    jobCost: Math.max(0, subtotal - serviceCall),
+    serviceCall,
     tax: total - subtotal,
     total,
-    customerSignature: activeSignatures.find((signature) => signature.purpose === "invoice_approval"),
+    authorizationSignature,
+    completionSignature: activeSignatures.find((signature) => signature.purpose === "work_completion"),
     technicianSignature: activeSignatures.find((signature) => signature.purpose === "technician_acknowledgement")
   };
 
@@ -114,9 +127,10 @@ function DocumentHeader({ invoice }: { invoice: Invoice }) {
           <Text style={styles.brandContact}>{branding.phone}  |  {branding.email}</Text>
         </View>
       </View>
-      <View style={styles.invoiceBlock}>
+        <View style={styles.invoiceBlock}>
         <Text style={styles.invoiceTitle}>INVOICE</Text>
         <Text style={styles.invoiceNumber}>{invoice.invoiceNumber}</Text>
+        <Text style={styles.invoiceDate}>{formatDate(invoice.createdAt)}</Text>
       </View>
       <View style={styles.headerRule} />
     </View>
@@ -157,8 +171,12 @@ function InvoiceIntro({ model }: { model: InvoiceViewModel }) {
       <View style={styles.factGrid}>
         <Fact label="Issue date" value={formatDate(invoice.createdAt)} />
         <Fact label="Service date" value={formatDate(serviceDate)} />
-        <Fact label="Approval" value="Customer approved" />
+        <Fact label="Field record" value="Authorized + completed" />
         <Fact label="Payment" value={paymentLabel(invoice.paymentStatus)} last />
+      </View>
+      <View style={styles.serviceRequestCard}>
+        <Text style={styles.kicker}>NATURE OF SERVICE REQUEST</Text>
+        <Text style={styles.serviceRequestText}>{job.description}</Text>
       </View>
     </>
   );
@@ -209,7 +227,10 @@ function LineItemsTable({ items }: { items: JobLineItem[] }) {
 }
 
 function InvoiceSummary({ model, compact = false }: { model: InvoiceViewModel; compact?: boolean }) {
-  const { invoice, job, customerSignature, technicianSignature } = model;
+  const { invoice, job, authorizationSignature, completionSignature, technicianSignature } = model;
+  const completionOverride = !completionSignature && job.completionSignatureOverrideAt && job.completionSignatureOverrideReason
+    ? { at: job.completionSignatureOverrideAt, reason: job.completionSignatureOverrideReason }
+    : undefined;
   return (
     <View style={compact ? styles.compactSummary : styles.summaryPageBody}>
       <View style={styles.summaryArea}>
@@ -218,10 +239,12 @@ function InvoiceSummary({ model, compact = false }: { model: InvoiceViewModel; c
           <Text style={styles.notesText}>{invoice.notes || job.notes || "No additional notes."}</Text>
         </View>
         <View style={styles.totalsCard}>
-          <TotalRow label="Subtotal" value={money(model.subtotal)} />
+          <TotalRow label="Job cost" value={money(model.jobCost)} />
+          <TotalRow label="Service call" value={money(model.serviceCall)} />
+          <TotalRow label="Subtotal" value={money(model.subtotal)} strong />
           <TotalRow label={`Tax (${percent(invoice.taxRate)})`} value={money(model.tax)} />
-          <TotalRow label="Total" value={money(model.total)} strong />
-          <TotalRow label="Paid" value={money(invoice.amountPaid)} />
+          <TotalRow label="Total" value={money(model.total)} />
+          <TotalRow label="Deposit / paid" value={money(invoice.amountPaid)} />
           <View style={styles.balanceRow}>
             <Text style={styles.balanceLabel}>BALANCE DUE</Text>
             <Text style={styles.balanceValue}>{money(balanceDue(invoice))}</Text>
@@ -231,16 +254,30 @@ function InvoiceSummary({ model, compact = false }: { model: InvoiceViewModel; c
 
       <View style={styles.paymentNotice}>
         <Text style={styles.paymentNoticeTitle}>PAYMENT STATUS: {paymentLabel(invoice.paymentStatus).toUpperCase()}</Text>
-        <Text style={styles.paymentNoticeText}>Reference {invoice.invoiceNumber} with payment. Card details are never collected on this document.</Text>
+        <Text style={styles.paymentNoticeText}>Reference {invoice.invoiceNumber} with payment. Cash, check, or electronic payment may be recorded separately. Card details are never collected on this document.</Text>
       </View>
 
       <View style={styles.approvalSection}>
-        <Text style={styles.kicker}>REVIEW & APPROVAL</Text>
-        <Text style={styles.approvalTerms}>The signer confirms that the listed work and charges were reviewed and approved. The signature is linked to this invoice and retained with an audit timestamp.</Text>
+        <Text style={styles.kicker}>FIELD AUTHORIZATION RECORD</Text>
         <View style={styles.signatureGrid}>
-          <SignatureBlock signature={customerSignature} title="Customer approval" wide={!technicianSignature} />
-          {technicianSignature ? <SignatureBlock signature={technicianSignature} title="Technician / company" /> : null}
+          <FieldSignatureBlock
+            signature={authorizationSignature}
+            title="AUTHORIZATION OF REPAIR"
+            terms={`Customer authorized the listed diagnosis, parts, labor, and ${model.selectedTier ?? "selected"} estimate before work began. Additional charges require renewed authorization.`}
+          />
+          <FieldSignatureBlock
+            signature={completionSignature}
+            override={completionOverride}
+            title="COMPLETION OF WORK"
+            terms="Customer acknowledged satisfactory completion of the listed work after service and final job evidence."
+          />
         </View>
+        {technicianSignature ? (
+          <View style={styles.technicianAck}>
+            <Text style={styles.technicianAckLabel}>Technician / company acknowledgment</Text>
+            <Text style={styles.technicianAckText}>{technicianSignature.signerName}  |  {formatDateTime(technicianSignature.signedAt)}</Text>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.thankYou}>
@@ -269,16 +306,33 @@ function TotalRow({ label, value, strong = false }: { label: string; value: stri
   );
 }
 
-function SignatureBlock({ signature, title, wide = false }: { signature?: InvoiceSignature; title: string; wide?: boolean }) {
+function FieldSignatureBlock({
+  signature,
+  override,
+  title,
+  terms
+}: {
+  signature?: InvoiceSignature;
+  override?: { at: string; reason: string };
+  title: string;
+  terms: string;
+}) {
   return (
-    <View style={[styles.signatureCard, wide ? styles.signatureCardWide : {}]}>
+    <View style={styles.signatureCard}>
       <Text style={styles.signatureTitle}>{title}</Text>
+      <Text style={styles.signatureTerms}>{terms}</Text>
       <View style={styles.signatureImageArea}>
-        {signature?.imageUrl ? <Image src={signature.imageUrl} style={styles.signatureImage} /> : <Text style={styles.signaturePending}>Signature not saved</Text>}
+        {signature?.imageUrl ? <Image src={signature.imageUrl} style={styles.signatureImage} />
+          : override ? <Text style={styles.signatureOverride}>AUDITED OWNER OVERRIDE</Text>
+            : <Text style={styles.signaturePending}>Signature not saved</Text>}
       </View>
       <View style={styles.signatureLine} />
-      <Text style={styles.signatureName}>{signature?.signerName ?? "Pending"}</Text>
-      <Text style={styles.signatureMeta}>{signature ? `${roleLabel(signature.signerRole)}  |  ${formatDateTime(signature.signedAt)}` : "No approval timestamp"}</Text>
+      <Text style={styles.signatureName}>{signature?.signerName ?? (override ? "Owner completion override" : "Pending")}</Text>
+      <Text style={styles.signatureMeta}>{signature
+        ? `${roleLabel(signature.signerRole)}  |  ${formatDateTime(signature.signedAt)}`
+        : override
+          ? `${formatDateTime(override.at)}  |  ${override.reason}`
+          : "No field timestamp"}</Text>
     </View>
   );
 }
@@ -335,37 +389,40 @@ const colors = {
 };
 
 const styles = StyleSheet.create({
-  page: { paddingTop: 30, paddingRight: 40, paddingBottom: 46, paddingLeft: 40, backgroundColor: colors.white, color: colors.ink, fontFamily: "Helvetica", fontSize: 8.6, lineHeight: 1.35 },
-  header: { position: "relative", height: 66, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 },
+  page: { paddingTop: 24, paddingRight: 36, paddingBottom: 38, paddingLeft: 36, backgroundColor: colors.white, color: colors.ink, fontFamily: "Helvetica", fontSize: 8.3, lineHeight: 1.3 },
+  header: { position: "relative", height: 58, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 9 },
   brandBlock: { flexDirection: "row", alignItems: "center", width: "72%" },
-  brandLogo: { width: 48, height: 38, marginRight: 10, objectFit: "contain" },
+  brandLogo: { width: 44, height: 34, marginRight: 9, objectFit: "contain" },
   brandCopy: { flex: 1 },
   brandName: { color: colors.brand, fontSize: 13, fontWeight: 700, marginBottom: 1 },
   brandContact: { color: colors.muted, fontSize: 7.2, marginBottom: 1 },
   invoiceBlock: { alignItems: "flex-end", minWidth: 92 },
   invoiceTitle: { color: colors.brand, fontSize: 17, fontWeight: 700, letterSpacing: 1.1, lineHeight: 1.05 },
   invoiceNumber: { color: colors.muted, fontSize: 8.5, marginTop: 3, lineHeight: 1.1 },
+  invoiceDate: { color: colors.muted, fontSize: 7.2, marginTop: 2 },
   headerRule: { position: "absolute", left: 0, right: 0, bottom: 0, height: 3, backgroundColor: colors.accent },
-  invoiceIntro: { flexDirection: "row", marginBottom: 10 },
+  invoiceIntro: { flexDirection: "row", marginBottom: 6 },
   partyColumn: { width: "50%", paddingRight: 16 },
   kicker: { color: colors.accent, fontSize: 6.8, fontWeight: 700, letterSpacing: 0.75, marginBottom: 4 },
   partyName: { color: colors.ink, fontSize: 10, fontWeight: 700, marginBottom: 2 },
   bodyText: { color: colors.muted, fontSize: 7.8, marginBottom: 1 },
-  factGrid: { flexDirection: "row", borderWidth: 1, borderColor: colors.line, borderRadius: 6, marginBottom: 12, backgroundColor: colors.soft },
-  fact: { width: "25%", paddingVertical: 6, paddingHorizontal: 9, borderRightWidth: 1, borderRightColor: colors.line },
+  factGrid: { flexDirection: "row", borderWidth: 1, borderColor: colors.line, borderRadius: 6, marginBottom: 7, backgroundColor: colors.soft },
+  fact: { width: "25%", paddingVertical: 4, paddingHorizontal: 8, borderRightWidth: 1, borderRightColor: colors.line },
   factLast: { borderRightWidth: 0 },
   factLabel: { color: colors.muted, fontSize: 6.3, textTransform: "uppercase", marginBottom: 2 },
   factValue: { color: colors.ink, fontSize: 7.8, fontWeight: 700, textTransform: "capitalize" },
-  sectionHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 6 },
+  serviceRequestCard: { marginBottom: 7, paddingVertical: 5, paddingHorizontal: 8, borderLeftWidth: 3, borderLeftColor: colors.brand, backgroundColor: colors.soft },
+  serviceRequestText: { color: colors.ink, fontSize: 8.2, fontWeight: 700 },
+  sectionHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 4 },
   sectionTitle: { fontSize: 12.5, fontWeight: 700 },
   sectionAmount: { color: colors.brand, fontSize: 13.5, fontWeight: 700 },
   continuationHeading: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 10 },
   continuationTitle: { color: colors.ink, fontSize: 14, fontWeight: 700 },
   continuationMeta: { alignItems: "flex-end", color: colors.muted, fontSize: 7.5 },
-  table: { borderWidth: 1, borderColor: colors.line, borderRadius: 6, overflow: "hidden", marginBottom: 10 },
-  tableHeader: { flexDirection: "row", backgroundColor: colors.brand, paddingVertical: 6, paddingHorizontal: 9 },
+  table: { borderWidth: 1, borderColor: colors.line, borderRadius: 6, overflow: "hidden", marginBottom: 7 },
+  tableHeader: { flexDirection: "row", backgroundColor: colors.brand, paddingVertical: 4, paddingHorizontal: 8 },
   tableHeaderText: { color: colors.white, fontSize: 6.5, fontWeight: 700, letterSpacing: 0.35 },
-  tableRow: { flexDirection: "row", paddingVertical: 6, paddingHorizontal: 9, borderTopWidth: 1, borderTopColor: colors.line },
+  tableRow: { flexDirection: "row", paddingVertical: 4, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: colors.line },
   tableRowAlternate: { backgroundColor: colors.soft },
   tableCell: { color: colors.ink, fontSize: 7.7, paddingRight: 7 },
   numericCell: { textAlign: "right", paddingRight: 0 },
@@ -377,34 +434,38 @@ const styles = StyleSheet.create({
   emptyText: { color: colors.muted, fontSize: 8 },
   compactSummary: { marginTop: 0 },
   summaryPageBody: { paddingTop: 4 },
-  summaryArea: { flexDirection: "row", marginBottom: 9 },
-  notesCard: { width: "56%", minHeight: 70, marginRight: 14, padding: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 6 },
+  summaryArea: { flexDirection: "row", marginBottom: 6 },
+  notesCard: { width: "56%", minHeight: 62, marginRight: 12, padding: 8, borderWidth: 1, borderColor: colors.line, borderRadius: 6 },
   notesText: { color: colors.muted, fontSize: 7.8 },
   totalsCard: { width: "44%", borderWidth: 1, borderColor: colors.line, borderRadius: 6, overflow: "hidden" },
-  totalRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4, paddingHorizontal: 9, borderBottomWidth: 1, borderBottomColor: colors.line },
+  totalRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 2.6, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: colors.line },
   totalRowStrong: { backgroundColor: colors.soft },
   totalText: { color: colors.muted, fontSize: 7.5 },
   totalStrongText: { color: colors.ink, fontSize: 8, fontWeight: 700 },
-  balanceRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingHorizontal: 9, backgroundColor: colors.brand },
+  balanceRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4, paddingHorizontal: 8, backgroundColor: colors.brand },
   balanceLabel: { color: colors.white, fontSize: 7.2, fontWeight: 700 },
   balanceValue: { color: colors.white, fontSize: 9.5, fontWeight: 700 },
-  paymentNotice: { padding: 7, borderLeftWidth: 3, borderLeftColor: colors.green, backgroundColor: "#F0FDF4", marginBottom: 9 },
+  paymentNotice: { padding: 5, borderLeftWidth: 3, borderLeftColor: colors.green, backgroundColor: "#F0FDF4", marginBottom: 6 },
   paymentNoticeTitle: { color: colors.green, fontSize: 6.8, fontWeight: 700, marginBottom: 2 },
   paymentNoticeText: { color: colors.muted, fontSize: 7.4 },
-  approvalSection: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 8, marginBottom: 8 },
+  approvalSection: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 5, marginBottom: 4 },
   approvalTerms: { color: colors.muted, fontSize: 7.2, marginBottom: 6 },
-  signatureGrid: { flexDirection: "row" },
-  signatureCard: { width: "50%", minHeight: 76, padding: 8, borderWidth: 1, borderColor: colors.line, borderRadius: 6 },
-  signatureCardWide: { width: "100%" },
+  signatureGrid: { flexDirection: "row", justifyContent: "space-between" },
+  signatureCard: { width: "49%", minHeight: 88, padding: 6, borderWidth: 1, borderColor: colors.line, borderRadius: 6 },
   signatureTitle: { color: colors.ink, fontSize: 7.4, fontWeight: 700 },
-  signatureImageArea: { height: 34, justifyContent: "center", alignItems: "center", marginTop: 1 },
-  signatureImage: { width: 145, height: 32, objectFit: "contain" },
+  signatureTerms: { color: colors.muted, fontSize: 5.8, lineHeight: 1.25, marginTop: 3 },
+  signatureImageArea: { height: 23, justifyContent: "center", alignItems: "center", marginTop: 1 },
+  signatureImage: { width: 140, height: 22, objectFit: "contain" },
   signaturePending: { color: colors.muted, fontSize: 7.3 },
+  signatureOverride: { color: colors.accent, fontSize: 6.5, fontWeight: 700 },
   signatureLine: { height: 1, backgroundColor: colors.ink, marginBottom: 2 },
   signatureName: { color: colors.ink, fontSize: 7.5, fontWeight: 700 },
   signatureMeta: { color: colors.muted, fontSize: 6.2, marginTop: 1 },
-  thankYou: { alignItems: "center", paddingTop: 3 },
+  technicianAck: { flexDirection: "row", justifyContent: "space-between", paddingTop: 5 },
+  technicianAckLabel: { color: colors.muted, fontSize: 6.5, fontWeight: 700 },
+  technicianAckText: { color: colors.ink, fontSize: 6.5 },
+  thankYou: { alignItems: "center", paddingTop: 1 },
   thankYouTitle: { color: colors.brand, fontSize: 9.5, fontWeight: 700, marginBottom: 1 },
   thankYouText: { color: colors.muted, fontSize: 6.9 },
-  footer: { position: "absolute", left: 40, right: 40, bottom: 20, flexDirection: "row", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 5, color: colors.muted, fontSize: 6.5 }
+  footer: { position: "absolute", left: 36, right: 36, bottom: 16, flexDirection: "row", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 4, color: colors.muted, fontSize: 6.5 }
 });

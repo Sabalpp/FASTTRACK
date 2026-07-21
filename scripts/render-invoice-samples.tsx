@@ -58,21 +58,32 @@ const baseItems: JobLineItem[] = [
   item(3, "System performance test and operating-temperature verification", 1, 95)
 ];
 
-const activeSignature: InvoiceSignature = {
+const authorizationSignature: InvoiceSignature = {
   id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-  invoiceId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
   jobId: job.id,
-  purpose: "invoice_approval",
+  purpose: "work_authorization",
   signerName: "Jordan Taylor",
   signerRole: "customer",
   status: "active",
   imageUrl: signatureDataUrl,
   contentSha256: "a".repeat(64),
   documentSha256: "b".repeat(64),
-  signedAt: "2026-07-20T16:22:00.000Z",
+  signedAt: "2026-07-20T14:12:00.000Z",
   collectedBy: "22222222-2222-4222-8222-222222222222",
+  createdAt: "2026-07-20T14:12:00.000Z",
+  selectedTier: "good"
+};
+
+const completionSignature: InvoiceSignature = {
+  ...authorizationSignature,
+  id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  purpose: "work_completion",
+  selectedTier: undefined,
+  signedAt: "2026-07-20T16:22:00.000Z",
   createdAt: "2026-07-20T16:22:00.000Z"
 };
+
+const fieldSignatures = [authorizationSignature, completionSignature];
 
 const samples: Array<{ filename: string; customer: Customer; job: Job; items: JobLineItem[]; invoice: Invoice; signatures: InvoiceSignature[] }> = [];
 
@@ -90,8 +101,8 @@ samples.push({
   customer,
   job,
   items: baseItems,
-  invoice: makeInvoice(baseItems, { approvalStatus: "signed", approvedAt: activeSignature.signedAt }),
-  signatures: [activeSignature]
+  invoice: makeInvoice(baseItems),
+  signatures: fieldSignatures
 });
 
 const multiPageItems = Array.from({ length: 34 }, (_, index) => item(
@@ -106,7 +117,7 @@ samples.push({
   job,
   items: multiPageItems,
   invoice: makeInvoice(multiPageItems, { notes: "Multi-system service visit. Each completed item is listed separately for the property manager's records." }),
-  signatures: [activeSignature]
+  signatures: fieldSignatures
 });
 
 const longCustomer: Customer = {
@@ -136,8 +147,8 @@ samples.push({
   customer: longCustomer,
   job: longJob,
   items: longItems,
-  invoice: makeInvoice(longItems, { notes: longJob.notes, approvalStatus: "signed", approvedAt: activeSignature.signedAt }),
-  signatures: [activeSignature]
+  invoice: makeInvoice(longItems, { notes: longJob.notes }),
+  signatures: fieldSignatures
 });
 
 for (const sample of samples) {

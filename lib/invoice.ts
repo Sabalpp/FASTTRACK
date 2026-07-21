@@ -1,7 +1,7 @@
 import { branding } from "@/lib/branding";
 import type { Invoice, InvoiceOptionLabel, JobLineItem, Tier } from "@/lib/types";
 
-const tierKeys: Tier[] = ["good", "better", "best"];
+const tierKeys: Tier[] = ["standard", "good", "better", "best"];
 
 export function subtotalForTier(items: JobLineItem[], tier: Tier): number {
   return items
@@ -15,10 +15,12 @@ export function totalsForItems(items: JobLineItem[], taxRate = branding.taxRate)
   ) as Record<Tier, number>;
 
   return {
+    subtotalStandard: roundMoney(subtotals.standard),
     subtotalGood: roundMoney(subtotals.good),
     subtotalBetter: roundMoney(subtotals.better),
     subtotalBest: roundMoney(subtotals.best),
     taxRate,
+    totalStandard: roundMoney(subtotals.standard * (1 + taxRate)),
     totalGood: roundMoney(subtotals.good * (1 + taxRate)),
     totalBetter: roundMoney(subtotals.better * (1 + taxRate)),
     totalBest: roundMoney(subtotals.best * (1 + taxRate))
@@ -65,13 +67,15 @@ export function invoiceNumber(sequence: number): string {
 }
 
 export function selectedTotal(invoice: Invoice): number {
+  if (invoice.selectedTier === "standard") return invoice.totalStandard ?? 0;
   if (invoice.selectedTier === "good") return invoice.totalGood;
   if (invoice.selectedTier === "better") return invoice.totalBetter;
   if (invoice.selectedTier === "best") return invoice.totalBest;
-  return invoice.totalBetter || invoice.totalGood || invoice.totalBest;
+  return invoice.totalStandard || invoice.totalBetter || invoice.totalGood || invoice.totalBest;
 }
 
 export function selectedSubtotal(invoice: Invoice): number {
+  if (invoice.selectedTier === "standard") return invoice.subtotalStandard ?? 0;
   if (invoice.selectedTier === "good") return invoice.subtotalGood;
   if (invoice.selectedTier === "better") return invoice.subtotalBetter;
   if (invoice.selectedTier === "best") return invoice.subtotalBest;
@@ -84,6 +88,7 @@ export function balanceDue(invoice: Invoice): number {
 
 export function firstPopulatedTier(invoice: Invoice): Tier | undefined {
   if (invoice.selectedTier) return invoice.selectedTier;
+  if ((invoice.totalStandard ?? 0) > 0) return "standard";
   if (invoice.totalGood > 0) return "good";
   if (invoice.totalBetter > 0) return "better";
   if (invoice.totalBest > 0) return "best";

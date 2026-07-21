@@ -12,6 +12,7 @@ import { invoiceFromRow, invoiceToRow, type InvoiceRow } from "@/lib/supabase-ma
 import type { Invoice, JobLineItem } from "@/lib/types";
 
 const items: JobLineItem[] = [
+  line("standard", 1, 89, 0),
   line("good", 2, 19.995, 1),
   line("better", 1, 125, 2),
   line("best", 1.5, 200, 3)
@@ -20,14 +21,23 @@ const items: JobLineItem[] = [
 describe("invoice totals and persistence", () => {
   it("calculates and rounds every estimate tier from line items", () => {
     expect(totalsForItems(items, 0.06)).toEqual({
+      subtotalStandard: 89,
       subtotalGood: 39.99,
       subtotalBetter: 125,
       subtotalBest: 300,
       taxRate: 0.06,
+      totalStandard: 94.34,
       totalGood: 42.39,
       totalBetter: 132.5,
       totalBest: 318
     });
+  });
+
+  it("supports one neutral Standard scope without requiring tiered packages", () => {
+    const invoice = draft({ selectedTier: "standard" });
+    expect(selectedSubtotal(invoice)).toBe(89);
+    expect(selectedTotal(invoice)).toBe(94.34);
+    expect(firstPopulatedTier(invoice)).toBe("standard");
   });
 
   it("uses a neutral invoice label while retaining the selected estimate tier internally", () => {
@@ -138,10 +148,12 @@ function row(): InvoiceRow {
     job_id: "job-id",
     invoice_number: "INV-000123",
     selected_tier: "better",
+    subtotal_standard: 89,
     subtotal_good: 39.99,
     subtotal_better: 125,
     subtotal_best: 300,
     tax_rate: 0.06,
+    total_standard: 94.34,
     total_good: 42.39,
     total_better: 132.5,
     total_best: 318,

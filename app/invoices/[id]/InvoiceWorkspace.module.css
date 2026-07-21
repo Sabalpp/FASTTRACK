@@ -776,10 +776,91 @@
   font-size: 0.92rem;
 }
 
+.lockedScope small {
+  color: var(--workspace-success);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
 .lockedScope p {
   margin: 0;
   color: var(--workspace-muted);
   font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.fieldSignatureCard {
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--workspace-line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 12px;
+}
+
+.fieldSignatureCard[data-complete="true"] {
+  border-color: #bddfce;
+  background: var(--workspace-success-soft);
+}
+
+.fieldSignatureHeading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.fieldSignatureHeading > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border-radius: 9px;
+  background: #edf3f6;
+  color: var(--workspace-muted);
+}
+
+.fieldSignatureCard[data-complete="true"] .fieldSignatureHeading > span {
+  background: #dff3e8;
+  color: var(--workspace-success);
+}
+
+.fieldSignatureHeading p,
+.fieldSignatureHeading strong,
+.fieldSignatureDetail {
+  margin: 0;
+}
+
+.fieldSignatureHeading p {
+  color: var(--workspace-muted);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fieldSignatureHeading strong {
+  color: var(--workspace-ink);
+  font-size: 0.86rem;
+}
+
+.fieldSignatureCard img {
+  width: 100%;
+  height: 66px;
+  object-fit: contain;
+  border-bottom: 1px solid #bfd0d8;
+}
+
+.fieldSignatureDetail {
+  color: var(--workspace-muted);
+  font-size: 0.73rem;
+  line-height: 1.42;
+}
+
+.fieldSignatureMeta {
+  color: var(--workspace-ink);
+  font-size: 0.7rem;
+  font-weight: 750;
   line-height: 1.4;
 }
 

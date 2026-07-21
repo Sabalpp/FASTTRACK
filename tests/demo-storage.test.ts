@@ -3,7 +3,7 @@ import { demoState } from "@/lib/demo-data";
 import { compactDemoStateForStorage, persistDemoState } from "@/lib/demo-storage";
 
 describe("demo browser storage", () => {
-  it("drops oversized camera payloads before persisting state", () => {
+  it("drops oversized image bytes but retains checkpoint proof metadata", () => {
     const state = {
       ...demoState,
       jobPhotos: [
@@ -17,7 +17,7 @@ describe("demo browser storage", () => {
     };
 
     const compacted = compactDemoStateForStorage(state);
-    expect(compacted.jobPhotos.some((photo) => photo.id === "large-photo")).toBe(false);
+    expect(compacted.jobPhotos.find((photo) => photo.id === "large-photo")?.storagePath).toBe("demo-proof:large-photo");
     expect(compacted.jobPhotos.some((photo) => photo.storagePath.startsWith("https://"))).toBe(true);
   });
 
@@ -49,6 +49,7 @@ describe("demo browser storage", () => {
 
     expect(persistDemoState(storage, "demo", state)).toBe(false);
     expect(saved[1]).not.toContain("data:image");
+    expect(saved[1]).toContain("demo-proof:inline");
     warn.mockRestore();
   });
 });

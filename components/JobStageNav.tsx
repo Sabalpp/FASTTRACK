@@ -1,10 +1,10 @@
 "use client";
 
-import { Camera, ClipboardList, FileCheck2, ReceiptText, Wrench } from "lucide-react";
+import { Camera, ClipboardList, FileCheck2, ReceiptText, ShieldCheck, Wrench } from "lucide-react";
 import type { CSSProperties } from "react";
 import styles from "./JobStageNav.module.css";
 
-export type JobStage = "overview" | "photos" | "work" | "approval" | "invoice";
+export type JobStage = "overview" | "photos" | "work" | "approval" | "after" | "completion" | "invoice";
 
 export const jobStages: Array<{
   id: JobStage;
@@ -13,9 +13,11 @@ export const jobStages: Array<{
   description: string;
 }> = [
   { id: "overview", label: "Overview", shortLabel: "Overview", description: "Customer, dispatch, and arrival" },
-  { id: "photos", label: "Photos", shortLabel: "Photos", description: "Before, after, and job proof" },
-  { id: "work", label: "Work", shortLabel: "Work", description: "Services, parts, and options" },
-  { id: "approval", label: "Approval", shortLabel: "Approval", description: "Customer review and signature" },
+  { id: "photos", label: "Before photos", shortLabel: "Before", description: "Document conditions before work" },
+  { id: "work", label: "Estimate", shortLabel: "Estimate", description: "Build the proposed scope and price" },
+  { id: "approval", label: "Authorization", shortLabel: "Authorize", description: "Customer approval before work" },
+  { id: "after", label: "After photos", shortLabel: "After", description: "Document completed work" },
+  { id: "completion", label: "Completion", shortLabel: "Complete", description: "Customer confirms completed work" },
   { id: "invoice", label: "Invoice", shortLabel: "Invoice", description: "Build and open the invoice" }
 ];
 
@@ -23,7 +25,9 @@ const stageIcons = {
   overview: ClipboardList,
   photos: Camera,
   work: Wrench,
-  approval: FileCheck2,
+  approval: ShieldCheck,
+  after: Camera,
+  completion: FileCheck2,
   invoice: ReceiptText
 } satisfies Record<JobStage, typeof Camera>;
 
@@ -32,13 +36,15 @@ export function JobStageNav({
   onChange,
   counts,
   completion,
-  visibleStages
+  visibleStages,
+  disabledStages = []
 }: {
   active: JobStage;
   onChange: (stage: JobStage) => void;
   counts?: Partial<Record<JobStage, number>>;
   completion?: Partial<Record<JobStage, boolean>>;
   visibleStages?: JobStage[];
+  disabledStages?: JobStage[];
 }) {
   const stages = visibleStages
     ? jobStages.filter((stage) => visibleStages.includes(stage.id))
@@ -52,6 +58,7 @@ export function JobStageNav({
           const selected = stage.id === active;
           const complete = completion?.[stage.id] === true;
           const count = counts?.[stage.id];
+          const disabled = disabledStages.includes(stage.id) && !selected;
 
           return (
             <button
@@ -60,7 +67,10 @@ export function JobStageNav({
               role="tab"
               id={`job-stage-${stage.id}`}
               aria-controls={`job-stage-panel-${stage.id}`}
+              aria-label={stage.shortLabel}
               aria-selected={selected}
+              aria-disabled={disabled}
+              disabled={disabled}
               className={styles.tab}
               data-active={selected || undefined}
               data-complete={complete || undefined}
