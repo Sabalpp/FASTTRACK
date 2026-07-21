@@ -2,7 +2,18 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { PenLine } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarClock,
+  Check,
+  ChevronRight,
+  CircleUserRound,
+  FileText,
+  MapPin,
+  PenLine,
+  Save,
+  UserRound
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { tierOptions, useAppData } from "@/lib/data-store";
@@ -14,11 +25,10 @@ import { ContactActions } from "@/components/ContactActions";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { LineItemForm } from "@/components/LineItemForm";
 import { PhotoUploader } from "@/components/PhotoUploader";
-import { ServiceWindowBadge } from "@/components/ServiceWindowBadge";
 import { AppointmentConfirmationCard } from "@/components/AppointmentConfirmationCard";
 import { TierColumns } from "@/components/TierColumns";
-import { Button, ButtonLink, Card, EmptyState, Field, PageHeader, StatusPill, TwoColumn } from "@/components/ui";
-import { WorkflowRail } from "@/components/WorkflowRail";
+import { Button, EmptyState, Field, StatusPill, TwoColumn } from "@/components/ui";
+import { JobStageNav, jobStages, type JobStage } from "@/components/JobStageNav";
 import { SignatureDialog } from "@/components/SignatureDialog";
 import { SignatureStatusCard } from "@/components/SignatureStatusCard";
 import {
@@ -33,6 +43,7 @@ import { completeProtectedJob, createProtectedInvoiceDraft } from "@/lib/invoice
 import { demoMode } from "@/lib/runtime";
 import { loadSignatures, rejectSignature, saveSignature } from "@/lib/signatures-client";
 import type { AppointmentNotificationSummary, InvoiceSignature, Job, JobStatus } from "@/lib/types";
+import styles from "./JobDetail.module.css";
 
 export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
@@ -67,6 +78,7 @@ export default function JobDetailPage() {
   const [signatureDialogOpen, setSignatureDialogOpen] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
   const [overrideConfirmed, setOverrideConfirmed] = useState(false);
+  const [activeStage, setActiveStage] = useState<JobStage>("overview");
   const now = useCurrentTime();
   const confirmationPollingNeeded = shouldPollConfirmationStatus(confirmations, now);
   const scheduledAtIso = localDateTimeIso(scheduledAt);
@@ -101,6 +113,7 @@ export default function JobDetailPage() {
     setSaveError(undefined);
     setOverrideReason("");
     setOverrideConfirmed(false);
+    setActiveStage("overview");
   }, [job?.id]);
 
   useEffect(() => {
@@ -200,7 +213,7 @@ export default function JobDetailPage() {
     && status !== "complete"
     && status !== "cancelled";
   const customer = data.customers.find((candidate) => candidate.id === job.customerId);
-  const tech = data.allowedUsers.find((candidate) => candidate.id === job.assignedTechId);
+  const tech = data.allowedUsers.find((candidate) => candidate.id === assignedTechId);
   const activeTechs = data.allowedUsers.filter((user) => user.active && user.role === "tech");
   const photos = data.jobPhotos.filter((photo) => photo.jobId === job.id);
   const items = data.jobLineItems.filter((item) => item.jobId === job.id).sort((a, b) => a.sortOrder - b.sortOrder);
@@ -209,17 +222,12 @@ export default function JobDetailPage() {
     ? currentUser.role !== "call_center"
     : currentUser.role === "owner" && invoice.approvalStatus !== "signed";
   const jobId = job.id;
-  const jobNav = data.jobs
-    .filter((candidate) => canViewJob(currentUser, candidate))
-    .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt));
-  const jobIndex = jobNav.findIndex((candidate) => candidate.id === job.id);
-  const previousJob = jobIndex > 0 ? jobNav[jobIndex - 1] : undefined;
-  const nextJob = jobIndex >= 0 && jobIndex < jobNav.length - 1 ? jobNav[jobIndex + 1] : undefined;
   const completionSignature = completionSignatures.find((signature) => signature.status === "active" && signature.purpose === "work_completion");
   const rejectedCompletionSignature = completionSignatures.find((signature) => signature.status === "rejected" && signature.purpose === "work_completion");
   const ownerOverrideReady = currentUser.role === "owner" && overrideConfirmed && overrideReason.trim().length >= 10;
 
-  async function saveInspect() {
+  async function saveInspect(statusOverride?: JobStatus) {
+    const nextStatus = statusOverride ?? status;
     if (canEditDispatch && (!scheduledAtIso || !arrivalWindowEndAtIso || !validWindow)) return;
     if (canEditDispatch && conflicts.length > 0 && !conflictConfirmed) return;
     const patch: Partial<Job> = {};
@@ -230,8 +238,8 @@ export default function JobDetailPage() {
       patch.serviceAddress = nextAddress;
     }
     if (currentUser.role !== "call_center" && notes !== jobRecord.notes) patch.notes = notes;
-    const completingJob = currentUser.role !== "call_center" && status === "complete" && jobRecord.status !== "complete";
-    if (currentUser.role !== "call_center" && status !== jobRecord.status && !completingJob) patch.status = status;
+    const completingJob = currentUser.role !== "call_center" && nextStatus === "complete" && jobRecord.status !== "complete";
+    if (currentUser.role !== "call_center" && nextStatus !== jobRecord.status && !completingJob) patch.status = nextStatus;
     if (canEditDispatch) {
       const nextAssignedTechId = assignedTechId || null;
       if (nextAssignedTechId !== (jobRecord.assignedTechId ?? null)) patch.assignedTechId = nextAssignedTechId;
@@ -348,14 +356,16 @@ export default function JobDetailPage() {
     setCompletionSignatures((current) => current.map((signature) => signature.id === rejected.id ? { ...signature, ...rejected } : signature));
   }
 
-  async function markArrived() {
+  async function markArrived(): Promise<boolean> {
     setArrivalBusy(true);
     setArrivalError(undefined);
     try {
       await data.markJobArrived(jobId);
       setStatus("in_progress");
+      return true;
     } catch (error) {
       setArrivalError(error instanceof Error ? error.message : "The arrival could not be recorded.");
+      return false;
     } finally {
       setArrivalBusy(false);
     }
@@ -375,40 +385,131 @@ export default function JobDetailPage() {
   }
 
   const tierCounts = Object.fromEntries(tierOptions.map((tier) => [tier, items.filter((item) => item.tier === tier).length]));
+  const canRecordArrival = !job.arrivedAt
+    && status !== "complete"
+    && status !== "cancelled"
+    && currentUser.role !== "call_center";
+  const stage = jobStages.find((candidate) => candidate.id === activeStage) ?? jobStages[0];
+  const stageCounts: Partial<Record<JobStage, number>> = {
+    photos: photos.length,
+    work: items.length,
+    approval: completionSignature ? 1 : 0,
+    invoice: invoice ? 1 : 0
+  };
+  const stageCompletion: Partial<Record<JobStage, boolean>> = {
+    overview: Boolean(job.arrivedAt),
+    photos: photos.length > 0,
+    work: items.length > 0,
+    approval: Boolean(completionSignature),
+    invoice: Boolean(invoice)
+  };
+  const primaryHidden = currentUser.role === "call_center" && activeStage !== "overview";
+  const primaryDisabled = activeStage === "work"
+    ? items.length === 0
+    : activeStage === "approval"
+      ? !job.arrivedAt || status === "cancelled" || (Boolean(completionSignature) && saveBusy)
+      : activeStage === "invoice"
+        ? items.length === 0 || invoiceBusy
+        : activeStage === "overview" && currentUser.role === "call_center"
+          ? saveBusy || (canEditDispatch && !validWindow) || (canEditDispatch && conflicts.length > 0 && !conflictConfirmed)
+          : arrivalBusy || saveBusy;
+  const primaryLabel = activeStage === "overview"
+    ? currentUser.role === "call_center"
+      ? saveBusy ? "Saving…" : saved ? "Saved" : "Save changes"
+      : canRecordArrival
+        ? arrivalBusy ? "Recording arrival…" : "Arrive and start"
+        : "Continue to photos"
+    : activeStage === "photos"
+      ? "Continue to work"
+      : activeStage === "work"
+        ? items.length === 0 ? "Add work to continue" : "Review approval"
+        : activeStage === "approval"
+          ? completionSignature
+            ? job.status === "complete" ? "Continue to invoice" : saveBusy ? "Completing…" : "Complete job"
+            : "Collect customer signature"
+          : invoice
+            ? "Open invoice"
+            : invoiceBusy ? "Building invoice…" : "Build invoice";
+
+  async function handlePrimaryAction() {
+    if (activeStage === "overview") {
+      if (currentUser.role === "call_center") {
+        await saveInspect();
+        return;
+      }
+      if (canRecordArrival) {
+        const arrived = await markArrived();
+        if (arrived) setActiveStage("photos");
+        return;
+      }
+      setActiveStage("photos");
+      return;
+    }
+    if (activeStage === "photos") {
+      setActiveStage("work");
+      return;
+    }
+    if (activeStage === "work") {
+      if (items.length > 0) setActiveStage("approval");
+      return;
+    }
+    if (activeStage === "approval") {
+      if (!completionSignature) {
+        setSignatureDialogOpen(true);
+        return;
+      }
+      if (jobRecord.status !== "complete") {
+        setStatus("complete");
+        await saveInspect("complete");
+        return;
+      }
+      setActiveStage("invoice");
+      return;
+    }
+    if (invoice) {
+      router.push(`/invoices/${invoice.id}`);
+      return;
+    }
+    await buildInvoice();
+  }
 
   return (
-    <main className="page-shell">
-      <PageHeader
-        eyebrow="Job"
-        title={customer?.name ?? "Unknown customer"}
-        description={jobDescription || job.description}
-        action={
-          <div className="job-detail-nav">
-            <Link className={`button button-secondary ${previousJob ? "" : "disabled"}`} href={previousJob ? `/jobs/${previousJob.id}` : "#"} aria-disabled={!previousJob}>Previous</Link>
-            <Link className={`button button-secondary ${nextJob ? "" : "disabled"}`} href={nextJob ? `/jobs/${nextJob.id}` : "#"} aria-disabled={!nextJob}>Next</Link>
-            {invoice ? <ButtonLink href={`/invoices/${invoice.id}`}>Open invoice</ButtonLink> : null}
+    <main className={`page-shell ${styles.page}`}>
+      <Link href="/jobs" className={styles.backLink}><ArrowLeft size={17} aria-hidden="true" />Back to jobs</Link>
+
+      <header className={styles.hero}>
+        <div className={styles.heroCopy}>
+          <div className={styles.heroEyebrow}>
+            <span>Service job</span>
+            <StatusPill tone={status === "complete" ? "good" : status === "cancelled" ? "bad" : "info"}>{status.replace("_", " ")}</StatusPill>
           </div>
-        }
-      />
-
-      <section className="job-command-bar card-hero">
-        <div>
-          <p className="eyebrow">Workflow</p>
-          <WorkflowRail active={invoice ? "Email" : items.length > 0 ? "Invoice" : photos.length > 0 ? "Charge" : "Case"} compact />
+          <h1>{customer?.name ?? "Unknown customer"}</h1>
+          <p>{jobDescription || job.description}</p>
         </div>
-        <div className="job-command-actions">
-          {!job.arrivedAt && status !== "complete" && status !== "cancelled" && currentUser.role !== "call_center" ? (
-            <Button onClick={markArrived} disabled={arrivalBusy || saveBusy}>{arrivalBusy ? "Recording arrival..." : "Arrived · Start job"}</Button>
-          ) : null}
-          <div className="metric-pill"><strong>{photos.length}</strong><span>photos</span></div>
-          <div className="metric-pill"><strong>{items.length}</strong><span>line items</span></div>
-          {canSeeMoney(currentUser.role) ? <Button onClick={() => void buildInvoice()} disabled={items.length === 0 || invoiceBusy}>{invoiceBusy ? "Building invoice..." : invoice ? "Refresh invoice" : "Build invoice"}</Button> : null}
-        </div>
-      </section>
-      {arrivalError ? <p className="field-error" role="alert">{arrivalError}</p> : null}
-      {invoiceError ? <p className="field-error" role="alert">{invoiceError}</p> : null}
+        {invoice ? <Link href={`/invoices/${invoice.id}`} className={styles.headerLink}><FileText size={17} aria-hidden="true" />Open invoice</Link> : null}
 
-      {canManageConfirmations ? (
+        <div className={styles.assignmentStrip}>
+          <div className={styles.assignmentItem}>
+            <span className={styles.metaIcon}><UserRound size={18} aria-hidden="true" /></span>
+            <span><small>Assigned technician</small><strong>{tech?.displayName ?? "Unassigned"}</strong><em>{tech ? roleLabel(tech.role) : "Needs assignment"}</em></span>
+          </div>
+          <div className={styles.assignmentItem}>
+            <span className={styles.metaIcon}><CalendarClock size={18} aria-hidden="true" /></span>
+            <span><small>Customer window</small><strong>{formatServiceWindow(scheduledAtIso ?? job.scheduledAt, arrivalWindowEndAtIso ?? job.arrivalWindowEndAt)}</strong><em>{job.arrivedAt ? `Arrived ${formatDateTime(job.arrivedAt)}` : "Arrival not recorded"}</em></span>
+          </div>
+          <div className={styles.assignmentItem}>
+            <span className={styles.metaIcon}><MapPin size={18} aria-hidden="true" /></span>
+            <span><small>Service address</small><strong>{serviceAddress || job.serviceAddress}</strong><em>{customer ? formatPhone(customer.phone) : "No customer phone"}</em></span>
+          </div>
+        </div>
+      </header>
+
+      <JobStageNav active={activeStage} onChange={setActiveStage} counts={stageCounts} completion={stageCompletion} />
+
+      {arrivalError ? <p className={styles.errorBanner} role="alert">{arrivalError}</p> : null}
+      {invoiceError ? <p className={styles.errorBanner} role="alert">{invoiceError}</p> : null}
+
+      {activeStage === "overview" && canManageConfirmations ? (
         <AppointmentConfirmationCard
           notifications={confirmations}
           loading={confirmationsLoading}
@@ -421,283 +522,157 @@ export default function JobDetailPage() {
         />
       ) : null}
 
-      <Card>
-        <div className="section-head">
-          <div>
-            <p className="eyebrow">Inspect</p>
-            <h2>Basics</h2>
-          </div>
-          <div className="window-status-stack">
-            <ServiceWindowBadge job={job} now={now} />
-            <StatusPill tone={status === "complete" ? "good" : status === "cancelled" ? "bad" : "info"}>{status.replace("_", " ")}</StatusPill>
-          </div>
+      <div
+        className={styles.stagePanel}
+        role="tabpanel"
+        id={`job-stage-panel-${activeStage}`}
+        aria-labelledby={`job-stage-${activeStage}`}
+      >
+        <div className={styles.stageHeader}>
+          <div><p>{stage.label}</p><h2>{stageTitle(activeStage)}</h2><span>{stageDescription(activeStage)}</span></div>
+          <span className={styles.stageCount}>{activeStage === "photos" ? `${photos.length} saved` : activeStage === "work" ? `${items.length} items` : activeStage === "approval" ? completionSignature ? "Signed" : "Signature needed" : activeStage === "invoice" ? invoice ? "Draft ready" : "Not built" : job.arrivedAt ? "Arrival recorded" : "Scheduled"}</span>
         </div>
-        <TwoColumn>
-          <div className="detail-block">
-            <strong>{customer?.name}</strong>
-            <span>{customer ? formatPhone(customer.phone) : "No phone"}</span>
-            <span>{customer?.email ?? "No email"}</span>
-            <span>{serviceAddress || job.serviceAddress}</span>
-            {customer ? <ContactActions customer={customer} subject={jobDescription || job.description} /> : null}
-          </div>
-          <div className="detail-block">
-            <strong>{formatServiceWindow(scheduledAtIso ?? job.scheduledAt, arrivalWindowEndAtIso ?? job.arrivalWindowEndAt)}</strong>
-            <span>Customer arrival window</span>
-            <span>Assigned: {tech?.displayName ?? "Unassigned"}</span>
-            {job.arrivedAt ? <span>Arrived: {formatDateTime(job.arrivedAt)}</span> : null}
-            <span>Created: {formatDateTime(job.createdAt)}</span>
-            {job.completedAt ? <span>Completed: {formatDateTime(job.completedAt)}</span> : null}
-          </div>
-        </TwoColumn>
-        <div className="job-edit-grid">
-          <Field label="Service call">
-            <textarea
-              className="compact-textarea"
-              value={jobDescription}
-              onChange={(event) => setJobDescription(event.target.value)}
-            />
-          </Field>
-          <Field label="Service address">
-            <AddressAutocomplete
-              value={serviceAddress}
-              onChange={setServiceAddress}
-              onSelect={(address) => setServiceAddress(address.formatted)}
-              disabled={!canEditCustomerFacingFields}
-            />
-          </Field>
-          <Field label="Window starts">
-            <input
-              type="datetime-local"
-              value={scheduledAt}
-              onChange={(event) => {
-                const nextStart = event.target.value;
-                setScheduledAt(nextStart);
-                setArrivalWindowEndAt(dateInputValue(defaultServiceWindowEndAt(localDateTimeIso(nextStart))));
-                setConflictConfirmed(false);
-              }}
-              disabled={!canEditDispatch}
-            />
-          </Field>
-          <Field label="Window ends">
-            <input
-              type="datetime-local"
-              value={arrivalWindowEndAt}
-              onChange={(event) => {
-                setArrivalWindowEndAt(event.target.value);
-                setConflictConfirmed(false);
-              }}
-              disabled={!canEditDispatch}
-            />
-          </Field>
-        </div>
-        {job.arrivedAt && canEditSchedule ? (
-          <p className="muted">The arrival window and assignment are locked because the technician arrival has been recorded.</p>
-        ) : null}
-        {canEditDispatch && scheduledAt && arrivalWindowEndAt && !validWindow ? (
-          <p className="field-error" role="alert">The arrival window must end after it starts.</p>
-        ) : null}
-        {canEditDispatch && conflicts.length > 0 ? (
-          <div className="window-conflict" role="alert">
-            <strong>Technician schedule overlap</strong>
-            <span>{conflicts.length === 1 ? "Another assigned job overlaps this arrival window." : `${conflicts.length} assigned jobs overlap this arrival window.`}</span>
-            <label>
-              <input type="checkbox" checked={conflictConfirmed} onChange={(event) => setConflictConfirmed(event.target.checked)} />
-              Save this overlap anyway
-            </label>
-          </div>
-        ) : null}
-        <TwoColumn>
-          <Field label="Status">
-            <div className="segmented-control">
-              {(["scheduled", "in_progress", "complete", "cancelled"] as JobStatus[]).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  className={status === option ? "active" : ""}
-                  onClick={() => setStatus(option)}
-                  disabled={
-                    currentUser.role === "call_center"
-                    || (currentUser.role === "tech" && (option === "scheduled" || option === "cancelled"))
-                    || ((option === "in_progress" || option === "complete") && !job.arrivedAt)
-                    || (option === "scheduled" && Boolean(job.arrivedAt))
-                    || (option === "complete" && currentUser.role !== "owner" && !completionSignature)
-                  }
-                >
-                  {option.replace("_", " ")}
-                </button>
-              ))}
-            </div>
-          </Field>
-          {canScheduleJobs(currentUser.role) ? (
-            <Field label="Assigned tech">
-              <select value={assignedTechId} disabled={!canEditDispatch} onChange={(event) => {
-                setAssignedTechId(event.target.value);
-                setConflictConfirmed(false);
-              }}>
-                <option value="">Unassigned</option>
-                {activeTechs.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.displayName}</option>)}
-              </select>
-            </Field>
-          ) : (
-            <Field label="Tech notes">
-            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} disabled={currentUser.role === "call_center"} />
-            </Field>
-          )}
-        </TwoColumn>
-        {canScheduleJobs(currentUser.role) ? (
-          <Field label="Tech notes">
-            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} disabled={currentUser.role === "call_center"} />
-          </Field>
-        ) : null}
-        {status === "complete" && job.status !== "complete" && !completionSignature && currentUser.role === "owner" ? (
-          <div className="owner-signature-override">
-            <strong>Owner completion override</strong>
-            <p>Use only when the customer cannot sign. The reason and owner identity are kept in the job audit record.</p>
-            <Field label="Override reason">
-              <textarea value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Explain why a customer signature could not be collected." />
-            </Field>
-            <label className="override-confirmation">
-              <input type="checkbox" checked={overrideConfirmed} onChange={(event) => setOverrideConfirmed(event.target.checked)} />
-              I am explicitly overriding the required customer signature as the owner.
-            </label>
-          </div>
-        ) : null}
-        {saveError ? <p className="field-error" role="alert">{saveError}</p> : null}
-        <Button
-          onClick={saveInspect}
-          disabled={
-            saveBusy
-            || (canEditDispatch && !validWindow)
-            || (canEditDispatch && conflicts.length > 0 && !conflictConfirmed)
-            || (status === "complete" && job.status !== "complete" && !completionSignature && !ownerOverrideReady)
-          }
-        >
-          {saveBusy ? "Saving..." : saved ? "Saved" : "Save job"}
-        </Button>
-      </Card>
 
-      {canSeePhotos(currentUser.role) ? (
-        <Card>
-          <p className="eyebrow">Case</p>
-          <h2>Photos and proof</h2>
-          <PhotoUploader jobId={job.id} uploadedBy={currentUser.id} />
-          {photos.length === 0 ? (
-            <EmptyState title="No photos yet" description="Add before, after, or other job photos from the iPad camera." />
-          ) : (
-            <div className="photo-grid">
-              {photos.map((photo) => (
-                <div key={photo.id} className="photo-card">
-                  {photo.storagePath.startsWith("data:") || photo.storagePath.startsWith("http") ? <img src={photo.storagePath} alt={photo.caption ?? photo.kind} /> : <div className="photo-placeholder">Private storage path</div>}
-                  <strong>{photo.kind}</strong>
-                  <span>{photo.caption ?? photo.storagePath}</span>
-                </div>
-              ))}
+        {activeStage === "overview" ? (
+          <div className={styles.stageBody}>
+            <div className={styles.customerGrid}>
+              <div className={styles.customerCard}>
+                <span className={styles.customerAvatar}><CircleUserRound size={23} aria-hidden="true" /></span>
+                <div><small>Customer</small><strong>{customer?.name ?? "Unknown customer"}</strong><span>{customer?.email ?? "No email on file"}</span></div>
+                {customer ? <ContactActions customer={customer} subject={jobDescription || job.description} /> : null}
+              </div>
+              <div className={styles.timelineCard}>
+                <div><small>Arrival window</small><strong>{formatServiceWindow(scheduledAtIso ?? job.scheduledAt, arrivalWindowEndAtIso ?? job.arrivalWindowEndAt)}</strong></div>
+                <div><small>Arrival</small><strong>{job.arrivedAt ? formatDateTime(job.arrivedAt) : "Not recorded"}</strong></div>
+                <div><small>Created</small><strong>{formatDateTime(job.createdAt)}</strong></div>
+                {job.completedAt ? <div><small>Completed</small><strong>{formatDateTime(job.completedAt)}</strong></div> : null}
+              </div>
             </div>
-          )}
-        </Card>
+
+            <div className={styles.editSection}>
+              <div className={styles.subhead}><div><h3>Job and dispatch</h3><p>Keep the customer-facing service details and assignment accurate.</p></div></div>
+              <div className={styles.formGrid}>
+                <Field label="Service call"><textarea value={jobDescription} onChange={(event) => setJobDescription(event.target.value)} /></Field>
+                <Field label="Service address">
+                  <AddressAutocomplete value={serviceAddress} onChange={setServiceAddress} onSelect={(address) => setServiceAddress(address.formatted)} disabled={!canEditCustomerFacingFields} />
+                </Field>
+              </div>
+              <div className={styles.dispatchGrid}>
+                <Field label="Window starts">
+                  <input type="datetime-local" value={scheduledAt} onChange={(event) => {
+                    const nextStart = event.target.value;
+                    setScheduledAt(nextStart);
+                    setArrivalWindowEndAt(dateInputValue(defaultServiceWindowEndAt(localDateTimeIso(nextStart))));
+                    setConflictConfirmed(false);
+                  }} disabled={!canEditDispatch} />
+                </Field>
+                <Field label="Window ends">
+                  <input type="datetime-local" value={arrivalWindowEndAt} onChange={(event) => { setArrivalWindowEndAt(event.target.value); setConflictConfirmed(false); }} disabled={!canEditDispatch} />
+                </Field>
+                {canScheduleJobs(currentUser.role) ? (
+                  <Field label="Assigned technician">
+                    <select value={assignedTechId} disabled={!canEditDispatch} onChange={(event) => { setAssignedTechId(event.target.value); setConflictConfirmed(false); }}>
+                      <option value="">Unassigned</option>
+                      {activeTechs.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.displayName}</option>)}
+                    </select>
+                  </Field>
+                ) : null}
+              </div>
+              {job.arrivedAt && canEditSchedule ? <p className={styles.inlineNote}>The window and assignment are locked after arrival is recorded.</p> : null}
+              {canEditDispatch && scheduledAt && arrivalWindowEndAt && !validWindow ? <p className={styles.errorBanner} role="alert">The arrival window must end after it starts.</p> : null}
+              {canEditDispatch && conflicts.length > 0 ? (
+                <div className={styles.conflict} role="alert"><strong>Technician schedule overlap</strong><span>{conflicts.length === 1 ? "Another assigned job overlaps this arrival window." : `${conflicts.length} assigned jobs overlap this arrival window.`}</span><label><input type="checkbox" checked={conflictConfirmed} onChange={(event) => setConflictConfirmed(event.target.checked)} />Save this overlap anyway</label></div>
+              ) : null}
+
+              <div className={styles.formGrid}>
+                <Field label="Job status">
+                  <div className="segmented-control">
+                    {(["scheduled", "in_progress", "complete", "cancelled"] as JobStatus[]).map((option) => (
+                      <button key={option} type="button" className={status === option ? "active" : ""} onClick={() => {
+                        setStatus(option);
+                        if (option === "complete") setActiveStage("approval");
+                      }} disabled={currentUser.role === "call_center" || (currentUser.role === "tech" && (option === "scheduled" || option === "cancelled")) || ((option === "in_progress" || option === "complete") && !job.arrivedAt) || (option === "scheduled" && Boolean(job.arrivedAt)) || (option === "complete" && currentUser.role !== "owner" && !completionSignature)}>{option.replace("_", " ")}</button>
+                    ))}
+                  </div>
+                </Field>
+                <Field label="Technician notes"><textarea value={notes} onChange={(event) => setNotes(event.target.value)} disabled={currentUser.role === "call_center"} /></Field>
+              </div>
+              {saveError ? <p className={styles.errorBanner} role="alert">{saveError}</p> : null}
+              <div className={styles.secondaryActions}><Button variant="secondary" onClick={() => void saveInspect()} disabled={saveBusy || (canEditDispatch && !validWindow) || (canEditDispatch && conflicts.length > 0 && !conflictConfirmed)}><Save size={16} aria-hidden="true" />{saveBusy ? "Saving…" : saved ? "Saved" : "Save changes"}</Button></div>
+            </div>
+          </div>
+        ) : null}
+
+        {activeStage === "photos" ? (
+          canSeePhotos(currentUser.role) ? (
+            <div className={styles.stageBody}>
+              <PhotoUploader jobId={job.id} uploadedBy={currentUser.id} />
+              {photos.length === 0 ? <EmptyState title="No photos yet" description="Add before, after, serial number, or job-proof photos from the iPad camera." /> : (
+                <div className={styles.photoGrid}>{photos.map((photo) => <article key={photo.id} className={styles.photoCard}>{photo.storagePath.startsWith("data:") || photo.storagePath.startsWith("http") ? <img src={photo.storagePath} alt={photo.caption ?? photo.kind} /> : <div className={styles.photoPlaceholder}>Private photo</div>}<div><strong>{photo.kind}</strong><span>{photo.caption ?? photo.storagePath}</span></div></article>)}</div>
+              )}
+            </div>
+          ) : <ProtectedStage />
+        ) : null}
+
+        {activeStage === "work" ? (
+          canSeeMoney(currentUser.role) ? (
+            <div className={styles.stageBody}>
+              <section className={styles.innerPanel}>
+                <div className={styles.subhead}><div><h3>Add work</h3><p>Good, Better, and Best stay here as customer estimate choices.</p></div><span>{items.length} items</span></div>
+                {canEditLineItems ? <LineItemForm jobId={job.id} /> : <p className={styles.inlineNote}>{invoice?.approvalStatus === "signed" ? "Charges are locked to the saved customer approval. An owner must reject that signature before changing work items." : "Invoice charges are owner-controlled after a draft is created."}</p>}
+              </section>
+              <section className={styles.innerPanel}>
+                <div className={styles.subhead}><div><h3>Estimate options</h3><p>Review the three service levels with the customer.</p></div><span>Good {tierCounts.good} · Better {tierCounts.better} · Best {tierCounts.best}</span></div>
+                <TierColumns items={items} taxRate={0.06} editable={canEditLineItems} onEdit={canEditLineItems ? data.updateLineItem : undefined} onDelete={canEditLineItems ? data.deleteLineItem : undefined} />
+              </section>
+            </div>
+          ) : <ProtectedStage />
+        ) : null}
+
+        {activeStage === "approval" ? (
+          currentUser.role !== "call_center" ? (
+            <div className={styles.stageBody}>
+              <section className={styles.approvalPanel}>
+                <div className={styles.approvalIntro}><span><PenLine size={21} aria-hidden="true" /></span><div><h3>Customer work-completion signature</h3><p>Review the completed work together, then let the customer draw their signature on this iPad.</p></div></div>
+                <SignatureStatusCard title="Work reviewed and approved" signature={completionSignature} rejectedSignature={rejectedCompletionSignature} loading={signatureLoading} error={signatureError} drawLabel="Collect customer signature" onDraw={() => setSignatureDialogOpen(true)} onRetry={() => void refreshCompletionSignatures()} canReject={currentUser.role === "owner" && job.status !== "complete"} onReject={completionSignature ? rejectCompletionSignature : undefined} drawDisabled={!job.arrivedAt || job.status === "complete" || job.status === "cancelled"} />
+                <p className={styles.inlineNote}>{!job.arrivedAt ? "Record the technician arrival before collecting the customer completion signature." : completionSignature ? "Signature saved. The job is ready to complete." : currentUser.role === "owner" ? "A signature is required unless the owner records an explicit audited override." : "A saved customer signature is required before completion."}</p>
+              </section>
+              {!completionSignature && currentUser.role === "owner" && job.status !== "complete" ? (
+                <section className={styles.overridePanel}><h3>Owner completion override</h3><p>Use only when the customer cannot sign. The reason and owner identity remain in the audit record.</p><Field label="Override reason"><textarea value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Explain why a customer signature could not be collected." /></Field><label className={styles.overrideCheck}><input type="checkbox" checked={overrideConfirmed} onChange={(event) => setOverrideConfirmed(event.target.checked)} />I am explicitly overriding the required customer signature as the owner.</label>{ownerOverrideReady ? <button className={styles.overrideAction} type="button" onClick={() => void saveInspect("complete")} disabled={saveBusy}>{saveBusy ? "Completing…" : "Complete with owner override"}</button> : null}</section>
+              ) : null}
+              {saveError ? <p className={styles.errorBanner} role="alert">{saveError}</p> : null}
+            </div>
+          ) : <ProtectedStage />
+        ) : null}
+
+        {activeStage === "invoice" ? (
+          canSeeMoney(currentUser.role) ? (
+            <div className={styles.stageBody}>
+              {items.length === 0 ? <EmptyState title="Add work first" description="At least one work item is required before an invoice draft can be built." action={<button type="button" className={styles.quietAction} onClick={() => setActiveStage("work")}>Go to work items</button>} /> : (
+                <section className={styles.invoiceReady} data-ready={Boolean(invoice) || undefined}>
+                  <span className={styles.invoiceIcon}>{invoice ? <Check size={24} aria-hidden="true" /> : <FileText size={24} aria-hidden="true" />}</span>
+                  <div><small>{invoice ? "Invoice draft ready" : "Ready to build"}</small><h3>{invoice ? "Review the saved invoice" : "Create an invoice from this work"}</h3><p>{invoice ? "The draft includes the current work items, tax, and saved customer details." : "Fast Track will build a professional draft using the work and customer information already saved."}</p></div>
+                  {invoice ? (
+                    <div className={styles.invoiceActions}>
+                      <StatusPill tone={invoice.status === "sent" ? "good" : "warn"}>{invoice.status}</StatusPill>
+                      <button type="button" className={styles.quietAction} onClick={() => void buildInvoice()} disabled={invoiceBusy}>
+                        {invoiceBusy ? "Refreshing…" : "Refresh draft"}
+                      </button>
+                    </div>
+                  ) : null}
+                </section>
+              )}
+            </div>
+          ) : <ProtectedStage />
+        ) : null}
+      </div>
+
+      {!primaryHidden ? (
+        <aside className={styles.stickyAction} aria-label="Next job action">
+          <div><small>Next action</small><strong>{primaryHelper(activeStage, { canRecordArrival, completionSignature: Boolean(completionSignature), invoice: Boolean(invoice), jobComplete: job.status === "complete" })}</strong></div>
+          <button type="button" className={styles.primaryAction} onClick={() => void handlePrimaryAction()} disabled={primaryDisabled}>{activeStage === "overview" && currentUser.role === "call_center" ? <Save size={18} aria-hidden="true" /> : activeStage === "approval" && !completionSignature ? <PenLine size={18} aria-hidden="true" /> : null}{primaryLabel}<ChevronRight size={18} aria-hidden="true" /></button>
+        </aside>
       ) : null}
-
-      {currentUser.role !== "call_center" ? (
-        <Card className="job-signature-card">
-          <div className="section-head">
-            <div>
-              <p className="eyebrow">Case approval</p>
-              <h2>Customer work-completion signature</h2>
-              <p className="muted">Have the customer review the completed work on the iPad, then draw and save their signature.</p>
-            </div>
-            <PenLine size={24} aria-hidden="true" />
-          </div>
-          <SignatureStatusCard
-            title="Work reviewed and approved"
-            signature={completionSignature}
-            rejectedSignature={rejectedCompletionSignature}
-            loading={signatureLoading}
-            error={signatureError}
-            drawLabel="Collect customer signature"
-            onDraw={() => setSignatureDialogOpen(true)}
-            onRetry={() => void refreshCompletionSignatures()}
-            canReject={currentUser.role === "owner" && job.status !== "complete"}
-            onReject={completionSignature ? rejectCompletionSignature : undefined}
-            drawDisabled={!job.arrivedAt || job.status === "complete" || job.status === "cancelled"}
-          />
-          <p className="signature-completion-note">
-            {!job.arrivedAt
-              ? "Record the technician arrival before collecting the customer completion signature."
-              : completionSignature
-              ? "Signature saved. The job can now be completed."
-              : currentUser.role === "owner"
-                ? "A saved signature is required unless you explicitly record an owner override while completing the job."
-                : "A saved customer signature is required before the Complete status becomes available."}
-          </p>
-        </Card>
-      ) : null}
-
-      {canSeeMoney(currentUser.role) ? (
-        <>
-          <Card>
-            <div className="section-head">
-              <div>
-                <p className="eyebrow">Items</p>
-                <h2>Work items</h2>
-              </div>
-              <p className="muted">Good {tierCounts.good} · Better {tierCounts.better} · Best {tierCounts.best}</p>
-            </div>
-            {canEditLineItems ? (
-              <LineItemForm jobId={job.id} />
-            ) : (
-              <p className="muted">
-                {invoice?.approvalStatus === "signed"
-                  ? "Charges are locked to the saved customer approval. An owner must reject that signature before changing work items."
-                  : "Invoice charges are owner-controlled after a draft is created. You can still collect the customer signature."}
-              </p>
-            )}
-          </Card>
-
-          <Card>
-            <div className="section-head">
-              <div>
-                <p className="eyebrow">Options</p>
-                <h2>Estimate options</h2>
-              </div>
-              <strong>{items.length} line items</strong>
-            </div>
-            <TierColumns
-              items={items}
-              taxRate={0.06}
-              editable={canEditLineItems}
-              onEdit={canEditLineItems ? data.updateLineItem : undefined}
-              onDelete={canEditLineItems ? data.deleteLineItem : undefined}
-            />
-          </Card>
-
-          <Card>
-            <div className="section-head">
-              <div>
-                <p className="eyebrow">Invoice</p>
-                <h2>Invoice draft</h2>
-              </div>
-              {invoice ? <StatusPill tone={invoice.status === "sent" ? "good" : "warn"}>{invoice.status}</StatusPill> : null}
-            </div>
-            {items.length === 0 ? (
-              <EmptyState title="Add line items first" description="Charges are required before a draft can be built." />
-            ) : (
-              <div className="action-panel">
-                <div>
-                  <strong>Ready for review</strong>
-                  <p className="muted">Owner sends after the draft is saved.</p>
-                </div>
-                <Button onClick={() => void buildInvoice()} disabled={invoiceBusy}>{invoiceBusy ? "Building invoice..." : invoice ? "Refresh invoice" : "Build invoice"}</Button>
-              </div>
-            )}
-          </Card>
-        </>
-      ) : (
-        <Card>
-          <p className="eyebrow">Protected sections</p>
-          <h2>Money and photos are hidden</h2>
-          <p className="muted">Call center can schedule and update basics only.</p>
-        </Card>
-      )}
 
       <SignatureDialog
         open={signatureDialogOpen}
@@ -710,6 +685,52 @@ export default function JobDetailPage() {
       />
     </main>
   );
+}
+
+function ProtectedStage() {
+  return (
+    <div className={styles.protectedStage}>
+      <span><UserRound size={22} aria-hidden="true" /></span>
+      <div><h3>This section is not part of your role</h3><p>Call center access stays focused on customer details, scheduling, and confirmations.</p></div>
+    </div>
+  );
+}
+
+function roleLabel(role: string): string {
+  if (role === "call_center") return "Call center";
+  if (role === "tech") return "Field technician";
+  if (role === "owner") return "Owner";
+  return role.replaceAll("_", " ");
+}
+
+function stageTitle(stage: JobStage): string {
+  if (stage === "overview") return "Customer and dispatch";
+  if (stage === "photos") return "Photos and job proof";
+  if (stage === "work") return "Work and estimate options";
+  if (stage === "approval") return "Customer approval";
+  return "Invoice handoff";
+}
+
+function stageDescription(stage: JobStage): string {
+  if (stage === "overview") return "Confirm who, where, and when before the technician starts.";
+  if (stage === "photos") return "Keep clear visual proof without leaving the job workflow.";
+  if (stage === "work") return "Build the service scope and customer choices in one place.";
+  if (stage === "approval") return "Review the completed work and capture a saved signature.";
+  return "Create or open the invoice using the work already saved.";
+}
+
+function primaryHelper(
+  stage: JobStage,
+  state: { canRecordArrival: boolean; completionSignature: boolean; invoice: boolean; jobComplete: boolean }
+): string {
+  if (stage === "overview") return state.canRecordArrival ? "Record the real arrival time and begin work" : "Move to photo documentation";
+  if (stage === "photos") return "Continue when the job proof is ready";
+  if (stage === "work") return "Review the saved scope with the customer";
+  if (stage === "approval") {
+    if (!state.completionSignature) return "Pass the iPad to the customer";
+    return state.jobComplete ? "The signed job is ready to invoice" : "Save the completed job to the audit record";
+  }
+  return state.invoice ? "Continue in the invoice workspace" : "Use the saved customer and work details";
 }
 
 function localDateTimeIso(value: string): string | undefined {

@@ -1,0 +1,636 @@
+.page {
+  display: grid;
+  gap: 20px;
+  color: #19222d;
+}
+
+.hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 6px 2px 2px;
+}
+
+.heroCopy {
+  min-width: 0;
+}
+
+.kicker,
+.sectionLabel {
+  margin: 0 0 5px;
+  color: #a5411d;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 0;
+  color: #18212c;
+  font-size: clamp(1.8rem, 3.3vw, 2.65rem);
+  font-weight: 720;
+  letter-spacing: -0.045em;
+  line-height: 1.04;
+}
+
+.identityLine {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 14px;
+  color: #263646;
+}
+
+.identityLine > span:last-child {
+  display: grid;
+  gap: 1px;
+}
+
+.identityLine strong {
+  font-size: 0.88rem;
+  font-weight: 690;
+  line-height: 1.2;
+}
+
+.identityLine small {
+  color: #697787;
+  font-size: 0.76rem;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #d8e0e8;
+  border-radius: 50%;
+  background: #f2f5f7;
+  color: #294050;
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: 0.02em;
+}
+
+.primaryAction,
+.secondaryAction,
+.textLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border-radius: 9px;
+  text-decoration: none;
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.primaryAction {
+  flex: 0 0 auto;
+  background: #263846;
+  box-shadow: 0 5px 14px rgba(20, 36, 49, 0.14);
+  color: #fff;
+  padding: 0 17px;
+  font-size: 0.88rem;
+  font-weight: 690;
+}
+
+.primaryAction:hover,
+.primaryAction:focus-visible {
+  background: #182a38;
+  box-shadow: 0 8px 20px rgba(20, 36, 49, 0.2);
+  transform: translateY(-1px);
+}
+
+.primaryAction:active,
+.secondaryAction:active,
+.textLink:active {
+  transform: translateY(0);
+}
+
+.workloadPanel,
+.queuePanel,
+.lookupPanel {
+  border: 1px solid #dfe5ea;
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(17, 31, 43, 0.035);
+}
+
+.workloadPanel,
+.queuePanel {
+  padding: 20px;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.sectionHeading h2,
+.lookupPanel h2 {
+  margin: 0;
+  color: #18212c;
+  font-size: 1.18rem;
+  font-weight: 710;
+  letter-spacing: -0.025em;
+}
+
+.sectionHeading p:not(.sectionLabel),
+.lookupPanel p {
+  margin: 4px 0 0;
+  color: #708090;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.textLink {
+  min-height: 38px;
+  color: #405668;
+  padding: 0 4px 0 10px;
+  font-size: 0.8rem;
+  font-weight: 660;
+  white-space: nowrap;
+}
+
+.textLink:hover,
+.textLink:focus-visible {
+  color: #9c3d1b;
+  transform: translateX(2px);
+}
+
+.workloadMetrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  margin: 18px 0 10px;
+  border: 1px solid #e5e9ed;
+  border-radius: 10px;
+  background: #f9fafb;
+}
+
+.workloadMetrics > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 13px 16px;
+  border-left: 1px solid #e5e9ed;
+}
+
+.workloadMetrics > div:first-child {
+  border-left: 0;
+}
+
+.workloadMetrics strong {
+  color: #1c2c39;
+  font-size: 1.35rem;
+  font-weight: 710;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.workloadMetrics span {
+  overflow: hidden;
+  color: #6e7d8b;
+  font-size: 0.73rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workloadMetrics .metricAttention strong,
+.workloadMetrics .metricAttention span {
+  color: #9c3f22;
+}
+
+.chartWrap {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.lookupPanel {
+  display: grid;
+  grid-template-columns: auto minmax(160px, 0.8fr) minmax(260px, 1.4fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+}
+
+.lookupIcon,
+.emptyState > span,
+.invoiceIcon,
+.workerIcon {
+  display: grid;
+  place-items: center;
+  border: 1px solid #dce3e8;
+  background: #f5f7f8;
+  color: #465c6c;
+}
+
+.lookupIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+}
+
+.secondaryAction {
+  border: 1px solid #ccd5dc;
+  color: #324858;
+  padding: 0 14px;
+  font-size: 0.82rem;
+  font-weight: 660;
+  white-space: nowrap;
+}
+
+.secondaryAction:hover,
+.secondaryAction:focus-visible {
+  border-color: #aab7c1;
+  background: #f7f9fa;
+}
+
+.jobTable,
+.invoiceList {
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid #e3e8ec;
+  border-radius: 10px;
+}
+
+.tableHeader,
+.jobRow {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.25fr) minmax(135px, 0.8fr) minmax(190px, 1.15fr) minmax(135px, 0.78fr) minmax(112px, 0.55fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.tableHeader {
+  min-height: 38px;
+  background: #f7f9fa;
+  color: #6f7d89;
+  padding: 0 14px;
+  font-size: 0.68rem;
+  font-weight: 680;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.jobRow {
+  min-height: 76px;
+  border-top: 1px solid #e8ecef;
+  background: #fff;
+  color: inherit;
+  padding: 11px 14px;
+  text-decoration: none;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+.jobRow:hover,
+.jobRow:focus-visible,
+.invoiceRow:hover,
+.invoiceRow:focus-visible {
+  background: #f9fbfc;
+  box-shadow: inset 3px 0 0 #b54a22;
+  outline: none;
+}
+
+.customerCell,
+.windowCell,
+.arrivalCell,
+.workerCell > span:last-child,
+.invoiceMain,
+.invoiceDelivery {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.customerCell strong,
+.windowCell strong,
+.arrivalCell strong,
+.workerCell strong,
+.invoiceMain strong,
+.invoiceDelivery strong {
+  overflow: hidden;
+  color: #21313e;
+  font-size: 0.82rem;
+  font-weight: 680;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customerCell small,
+.windowCell small,
+.arrivalCell small,
+.workerCell small,
+.invoiceMain small,
+.invoiceDelivery small {
+  overflow: hidden;
+  color: #74828f;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workerCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workerIcon {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+.arrivalCell .exception {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #a34425;
+  font-weight: 650;
+}
+
+.statusCell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  min-width: 0;
+  color: #8a969f;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 86px;
+  min-height: 28px;
+  border: 1px solid #d9e0e5;
+  border-radius: 999px;
+  background: #f5f7f8;
+  color: #4f606d;
+  padding: 4px 9px;
+  font-size: 0.69rem;
+  font-weight: 670;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.status_in_progress,
+.invoice_sent {
+  border-color: #cddbe6;
+  background: #eef5fa;
+  color: #345a73;
+}
+
+.status_complete,
+.invoice_paid {
+  border-color: #cce0d2;
+  background: #f0f7f2;
+  color: #356546;
+}
+
+.status_cancelled,
+.invoice_cancelled {
+  border-color: #e4d6d0;
+  background: #f9f4f2;
+  color: #84503d;
+}
+
+.invoice_draft {
+  border-color: #e5d5c5;
+  background: #fbf5ef;
+  color: #8a5431;
+}
+
+.emptyState {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 92px;
+  margin-top: 16px;
+  border: 1px dashed #d7dfe5;
+  border-radius: 10px;
+  background: #fafbfc;
+  padding: 18px;
+}
+
+.emptyState > span {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+}
+
+.emptyState strong {
+  color: #263846;
+  font-size: 0.86rem;
+  font-weight: 680;
+}
+
+.emptyState p {
+  margin: 3px 0 0;
+  color: #74828f;
+  font-size: 0.78rem;
+}
+
+.invoiceRow {
+  display: grid;
+  grid-template-columns: 38px minmax(140px, 0.8fr) minmax(210px, 1.15fr) 90px minmax(145px, 0.75fr) 20px;
+  gap: 12px;
+  align-items: center;
+  min-height: 64px;
+  border-top: 1px solid #e8ecef;
+  color: inherit;
+  padding: 9px 14px;
+  text-decoration: none;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+.invoiceRow:first-child {
+  border-top: 0;
+}
+
+.invoiceIcon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+}
+
+.invoiceDate {
+  color: #6f7d89;
+  font-size: 0.72rem;
+  text-align: right;
+}
+
+.rowArrow {
+  color: #93a0a9;
+}
+
+@media (max-width: 980px) {
+  .tableHeader {
+    display: none;
+  }
+
+  .jobTable {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    overflow: visible;
+    border: 0;
+  }
+
+  .jobRow {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-content: start;
+    min-height: 0;
+    border: 1px solid #e3e8ec;
+    border-radius: 10px;
+    padding: 14px;
+  }
+
+  .jobRow:first-of-type {
+    border-top: 1px solid #e3e8ec;
+  }
+
+  .customerCell,
+  .workerCell,
+  .windowCell,
+  .arrivalCell {
+    grid-column: 1 / -1;
+  }
+
+  .customerCell {
+    padding-right: 96px;
+  }
+
+  .customerCell strong {
+    font-size: 0.9rem;
+  }
+
+  .customerCell small,
+  .windowCell small {
+    white-space: normal;
+  }
+
+  .statusCell {
+    position: absolute;
+    justify-self: end;
+  }
+
+  .statusCell > svg {
+    display: none;
+  }
+
+  .invoiceRow {
+    grid-template-columns: 38px minmax(120px, 0.85fr) minmax(180px, 1fr) 86px 20px;
+  }
+
+  .invoiceDate {
+    display: none;
+  }
+
+  .lookupPanel {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .lookupPanel > :nth-child(3) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 720px) {
+  .hero,
+  .sectionHeading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .primaryAction {
+    width: 100%;
+  }
+
+  .workloadPanel,
+  .queuePanel {
+    padding: 16px;
+  }
+
+  .workloadMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workloadMetrics > div:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .workloadMetrics > div:nth-child(n + 3) {
+    border-top: 1px solid #e5e9ed;
+  }
+
+  .jobTable {
+    grid-template-columns: 1fr;
+  }
+
+  .invoiceList {
+    display: grid;
+    gap: 9px;
+    overflow: visible;
+    border: 0;
+  }
+
+  .invoiceRow {
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    gap: 8px 10px;
+    border: 1px solid #e3e8ec;
+    border-radius: 10px;
+    padding: 12px;
+  }
+
+  .invoiceRow:first-child {
+    border-top: 1px solid #e3e8ec;
+  }
+
+  .invoiceDelivery {
+    grid-column: 2 / -1;
+  }
+
+  .invoiceRow .status {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .rowArrow {
+    display: none;
+  }
+
+  .lookupPanel {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .lookupPanel > :nth-child(3),
+  .lookupPanel .secondaryAction {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primaryAction,
+  .secondaryAction,
+  .textLink,
+  .jobRow,
+  .invoiceRow {
+    transition: none;
+  }
+}

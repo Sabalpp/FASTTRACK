@@ -3,16 +3,33 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Check, FileCheck2, LoaderCircle, Mail, PenLine, RotateCw } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  CircleDollarSign,
+  Clock3,
+  FileCheck2,
+  FileText,
+  LoaderCircle,
+  Mail,
+  MapPin,
+  PenLine,
+  RotateCw,
+  ShieldCheck,
+  UserRound
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { InvoicePreview } from "@/components/InvoicePreview";
 import { SignatureDialog } from "@/components/SignatureDialog";
 import { SignatureStatusCard } from "@/components/SignatureStatusCard";
-import { Button, Card, EmptyState, Field, PageHeader, StatusPill, TwoColumn } from "@/components/ui";
+import { Button, Card, EmptyState } from "@/components/ui";
 import { canSendInvoices, canViewInvoice } from "@/lib/access";
 import { useAuth } from "@/lib/auth";
-import { tierLabels, tierOptions, useAppData } from "@/lib/data-store";
-import { firstPopulatedTier, invoiceOptionLabels } from "@/lib/invoice";
+import { useAppData } from "@/lib/data-store";
+import { formatDate, formatDateTime } from "@/lib/date";
+import { balanceDue, firstPopulatedTier, invoiceOptionLabels } from "@/lib/invoice";
 import {
   loadProtectedInvoice,
   markProtectedInvoiceSent,
@@ -31,12 +48,20 @@ import type {
   SignatureSignerRole,
   Tier
 } from "@/lib/types";
+import {
+  InvoiceScopeEditor,
+  preferredInvoiceDeliveryEmail,
+  resolveInvoiceWorkspaceAction,
+  type InvoiceWorkspaceActionId
+} from "./InvoiceWorkspaceParts";
+import type { InvoiceWorkspacePdfProps } from "./InvoiceWorkspacePdf";
+import styles from "./InvoiceWorkspace.module.css";
 
-const InvoicePdfViewer = dynamic(
-  () => import("@/components/InvoicePdfViewer").then((module) => module.InvoicePdfViewer),
+const InvoiceWorkspacePdf = dynamic<InvoiceWorkspacePdfProps>(
+  () => import("./InvoiceWorkspacePdf").then((module) => module.InvoiceWorkspacePdf),
   {
     ssr: false,
-    loading: () => <div className="pdf-loading compact-pdf-loading">Preparing PDF tools...</div>
+    loading: () => <div className={styles.pdfLoading}>Opening the protected PDF workspace…</div>
   }
 );
 
@@ -77,6 +102,10 @@ export default function InvoiceDetailPage() {
   const [signaturesLoading, setSignaturesLoading] = useState(false);
   const [signatureError, setSignatureError] = useState<string | undefined>();
   const [dialog, setDialog] = useState<DialogConfig | undefined>();
+  const [documentView, setDocumentView] = useState<"invoice" | "pdf">("invoice");
+  const [paymentEditorOpen, setPaymentEditorOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfGenerationRequest, setPdfGenerationRequest] = useState(0);
 
   function replaceInvoice(nextInvoice: Invoice) {
     data.setState((current) => ({
@@ -130,7 +159,8 @@ export default function InvoiceDetailPage() {
     setNotes(invoice.notes);
     setPaymentStatus(invoice.paymentStatus);
     setAmountPaid(String(invoice.amountPaid));
-    setEmail(invoice.sentToEmail ?? customer?.email ?? "");
+    setEmail(preferredInvoiceDeliveryEmail(invoice.sentToEmail, customer?.email));
+    setPaymentEditorOpen(false);
   }, [customer?.email, invoice?.id, invoice?.updatedAt]);
 
   async function refreshSignatures() {
@@ -154,8 +184,8 @@ export default function InvoiceDetailPage() {
 
   if (!data.loaded || (detailLoading && !invoice)) {
     return (
-      <main className="page-shell">
-        <Card className="invoice-route-loading">
+      <main className={`page-shell ${styles.page}`}>
+        <Card className={styles.loadingCard}>
           <LoaderCircle className="spin" size={28} aria-hidden="true" />
           <div><h2>Loading invoice draft</h2><p className="muted">Restoring the customer, job, charges, and saved signatures.</p></div>
         </Card>
@@ -165,7 +195,7 @@ export default function InvoiceDetailPage() {
 
   if (!invoice) {
     return (
-      <main className="page-shell">
+      <main className={`page-shell ${styles.page}`}>
         <EmptyState
           title="Invoice draft did not load"
           description={detailError ?? "The invoice may have moved or the connection may be slow."}
@@ -176,10 +206,10 @@ export default function InvoiceDetailPage() {
   }
 
   if (!canViewInvoice(currentUser, invoice, data.jobs)) {
-    return <main className="page-shell"><EmptyState title="Invoice not available" description="This invoice is outside this role's access." /></main>;
+    return <main className={`page-shell ${styles.page}`}><EmptyState title="Invoice not available" description="This invoice is outside this role's access." /></main>;
   }
   if (!job || !customer) {
-    return <main className="page-shell"><EmptyState title="Invoice data is incomplete" description="The related job or customer could not be found." /></main>;
+    return <main className={`page-shell ${styles.page}`}><EmptyState title="Invoice data is incomplete" description="The related job or customer could not be found." /></main>;
   }
 
   const invoiceRecord = invoice;
@@ -192,12 +222,31 @@ export default function InvoiceDetailPage() {
   const rejectedTechnicianSignature = signatures.find((signature) => signature.status === "rejected" && signature.purpose === "technician_acknowledgement");
   const previewInvoice: Invoice = { ...invoice, selectedTier, optionLabel, notes };
   const totalByTier = { good: invoice.totalGood, better: invoice.totalBetter, best: invoice.totalBest };
+  const itemCountByTier = {
+    good: items.filter((item) => item.tier === "good").length,
+    better: items.filter((item) => item.tier === "better").length,
+    best: items.filter((item) => item.tier === "best").length
+  };
   const selectedSaved = Boolean(invoice.selectedTier);
   const reviewDirty = selectedTier !== invoice.selectedTier
     || optionLabel !== invoice.optionLabel
     || notes.trim() !== invoice.notes;
   const readyToSign = selectedSaved && !reviewDirty;
   const generated = Boolean(invoice.pdfStoragePath && invoice.pdfGeneratedAt);
+  const displayTotal = selectedTier ? totalByTier[selectedTier] : 0;
+  const displayBalance = selectedTier ? balanceDue(previewInvoice) : 0;
+  const approvalSaved = Boolean(approval);
+  const deliveryRecorded = Boolean(invoice.sentAt);
+  const primaryAction = resolveInvoiceWorkspaceAction({
+    canManageInvoice: canEdit,
+    selectedSaved,
+    reviewDirty,
+    approvalSaved,
+    pdfGenerated: generated,
+    deliveryRecorded,
+    paymentStatus: invoice.paymentStatus,
+    paymentEditorOpen
+  });
 
   async function saveReview() {
     if (!selectedTier) return;
@@ -210,7 +259,7 @@ export default function InvoiceDetailPage() {
         : await saveProtectedInvoiceReview(invoiceRecord.id, { selectedTier, optionLabel, notes: notes.trim() });
       if (demoMode) data.updateInvoice(invoiceRecord.id, next);
       replaceInvoice(next);
-      setMessage("Invoice review saved. It is ready for the customer signature.");
+      setMessage("Invoice details saved. Customer approval is next.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "The invoice review could not be saved.");
     } finally {
@@ -230,7 +279,8 @@ export default function InvoiceDetailPage() {
       if (demoMode) data.updateInvoice(invoiceRecord.id, next);
       replaceInvoice(next);
       setAmountPaid(String(next.amountPaid));
-      setMessage("Payment status saved. Regenerate the PDF if one was already created.");
+      setPaymentEditorOpen(false);
+      setMessage("Payment record saved. This did not charge the customer. Generate an updated PDF for the final record.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Payment status could not be saved.");
     } finally {
@@ -249,7 +299,7 @@ export default function InvoiceDetailPage() {
         : await markProtectedInvoiceSent(invoiceRecord.id, email);
       if (demoMode) data.updateInvoice(invoiceRecord.id, next);
       replaceInvoice(next);
-      setMessage(`Invoice marked sent to ${email.trim()}.`);
+      setMessage(`Sent record saved for ${email.trim()}. Email delivery is not active; this did not send an email.`);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "The invoice could not be marked sent.");
     } finally {
@@ -335,160 +385,430 @@ export default function InvoiceDetailPage() {
     });
   }
 
+  function openPaymentEditor() {
+    setActionError(undefined);
+    setMessage(undefined);
+    if (invoiceRecord.paymentStatus === "unpaid") {
+      setPaymentStatus("paid");
+      setAmountPaid(String(displayTotal));
+    }
+    setPaymentEditorOpen(true);
+  }
+
+  async function runPrimaryAction() {
+    switch (primaryAction.id) {
+      case "save_review":
+        await saveReview();
+        return;
+      case "collect_customer_signature":
+        openCustomerSignature();
+        return;
+      case "generate_pdf":
+        setDocumentView("pdf");
+        setPdfGenerationRequest((current) => current + 1);
+        return;
+      case "record_sent":
+        await markSent();
+        return;
+      case "open_payment":
+        openPaymentEditor();
+        return;
+      case "save_payment":
+        await savePayment();
+        return;
+      case "view_pdf":
+        setDocumentView("pdf");
+        return;
+      case "return_to_job":
+        return;
+    }
+  }
+
+  const customerEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const primaryBusy = reviewBusy || paymentBusy || sendBusy || pdfBusy;
+  const primaryDisabled = primaryBusy
+    || (primaryAction.id === "save_review" && (!canEdit || !selectedTier || Boolean(approval)))
+    || (primaryAction.id === "collect_customer_signature" && !readyToSign)
+    || (primaryAction.id === "generate_pdf" && !approvalSaved)
+    || (primaryAction.id === "record_sent" && (!canEdit || !customerEmailValid))
+    || (primaryAction.id === "save_payment" && (!canEdit || !selectedSaved));
+  const primaryLabel = primaryBusy
+    ? reviewBusy ? "Saving invoice details..."
+      : paymentBusy ? "Saving payment record..."
+        : sendBusy ? "Recording delivery..."
+          : "Generating signed PDF..."
+    : primaryAction.label;
+
   return (
-    <main className="page-shell invoice-detail-page">
-      <PageHeader
-        eyebrow="Invoice"
-        title={invoice.invoiceNumber}
-        description={`${customer.name} · ${job.description}`}
-        action={<Link href={`/jobs/${job.id}`} className="button button-secondary">Back to job</Link>}
-      />
-
-      <ol className="invoice-flow" aria-label="Invoice workflow">
-        <FlowStep label="Review" complete={readyToSign} active={!readyToSign} />
-        <FlowStep label="Sign & save" complete={Boolean(approval)} active={readyToSign && !approval} />
-        <FlowStep label="Generate PDF" complete={generated} active={Boolean(approval) && !generated} />
-        <FlowStep label="Send / download" complete={Boolean(invoice.sentAt)} active={generated && !invoice.sentAt} />
-      </ol>
-
-      {detailError ? <p className="inline-warning" role="status">Using the loaded draft. Refresh warning: {detailError}</p> : null}
-      {message ? <p className="success-message" role="status">{message}</p> : null}
-      {actionError ? <p className="field-error" role="alert">{actionError}</p> : null}
-
-      <Card className="invoice-review-card">
-        <div className="section-head">
-          <div><p className="eyebrow">1 · Review</p><h2>Confirm the approved work</h2><p className="muted">Estimate tiers are shown only here for comparison. The invoice and PDF use one neutral service label.</p></div>
-          <StatusPill tone={invoice.status === "paid" || invoice.status === "sent" ? "good" : "warn"}>{invoice.status}</StatusPill>
+    <main className={`page-shell ${styles.page}`}>
+      <header className={styles.header}>
+        <Link className={styles.breadcrumb} href={`/jobs/${job.id}`}>
+          <ArrowLeft size={17} aria-hidden="true" />
+          Back to job
+        </Link>
+        <div className={styles.headerMain}>
+          <div className={styles.headerTitle}>
+            <p>Invoice workspace</p>
+            <h1>{invoice.invoiceNumber}</h1>
+            <p>{customer.name} · {job.description}</p>
+          </div>
+          <div className={styles.headerStatus} aria-label="Invoice status">
+            <span className={styles.statusPill} data-tone={invoice.status === "paid" || invoice.status === "sent" ? "good" : "warn"}>
+              {humanizeState(invoice.status)}
+            </span>
+            <span className={styles.statusPill} data-tone={invoice.paymentStatus === "paid" ? "good" : invoice.paymentStatus === "unpaid" ? "warn" : undefined}>
+              {humanizeState(invoice.paymentStatus)}
+            </span>
+          </div>
         </div>
+      </header>
 
-        <section className="estimate-comparison" aria-label="Estimate comparison">
-          {tierOptions.map((tier) => {
-            const tierItems = items.filter((item) => item.tier === tier);
-            return (
+      <div aria-live="polite">
+        {detailError ? <p className={styles.warningNote}>Using the loaded draft. Refresh warning: {detailError}</p> : null}
+        {message ? <p className={styles.successNote}>{message}</p> : null}
+        {actionError ? <p className={styles.errorNote} role="alert">{actionError}</p> : null}
+      </div>
+
+      <div className={styles.workspace}>
+        <section className={styles.documentColumn} aria-label="Invoice document workspace">
+          <div className={styles.documentToolbar}>
+            <div className={styles.documentToolbarTitle}>
+              <strong>Customer document</strong>
+              <span>Live invoice and protected PDF</span>
+            </div>
+            <div className={styles.documentTabs} role="tablist" aria-label="Document views">
               <button
-                key={tier}
+                className={styles.documentTab}
                 type="button"
-                className={`estimate-choice ${selectedTier === tier ? "selected" : ""}`}
-                onClick={() => setSelectedTier(tier)}
-                disabled={!canEdit || Boolean(approval) || tierItems.length === 0}
+                role="tab"
+                id="invoice-preview-tab"
+                aria-controls="invoice-preview-panel"
+                aria-selected={documentView === "invoice"}
+                data-active={documentView === "invoice"}
+                onClick={() => setDocumentView("invoice")}
               >
-                <span>{tierLabels[tier]} estimate</span>
-                <strong>{money(totalByTier[tier])}</strong>
-                <small>{tierItems.length} item{tierItems.length === 1 ? "" : "s"}</small>
-                {selectedTier === tier ? <Check size={17} aria-label="Selected" /> : null}
+                <FileText size={16} aria-hidden="true" />
+                Invoice
               </button>
-            );
-          })}
+              <button
+                className={styles.documentTab}
+                type="button"
+                role="tab"
+                id="invoice-pdf-tab"
+                aria-controls="invoice-pdf-panel"
+                aria-selected={documentView === "pdf"}
+                data-active={documentView === "pdf"}
+                onClick={() => setDocumentView("pdf")}
+              >
+                <FileCheck2 size={16} aria-hidden="true" />
+                Final PDF
+              </button>
+            </div>
+          </div>
+
+          <div className={styles.documentStage}>
+            <div
+              id="invoice-preview-panel"
+              className={`${styles.documentPane} ${styles.previewPane}`}
+              role="tabpanel"
+              aria-labelledby="invoice-preview-tab"
+              hidden={documentView !== "invoice"}
+            >
+              <InvoicePreview invoice={previewInvoice} job={job} customer={customer} items={items} signatures={signatures} />
+            </div>
+            {documentView === "pdf" ? (
+              <div
+                id="invoice-pdf-panel"
+                className={styles.documentPane}
+                role="tabpanel"
+                aria-labelledby="invoice-pdf-tab"
+              >
+                <InvoiceWorkspacePdf
+                  invoice={invoice}
+                  job={job}
+                  customer={customer}
+                  items={items}
+                  signatures={signatures}
+                  canGenerate={Boolean(approval && selectedSaved)}
+                  generationRequest={pdfGenerationRequest}
+                  onBusyChange={setPdfBusy}
+                  onGenerated={async () => {
+                    if (demoMode) {
+                      const now = new Date().toISOString();
+                      const next = {
+                        ...invoice,
+                        pdfStoragePath: `demo/${invoice.id}.pdf`,
+                        pdfVersion: invoice.pdfVersion + 1,
+                        pdfGeneratedAt: now,
+                        updatedAt: now
+                      };
+                      data.updateInvoice(invoice.id, next);
+                      replaceInvoice(next);
+                    } else {
+                      await refreshInvoice();
+                    }
+                    setMessage("Signed PDF generated and saved.");
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
         </section>
 
-        <TwoColumn>
-          <Field label="Invoice service label">
-            <select value={optionLabel} onChange={(event) => setOptionLabel(event.target.value as InvoiceOptionLabel)} disabled={!canEdit || Boolean(approval)}>
-              {Object.entries(invoiceOptionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </Field>
-          <div className="approved-total-readout">
-            <span>Invoice total</span>
-            <strong>{selectedTier ? money(totalByTier[selectedTier]) : "Select an estimate"}</strong>
+        <aside className={styles.actionRail} aria-label="Invoice actions and status">
+          <div className={styles.actionRailInner}>
+            <section className={styles.railCard} aria-labelledby="invoice-summary-heading">
+              <div className={styles.railHeading}>
+                <div>
+                  <p>Invoice summary</p>
+                  <h2 id="invoice-summary-heading">{invoiceOptionLabels[optionLabel]}</h2>
+                </div>
+                <ShieldCheck size={22} aria-hidden="true" />
+              </div>
+
+              <div className={styles.moneySummary}>
+                <div className={styles.moneyMetric}>
+                  <span>Invoice total</span>
+                  <strong>{selectedTier ? money(displayTotal) : "—"}</strong>
+                </div>
+                <div className={styles.moneyMetric} data-emphasis="true">
+                  <span>Balance due</span>
+                  <strong>{selectedTier ? money(displayBalance) : "—"}</strong>
+                </div>
+              </div>
+
+              <div className={styles.identitySummary}>
+                <div className={styles.identityRow}>
+                  <UserRound size={18} aria-hidden="true" />
+                  <div><strong>{customer.name}</strong><span>{customer.email || "No customer email on file"} · {customer.phone}</span></div>
+                </div>
+                <div className={styles.identityRow}>
+                  <MapPin size={18} aria-hidden="true" />
+                  <div><strong>{job.serviceAddress}</strong><span>Service date {formatDate(job.completedAt ?? job.arrivedAt ?? job.scheduledAt)}</span></div>
+                </div>
+              </div>
+
+              <div className={styles.progressList} aria-label="Invoice readiness">
+                <ProgressRow label="Chosen scope" state={reviewDirty ? "Unsaved changes" : selectedSaved ? "Saved" : "Not chosen"} complete={selectedSaved && !reviewDirty} />
+                <ProgressRow label="Customer approval" state={approval ? "Signed" : "Not signed"} complete={approvalSaved} />
+                <ProgressRow label="Final PDF" state={generated ? `Version ${invoice.pdfVersion}` : "Not generated"} complete={generated} />
+                <ProgressRow label="Delivery record" state={invoice.sentAt ? "Recorded" : "Not recorded"} complete={deliveryRecorded} />
+                <ProgressRow label="Payment" state={humanizeState(invoice.paymentStatus)} complete={invoice.paymentStatus === "paid"} />
+              </div>
+            </section>
+
+            <section className={styles.contextCard} aria-labelledby="next-invoice-action">
+              <div className={styles.contextHeader}>
+                <span className={styles.contextIcon} aria-hidden="true"><PrimaryActionIcon action={primaryAction.id} /></span>
+                <div>
+                  <h2 id="next-invoice-action">{primaryAction.title}</h2>
+                  <p>{primaryAction.helper}</p>
+                </div>
+              </div>
+
+              {selectedTier ? (
+                <div className={styles.chosenScope}>
+                  <div><span>Chosen scope</span><strong>{invoiceOptionLabels[optionLabel]}</strong></div>
+                  <strong>{money(displayTotal)}</strong>
+                </div>
+              ) : null}
+
+              {primaryAction.id === "record_sent" ? (
+                <div className={styles.deliveryEditor}>
+                  <label className={styles.field}>
+                    <span>Customer email</span>
+                    <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" disabled={!canEdit} />
+                  </label>
+                  <p className={styles.truthNote}>Email delivery is not active. “Record as sent” saves delivery metadata only; share the PDF outside the app first.</p>
+                  {email.trim() && !customerEmailValid ? <p className={styles.errorNote}>Enter a valid customer email before recording delivery.</p> : null}
+                </div>
+              ) : null}
+
+              {paymentEditorOpen ? (
+                <div className={styles.paymentEditor}>
+                  <label className={styles.field}>
+                    <span>Payment status</span>
+                    <select value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value as InvoicePaymentStatus)} disabled={!canEdit}>
+                      <option value="unpaid">Unpaid</option>
+                      <option value="partially_paid">Partially paid</option>
+                      <option value="paid">Paid</option>
+                      <option value="refunded">Refunded</option>
+                      <option value="void">Void</option>
+                    </select>
+                  </label>
+                  <label className={styles.field}>
+                    <span>Amount paid</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={paymentStatus === "paid" && selectedTier ? displayTotal : amountPaid}
+                      onChange={(event) => setAmountPaid(event.target.value)}
+                      disabled={!canEdit || paymentStatus !== "partially_paid"}
+                    />
+                  </label>
+                  <p className={styles.truthNote}>This records payment received elsewhere. No card or bank account is charged.</p>
+                  <div className={styles.inlineUtilityRow}>
+                    <button className={styles.textButton} type="button" onClick={() => setPaymentEditorOpen(false)} disabled={paymentBusy}>Cancel payment edit</button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className={styles.primaryDock}>
+                {primaryAction.id === "return_to_job" ? (
+                  <Link className={styles.primaryButton} href={`/jobs/${job.id}`}>
+                    <ArrowLeft size={18} aria-hidden="true" />
+                    {primaryAction.label}
+                  </Link>
+                ) : (
+                  <button className={styles.primaryButton} type="button" onClick={() => void runPrimaryAction()} disabled={primaryDisabled}>
+                    <PrimaryActionIcon action={primaryAction.id} />
+                    {primaryLabel}
+                  </button>
+                )}
+                <span className={styles.primaryHint}>
+                  {primaryAction.id === "record_sent" && !customerEmailValid
+                    ? "A valid customer email is required for the delivery record."
+                    : "The primary action changes as this invoice advances."}
+                </span>
+              </div>
+            </section>
+
+            <div className={styles.utilityStack}>
+              <details className={styles.utilityDetails} open={!selectedSaved || undefined}>
+                <summary className={styles.utilitySummary}>
+                  <FileText size={18} aria-hidden="true" />
+                  Invoice details
+                  <ChevronDown size={17} aria-hidden="true" />
+                </summary>
+                <div className={styles.utilityContent}>
+                  <InvoiceScopeEditor
+                    locked={approvalSaved}
+                    canEdit={canEdit}
+                    selectedTier={selectedTier}
+                    totalByTier={totalByTier}
+                    itemCountByTier={itemCountByTier}
+                    neutralLabel={invoiceOptionLabels[optionLabel]}
+                    onSelect={setSelectedTier}
+                  />
+                  {!approval ? (
+                    <>
+                      <label className={styles.field}>
+                        <span>Invoice service label</span>
+                        <select value={optionLabel} onChange={(event) => setOptionLabel(event.target.value as InvoiceOptionLabel)} disabled={!canEdit}>
+                          {Object.entries(invoiceOptionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
+                      </label>
+                      <label className={styles.field}>
+                        <span>Work summary and invoice notes</span>
+                        <textarea
+                          value={notes}
+                          onChange={(event) => setNotes(event.target.value)}
+                          disabled={!canEdit}
+                          placeholder="Summarize completed work, warranty details, or payment instructions."
+                        />
+                      </label>
+                      {reviewDirty ? <p className={styles.warningNote}>Use the primary action to save these changes before collecting customer approval.</p> : null}
+                    </>
+                  ) : (
+                    <div className={styles.lockedScope}>
+                      <span>Approved work summary</span>
+                      <strong>{notes || "No additional invoice notes."}</strong>
+                    </div>
+                  )}
+                </div>
+              </details>
+
+              <details className={styles.utilityDetails}>
+                <summary className={styles.utilitySummary}>
+                  <PenLine size={18} aria-hidden="true" />
+                  Signatures and approval
+                  <ChevronDown size={17} aria-hidden="true" />
+                </summary>
+                <div className={styles.utilityContent}>
+                  {reviewDirty ? <p className={styles.warningNote}>Save invoice changes before collecting a signature.</p> : null}
+                  <div className="invoice-signature-grid">
+                    <SignatureStatusCard
+                      title="Customer approval"
+                      signature={approval}
+                      rejectedSignature={rejectedApproval}
+                      loading={signaturesLoading}
+                      error={signatureError}
+                      onRetry={() => void refreshSignatures()}
+                      onDraw={openCustomerSignature}
+                      drawLabel="Draw customer signature"
+                      drawDisabled={!readyToSign}
+                      canReject={canEdit}
+                      onReject={approval ? (reason) => rejectSavedSignature(approval, reason) : undefined}
+                    />
+                    <SignatureStatusCard
+                      title="Technician / company"
+                      signature={technicianSignature}
+                      rejectedSignature={rejectedTechnicianSignature}
+                      loading={signaturesLoading}
+                      error={signatureError}
+                      onRetry={() => void refreshSignatures()}
+                      onDraw={openTechnicianSignature}
+                      drawLabel="Add technician signature"
+                      drawDisabled={!readyToSign}
+                      canReject={canEdit}
+                      onReject={technicianSignature ? (reason) => rejectSavedSignature(technicianSignature, reason) : undefined}
+                    />
+                  </div>
+                </div>
+              </details>
+
+              <details className={styles.utilityDetails}>
+                <summary className={styles.utilitySummary}>
+                  <CircleDollarSign size={18} aria-hidden="true" />
+                  Delivery and payment record
+                  <ChevronDown size={17} aria-hidden="true" />
+                </summary>
+                <div className={styles.utilityContent}>
+                  <div className={styles.identitySummary}>
+                    <div className={styles.identityRow}>
+                      <Mail size={18} aria-hidden="true" />
+                      <div>
+                        <strong>{invoice.sentAt ? `Recorded for ${invoice.sentToEmail}` : "Delivery not recorded"}</strong>
+                        <span>{invoice.sentAt ? formatDateTime(invoice.sentAt) : "Email delivery is not active in this build."}</span>
+                      </div>
+                    </div>
+                    <div className={styles.identityRow}>
+                      <CircleDollarSign size={18} aria-hidden="true" />
+                      <div><strong>{humanizeState(invoice.paymentStatus)}</strong><span>{money(invoice.amountPaid)} recorded as paid</span></div>
+                    </div>
+                    <div className={styles.identityRow}>
+                      <FileCheck2 size={18} aria-hidden="true" />
+                      <div><strong>{generated ? `PDF version ${invoice.pdfVersion}` : "Final PDF not generated"}</strong><span>{invoice.pdfGeneratedAt ? formatDateTime(invoice.pdfGeneratedAt) : "Generate after approval and after any payment changes."}</span></div>
+                    </div>
+                  </div>
+
+                  {canEdit && invoice.sentAt ? (
+                    <>
+                      <label className={styles.field}>
+                        <span>Delivery record email</span>
+                        <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" />
+                      </label>
+                      <p className={styles.truthNote}>Updating this record does not send an email.</p>
+                      <button className={styles.secondaryButton} type="button" onClick={() => void markSent()} disabled={!generated || !approval || !customerEmailValid || sendBusy}>
+                        <Mail size={17} aria-hidden="true" />
+                        {sendBusy ? "Updating record..." : "Update delivery record"}
+                      </button>
+                    </>
+                  ) : null}
+
+                  {canEdit && invoice.sentAt ? (
+                    <button className={styles.secondaryButton} type="button" onClick={openPaymentEditor} disabled={paymentBusy}>
+                      <CircleDollarSign size={17} aria-hidden="true" />
+                      Edit payment record
+                    </button>
+                  ) : null}
+                </div>
+              </details>
+            </div>
           </div>
-        </TwoColumn>
-        <Field label="Work summary and invoice notes">
-          <textarea value={notes} onChange={(event) => setNotes(event.target.value)} disabled={!canEdit || Boolean(approval)} placeholder="Summarize completed work, warranty details, or payment instructions." />
-        </Field>
-        <div className="invoice-review-actions">
-          {approval ? <p className="muted">Reject the saved customer signature before changing signed invoice content.</p> : null}
-          <Button onClick={() => void saveReview()} disabled={!canEdit || !selectedTier || reviewBusy || Boolean(approval)}>
-            <FileCheck2 size={17} aria-hidden="true" /> {reviewBusy ? "Saving review..." : "Save review"}
-          </Button>
-        </div>
-      </Card>
-
-      <InvoicePreview invoice={previewInvoice} job={job} customer={customer} items={items} signatures={signatures} />
-
-      <Card className="invoice-signatures-card">
-        <div className="section-head">
-          <div><p className="eyebrow">2 · Sign & save</p><h2>Invoice signatures</h2><p className="muted">Saving must finish successfully before this invoice is approved.</p></div>
-          <PenLine size={24} aria-hidden="true" />
-        </div>
-        {reviewDirty ? <p className="inline-warning">Save the review before collecting a signature so the customer approves exactly what is shown.</p> : null}
-        <div className="invoice-signature-grid">
-          <SignatureStatusCard
-            title="Customer approval"
-            signature={approval}
-            rejectedSignature={rejectedApproval}
-            loading={signaturesLoading}
-            error={signatureError}
-            onRetry={() => void refreshSignatures()}
-            onDraw={openCustomerSignature}
-            drawLabel="Draw signature"
-            drawDisabled={!readyToSign}
-            canReject={canEdit}
-            onReject={approval ? (reason) => rejectSavedSignature(approval, reason) : undefined}
-          />
-          <SignatureStatusCard
-            title="Technician / company"
-            signature={technicianSignature}
-            rejectedSignature={rejectedTechnicianSignature}
-            loading={signaturesLoading}
-            error={signatureError}
-            onRetry={() => void refreshSignatures()}
-            onDraw={openTechnicianSignature}
-            drawLabel="Add technician signature"
-            drawDisabled={!readyToSign}
-            canReject={canEdit}
-            onReject={technicianSignature ? (reason) => rejectSavedSignature(technicianSignature, reason) : undefined}
-          />
-        </div>
-      </Card>
-
-      <Card className="invoice-payment-card">
-        <div className="section-head"><div><p className="eyebrow">Payment</p><h2>Payment status</h2></div><StatusPill tone={invoice.paymentStatus === "paid" ? "good" : "info"}>{invoice.paymentStatus.replace("_", " ")}</StatusPill></div>
-        <TwoColumn>
-          <Field label="Payment status">
-            <select value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value as InvoicePaymentStatus)} disabled={!canEdit}>
-              <option value="unpaid">Unpaid</option>
-              <option value="partially_paid">Partially paid</option>
-              <option value="paid">Paid</option>
-              <option value="refunded">Refunded</option>
-              <option value="void">Void</option>
-            </select>
-          </Field>
-          <Field label="Amount paid">
-            <input type="number" min="0" step="0.01" value={paymentStatus === "paid" && selectedTier ? totalByTier[selectedTier] : amountPaid} onChange={(event) => setAmountPaid(event.target.value)} disabled={!canEdit || paymentStatus !== "partially_paid"} />
-          </Field>
-        </TwoColumn>
-        {canEdit ? <Button variant="secondary" onClick={() => void savePayment()} disabled={paymentBusy || !selectedSaved}>{paymentBusy ? "Saving payment..." : "Save payment status"}</Button> : <p className="muted">Only an owner can change payment status.</p>}
-      </Card>
-
-      <InvoicePdfViewer
-        invoice={invoice}
-        job={job}
-        customer={customer}
-        items={items}
-        signatures={signatures}
-        canGenerate={Boolean(approval && selectedSaved)}
-        onGenerated={async () => {
-          if (demoMode) {
-            const now = new Date().toISOString();
-            const next = { ...invoice, pdfStoragePath: `demo/${invoice.id}.pdf`, pdfVersion: invoice.pdfVersion + 1, pdfGeneratedAt: now, updatedAt: now };
-            data.updateInvoice(invoice.id, next);
-            replaceInvoice(next);
-          } else {
-            await refreshInvoice();
-          }
-          setMessage("Signed PDF generated and saved.");
-        }}
-      />
-
-      <Card className="invoice-send-card">
-        <div className="section-head"><div><p className="eyebrow">4 · Send or download</p><h2>Finish the invoice</h2><p className="muted">Download is available beside the PDF preview. Owners can record the customer delivery below.</p></div><Mail size={23} aria-hidden="true" /></div>
-        <div className="invoice-send-grid">
-          <Field label="Customer email"><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} disabled={!canEdit} /></Field>
-          <div className="invoice-send-actions">
-            <Button onClick={() => void markSent()} disabled={!canEdit || !generated || !approval || sendBusy}>{sendBusy ? "Saving delivery..." : "Mark sent"}</Button>
-          </div>
-        </div>
-      </Card>
+        </aside>
+      </div>
 
       <SignatureDialog
         open={Boolean(dialog)}
@@ -503,8 +823,28 @@ export default function InvoiceDetailPage() {
   );
 }
 
-function FlowStep({ label, complete, active }: { label: string; complete: boolean; active: boolean }) {
-  return <li className={complete ? "complete" : active ? "active" : ""}><span>{complete ? <Check size={14} aria-hidden="true" /> : null}</span>{label}</li>;
+function ProgressRow({ label, state, complete }: { label: string; state: string; complete: boolean }) {
+  return (
+    <div className={styles.progressRow} data-complete={complete}>
+      <span className={styles.progressIcon} aria-hidden="true">{complete ? <Check size={14} /> : <Clock3 size={13} />}</span>
+      <span className={styles.progressLabel}>{label}</span>
+      <span className={styles.progressState}>{state}</span>
+    </div>
+  );
+}
+
+function PrimaryActionIcon({ action }: { action: InvoiceWorkspaceActionId }) {
+  if (action === "save_review") return <FileCheck2 size={18} aria-hidden="true" />;
+  if (action === "collect_customer_signature") return <PenLine size={18} aria-hidden="true" />;
+  if (action === "generate_pdf" || action === "view_pdf") return <FileText size={18} aria-hidden="true" />;
+  if (action === "record_sent") return <Mail size={18} aria-hidden="true" />;
+  if (action === "open_payment" || action === "save_payment") return <CircleDollarSign size={18} aria-hidden="true" />;
+  if (action === "return_to_job") return <ArrowLeft size={18} aria-hidden="true" />;
+  return <CheckCircle2 size={18} aria-hidden="true" />;
+}
+
+function humanizeState(value: string) {
+  return value.replaceAll("_", " ");
 }
 
 function demoPaymentInvoice(invoice: Invoice, status: InvoicePaymentStatus, requestedAmount: number): Invoice {

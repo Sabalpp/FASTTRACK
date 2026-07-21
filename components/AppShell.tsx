@@ -1,7 +1,9 @@
 "use client";
 
 import {
-  BriefcaseBusiness,
+  Building2,
+  CalendarDays,
+  ChevronDown,
   CircleUserRound,
   FileText,
   Home,
@@ -16,21 +18,25 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/lib/auth";
-import { useAppData } from "@/lib/data-store";
+import { roleLabels, useAppData } from "@/lib/data-store";
 import { RoleSwitcher } from "@/components/RoleSwitcher";
 import { BackgroundPaperShaders } from "@/components/ui/background-paper-shaders";
+import { branding } from "@/lib/branding";
 import type { Role } from "@/lib/types";
 import type { LucideIcon } from "lucide-react";
 
-type NavItem = { href: string; label: string; roles: Role[]; Icon: LucideIcon };
+type NavItem = { href: string; label: string; roles: Role[]; Icon: LucideIcon; exact?: boolean };
 
 const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Home", roles: ["owner", "tech", "call_center"], Icon: Home },
+  { href: "/dashboard", label: "Home", roles: ["owner", "tech", "call_center"], Icon: Home, exact: true },
+  { href: "/jobs", label: "Schedule", roles: ["owner", "tech", "call_center"], Icon: CalendarDays },
   { href: "/customers", label: "Customers", roles: ["owner", "tech", "call_center"], Icon: Users },
-  { href: "/jobs", label: "Jobs", roles: ["owner", "tech", "call_center"], Icon: BriefcaseBusiness },
-  { href: "/parts", label: "Parts", roles: ["owner"], Icon: Package },
   { href: "/invoices", label: "Invoices", roles: ["owner", "tech"], Icon: FileText },
-  { href: "/admin/users", label: "Users", roles: ["owner"], Icon: ShieldCheck }
+];
+
+const secondaryNavItems: NavItem[] = [
+  { href: "/parts", label: "Parts catalog", roles: ["owner"], Icon: Package },
+  { href: "/admin/users", label: "Team access", roles: ["owner"], Icon: ShieldCheck }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -92,42 +98,81 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const roleLabel = currentUser.role === "call_center" ? "Call center" : roleLabels[currentUser.role];
+
   return (
-    <>
+    <div className={isLogin ? "ft5-auth" : "ft5-app"}>
       {!isLogin ? (
-        <header className="app-header">
-          <nav className="main-nav">
+        <header className="app-header ft5-header">
+          <Link className="ft5-brand" href="/dashboard" aria-label={`${branding.businessName} home`}>
+            <span className="ft5-brand-mark" aria-hidden="true">FT</span>
+            <span className="ft5-brand-copy">
+              <strong>Fast Track</strong>
+              <small>Field service</small>
+            </span>
+          </Link>
+          <nav className="main-nav ft5-main-nav" aria-label="Primary navigation">
             {navItems
               .filter((item) => item.roles.includes(currentUser.role))
               .map((item) => (
-                <Link key={item.href} href={item.href} className={pathname.startsWith(item.href) ? "active" : ""}>
-                  <item.Icon size={15} aria-hidden="true" />
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={(item.exact ? pathname === item.href : pathname.startsWith(item.href)) ? "active" : ""}
+                  aria-current={(item.exact ? pathname === item.href : pathname.startsWith(item.href)) ? "page" : undefined}
+                >
+                  <item.Icon size={18} aria-hidden="true" />
                   <span>{item.label}</span>
                 </Link>
               ))}
           </nav>
-          <div className="header-actions">
-            <div className="profile-chip" title={currentUser.email || currentUser.displayName}>
-              <CircleUserRound size={17} aria-hidden="true" />
-              <span>
-                <strong>{currentUser.displayName || currentUser.email}</strong>
-              </span>
-            </div>
-            {isDemoMode ? <RoleSwitcher /> : null}
-            {isDemoMode ? (
-              <button className="text-button icon-text-button" type="button" onClick={resetDemoData}>
-                <RotateCcw size={15} aria-hidden="true" />
-                <span>Reset</span>
-              </button>
-            ) : null}
-            <button className="text-button icon-text-button" type="button" onClick={() => void signOut()} disabled={authBusy}>
-              <LogOut size={15} aria-hidden="true" />
-              <span>{authBusy ? "Signing out..." : "Sign out"}</span>
-            </button>
+          <div className="header-actions ft5-header-actions">
+            <details className="ft5-account-menu">
+              <summary aria-label="Open account menu">
+                <span className="ft5-avatar" aria-hidden="true">
+                  {(currentUser.displayName || currentUser.email || "FT").slice(0, 1).toUpperCase()}
+                </span>
+                <span className="ft5-account-copy">
+                  <strong>{currentUser.displayName || currentUser.email}</strong>
+                  <small>{roleLabel}</small>
+                </span>
+                <ChevronDown size={16} aria-hidden="true" />
+              </summary>
+              <div className="ft5-account-popover">
+                <div className="ft5-account-context">
+                  <Building2 size={17} aria-hidden="true" />
+                  <span><strong>{branding.businessName}</strong><small>{currentUser.email}</small></span>
+                </div>
+                {isDemoMode ? (
+                  <div className="ft5-demo-role">
+                    <span>Preview role</span>
+                    <RoleSwitcher />
+                  </div>
+                ) : null}
+                {secondaryNavItems
+                  .filter((item) => item.roles.includes(currentUser.role))
+                  .map((item) => (
+                    <Link key={item.href} href={item.href}>
+                      <item.Icon size={17} aria-hidden="true" />
+                      <span>{item.label}</span>
+                    </Link>
+                  ))}
+                {isDemoMode ? (
+                  <button type="button" onClick={resetDemoData}>
+                    <RotateCcw size={17} aria-hidden="true" />
+                    <span>Reset demo data</span>
+                  </button>
+                ) : null}
+                <button type="button" onClick={() => void signOut()} disabled={authBusy}>
+                  <LogOut size={17} aria-hidden="true" />
+                  <span>{authBusy ? "Signing out…" : "Sign out"}</span>
+                </button>
+              </div>
+            </details>
           </div>
         </header>
       ) : null}
       {children}
-    </>
+    </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import {
   CheckCircle2,
+  ChevronDown,
   Clock3,
   History,
   Mail,
@@ -10,10 +11,11 @@ import {
   Send,
   TriangleAlert
 } from "lucide-react";
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
 import { formatDateTime } from "@/lib/date";
 import { notificationStatusLabel } from "@/lib/appointment-confirmations";
 import type { AppointmentNotificationSummary } from "@/lib/types";
+import styles from "./AppointmentConfirmationCard.module.css";
 
 type AppointmentConfirmationCardProps = {
   notifications: AppointmentNotificationSummary[];
@@ -79,159 +81,114 @@ export function AppointmentConfirmationCard({
     && !hasUnknownSmsDelivery
     && !hasPendingChannel
     && (hasFailedChannel || hasAcceptedChannel || onlyInactiveChannels || notifications.length === 0);
+  const [expanded, setExpanded] = useState(Boolean(error || hasFailedChannel));
+  useEffect(() => {
+    if (error || hasFailedChannel) setExpanded(true);
+  }, [error, hasFailedChannel]);
 
   return (
-    <section className="card appointment-confirmation-card" aria-labelledby={titleId}>
-      <div className="appointment-confirmation-header">
-        <div className="appointment-confirmation-heading">
-          <span className="appointment-confirmation-icon" aria-hidden="true">
-            <Send size={22} />
-          </span>
-          <div>
-            <p className="eyebrow">Customer updates</p>
-            <h2 id={titleId}>Appointment confirmation</h2>
-            <p>Track the text or email sent for this service window.</p>
-          </div>
-        </div>
-        <div
-          className="appointment-confirmation-overall"
-          data-tone={overallStatus.tone}
-          aria-live="polite"
-        >
-          <OverallStatusIcon tone={overallStatus.tone} />
-          <span>
-            <strong>{overallStatus.label}</strong>
+    <section className={styles.card} aria-labelledby={titleId}>
+      <details
+        className={styles.disclosure}
+        open={expanded}
+        onToggle={(event) => setExpanded(event.currentTarget.open)}
+      >
+        <summary className={styles.summary}>
+          <span className={styles.icon} aria-hidden="true"><Send size={19} /></span>
+          <span className={styles.heading}>
+            <strong id={titleId}>Customer confirmation</strong>
             <small>{overallStatus.description}</small>
           </span>
-        </div>
-      </div>
-
-      {error ? (
-        <div className="appointment-confirmation-error" role="alert">
-          <TriangleAlert size={20} aria-hidden="true" />
-          <span>
-            <strong>Confirmation needs attention</strong>
-            <small>{error}</small>
+          <span className={styles.status} data-tone={overallStatus.tone} aria-live="polite">
+            <OverallStatusIcon tone={overallStatus.tone} />
+            {overallStatus.label}
           </span>
-        </div>
-      ) : null}
+          <ChevronDown className={styles.chevron} size={18} aria-hidden="true" />
+        </summary>
 
-      {loading ? (
-        <div className="appointment-confirmation-loading" role="status">
-          <span className="appointment-confirmation-spinner" aria-hidden="true" />
-          Checking confirmation status…
-        </div>
-      ) : latestNotifications.length === 0 ? (
-        <div className="appointment-confirmation-empty">
-          <MessageSquare size={22} aria-hidden="true" />
-          <div>
-            <strong>No confirmation activity yet</strong>
-            <p>The appointment does not have a queued or accepted customer confirmation.</p>
-          </div>
-        </div>
-      ) : (
-        <div className="appointment-confirmation-channel-grid">
-          {latestNotifications.map((notification) => (
-            <article
-              className="appointment-confirmation-channel"
-              data-status={statusKey(notification.status)}
-              key={String(notification.channel)}
-            >
-              <div className="appointment-confirmation-channel-head">
-                <span className="appointment-confirmation-channel-name">
-                  {notification.channel === "email" ? (
-                    <Mail size={19} aria-hidden="true" />
-                  ) : (
-                    <MessageSquare size={19} aria-hidden="true" />
-                  )}
-                  <strong>{channelLabel(notification.channel)}</strong>
-                </span>
-                <span className="appointment-confirmation-status">
-                  <i aria-hidden="true" />
-                  {notificationDisplayStatus(notification)}
-                </span>
-              </div>
-              <p className="appointment-confirmation-destination">
-                {notification.maskedDestination}
-              </p>
-              <small className="appointment-confirmation-time">{notificationTimeLabel(notification)}</small>
-              {notification.errorMessage ? (
-                <p className="appointment-confirmation-channel-error" role="alert">
-                  {notification.errorMessage}
-                </p>
+        <div className={styles.body}>
+          {error ? (
+            <div className={styles.error} role="alert">
+              <TriangleAlert size={19} aria-hidden="true" />
+              <span><strong>Confirmation needs attention</strong><small>{error}</small></span>
+            </div>
+          ) : null}
+
+          {loading ? (
+            <div className={styles.loading} role="status">
+              <span className={styles.spinner} aria-hidden="true" />
+              Checking confirmation status…
+            </div>
+          ) : latestNotifications.length === 0 ? (
+            <div className={styles.empty}>
+              <MessageSquare size={20} aria-hidden="true" />
+              <span><strong>No confirmation activity yet</strong><small>The appointment does not have a queued or accepted customer confirmation.</small></span>
+            </div>
+          ) : (
+            <div className={styles.channels}>
+              {latestNotifications.map((notification) => (
+                <article className={styles.channel} data-status={statusKey(notification.status)} key={String(notification.channel)}>
+                  <span className={styles.channelIcon} aria-hidden="true">
+                    {notification.channel === "email" ? <Mail size={18} /> : <MessageSquare size={18} />}
+                  </span>
+                  <span className={styles.channelCopy}>
+                    <strong>{channelLabel(notification.channel)} · {notification.maskedDestination}</strong>
+                    <small>{notificationTimeLabel(notification)}</small>
+                    {notification.errorMessage ? <small className={styles.channelError} role="alert">{notification.errorMessage}</small> : null}
+                  </span>
+                  <span className={styles.channelStatus}>{notificationDisplayStatus(notification)}</span>
+                </article>
+              ))}
+            </div>
+          )}
+
+          {canRetry || canSendOrResend ? (
+            <div className={styles.actions}>
+              {canRetry ? (
+                <button className={styles.primaryAction} type="button" onClick={onRetry} disabled={busy}>
+                  <RefreshCw size={17} aria-hidden="true" />
+                  {busy ? "Retrying…" : "Retry failed confirmation"}
+                </button>
               ) : null}
-            </article>
-          ))}
-        </div>
-      )}
-
-      {canRetry || canSendOrResend ? (
-        <div className="appointment-confirmation-actions">
-          {canRetry ? (
-            <button
-              className="appointment-confirmation-action appointment-confirmation-action-primary"
-              type="button"
-              onClick={onRetry}
-              disabled={busy}
-            >
-              <RefreshCw size={19} aria-hidden="true" />
-              {busy ? "Retrying…" : "Retry failed confirmation"}
-            </button>
+              {canSendOrResend ? (
+                <button className={styles.action} type="button" onClick={onResend} disabled={busy}>
+                  <Send size={17} aria-hidden="true" />
+                  {busy
+                    ? "Sending…"
+                    : notifications.length === 0
+                      ? "Send confirmation"
+                      : hasFailedChannel
+                        ? "Send a new confirmation"
+                        : "Resend confirmation"}
+                </button>
+              ) : null}
+            </div>
+          ) : !activeJob && notifications.length > 0 ? (
+            <p className={styles.readonly}>This job is closed. Confirmation history is read-only.</p>
           ) : null}
-          {canSendOrResend ? (
-            <button
-              className="appointment-confirmation-action"
-              type="button"
-              onClick={onResend}
-              disabled={busy}
-            >
-              <Send size={19} aria-hidden="true" />
-              {busy
-                ? "Sending…"
-                : notifications.length === 0
-                  ? "Send confirmation"
-                  : hasFailedChannel
-                    ? "Send a new confirmation"
-                    : "Resend confirmation"}
-            </button>
+
+          {orderedNotifications.length > 0 ? (
+            <details className={styles.history}>
+              <summary><span><History size={17} aria-hidden="true" />Confirmation history</span><small>{orderedNotifications.length} {orderedNotifications.length === 1 ? "event" : "events"}</small></summary>
+              <div className={styles.historyList}>
+                {orderedNotifications.map((notification, index) => (
+                  <article className={styles.historyRow} key={`${notification.id}-${notification.channel}-${index}`}>
+                    <span className={styles.historyIcon} aria-hidden="true">
+                      {notification.channel === "email" ? <Mail size={16} /> : <MessageSquare size={16} />}
+                    </span>
+                    <span className={styles.historyCopy}>
+                      <strong>{eventTypeLabel(notification.eventType)} · {channelLabel(notification.channel)}</strong>
+                      <small>{notification.maskedDestination}</small>
+                      {notification.errorMessage ? <small className={styles.channelError}>{notification.errorMessage}</small> : null}
+                    </span>
+                    <span className={styles.historyMeta}><strong>{notificationDisplayStatus(notification)}</strong><small>{formatDateTime(activityAt(notification))}</small></span>
+                  </article>
+                ))}
+              </div>
+            </details>
           ) : null}
         </div>
-      ) : !activeJob && notifications.length > 0 ? (
-        <p className="appointment-confirmation-readonly">This job is closed. Confirmation history is read-only.</p>
-      ) : null}
-
-      {orderedNotifications.length > 0 ? (
-        <details className="appointment-confirmation-history">
-          <summary>
-            <span>
-              <History size={19} aria-hidden="true" />
-              Confirmation history
-            </span>
-            <small>{orderedNotifications.length} {orderedNotifications.length === 1 ? "event" : "events"}</small>
-          </summary>
-          <div className="appointment-confirmation-history-list">
-            {orderedNotifications.map((notification, index) => (
-              <article
-                className="appointment-confirmation-history-row"
-                key={`${notification.id}-${notification.channel}-${index}`}
-              >
-                <span className="appointment-confirmation-history-icon" aria-hidden="true">
-                  {notification.channel === "email" ? <Mail size={17} /> : <MessageSquare size={17} />}
-                </span>
-                <div>
-                  <strong>{eventTypeLabel(notification.eventType)} · {channelLabel(notification.channel)}</strong>
-                  <span>{notification.maskedDestination}</span>
-                  {notification.errorMessage ? <small className="appointment-confirmation-history-error">{notification.errorMessage}</small> : null}
-                </div>
-                <div className="appointment-confirmation-history-meta">
-                  <strong>{notificationDisplayStatus(notification)}</strong>
-                  <small>{formatDateTime(activityAt(notification))}</small>
-                </div>
-              </article>
-            ))}
-          </div>
-        </details>
-      ) : null}
+      </details>
     </section>
   );
 }

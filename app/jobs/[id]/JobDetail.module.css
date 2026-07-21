@@ -1,0 +1,981 @@
+.page {
+  --job-ink: #202a36;
+  --job-muted: #6b7788;
+  --job-line: #e1e6ec;
+  --job-blue: #153f4b;
+  --job-blue-dark: #0f3039;
+  --job-blue-soft: #e7f0f1;
+  --job-surface: #fff;
+  --job-canvas: #f5f7f9;
+  display: grid;
+  gap: 16px;
+  max-width: 1380px;
+  padding-bottom: 118px;
+  color: var(--job-ink);
+}
+
+.backLink,
+.headerLink {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  width: fit-content;
+  min-height: 40px;
+  color: #5c697a;
+  font-size: 0.82rem;
+  font-weight: 690;
+  text-decoration: none;
+  transition: color 140ms ease, transform 120ms ease;
+}
+
+.backLink:hover,
+.headerLink:hover {
+  color: var(--job-blue-dark);
+}
+
+.backLink:active,
+.headerLink:active {
+  transform: translateY(1px);
+}
+
+.backLink:focus-visible,
+.headerLink:focus-visible,
+.primaryAction:focus-visible,
+.quietAction:focus-visible,
+.overrideAction:focus-visible {
+  outline: 3px solid rgba(21, 63, 75, 0.2);
+  outline-offset: 3px;
+}
+
+.hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  overflow: hidden;
+  padding: 28px;
+  border: 1px solid #dce3ea;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 93% 10%, rgba(21, 63, 75, 0.1), transparent 32%),
+    linear-gradient(145deg, #fff 0%, #fbfcfd 65%, #f4f8fc 100%);
+  box-shadow: 0 18px 48px rgba(23, 34, 48, 0.07);
+}
+
+.hero::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background: linear-gradient(#c45120, #df8b65);
+  content: "";
+}
+
+.heroCopy {
+  min-width: 0;
+}
+
+.heroEyebrow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 9px;
+}
+
+.heroEyebrow > span:first-child {
+  color: #657386;
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.heroCopy h1,
+.heroCopy p,
+.stageHeader h2,
+.stageHeader p,
+.stageHeader span,
+.subhead h3,
+.subhead p,
+.approvalIntro h3,
+.approvalIntro p,
+.overridePanel h3,
+.overridePanel p,
+.invoiceReady h3,
+.invoiceReady p {
+  margin: 0;
+}
+
+.heroCopy h1 {
+  color: #1f2935;
+  font-size: clamp(2rem, 3.7vw, 3.35rem);
+  font-weight: 760;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+}
+
+.heroCopy > p {
+  max-width: 760px;
+  margin-top: 10px;
+  color: #687486;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.headerLink {
+  align-self: start;
+  min-height: 42px;
+  padding: 0 13px;
+  border: 1px solid #d8e0e8;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.assignmentStrip {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 0.82fr 1.2fr 1fr;
+  gap: 1px;
+  overflow: hidden;
+  margin-top: 5px;
+  border: 1px solid #e2e7ed;
+  border-radius: 15px;
+  background: #e2e7ed;
+}
+
+.assignmentItem {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  min-height: 78px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.metaIcon,
+.customerAvatar,
+.approvalIntro > span,
+.invoiceIcon,
+.protectedStage > span {
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: #153f4b;
+  background: #e7f0f1;
+}
+
+.metaIcon {
+  width: 36px;
+  height: 36px;
+}
+
+.assignmentItem > span:last-child,
+.assignmentItem small,
+.assignmentItem strong,
+.assignmentItem em {
+  display: block;
+  min-width: 0;
+}
+
+.assignmentItem small {
+  color: #778294;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.assignmentItem strong {
+  overflow: hidden;
+  margin-top: 2px;
+  color: #2d3744;
+  font-size: 0.79rem;
+  font-weight: 730;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assignmentItem em {
+  overflow: hidden;
+  margin-top: 2px;
+  color: #7a8595;
+  font-size: 0.69rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.errorBanner {
+  margin: 0;
+  padding: 11px 13px;
+  border: 1px solid #f1caca;
+  border-radius: 11px;
+  color: #963e3e;
+  background: #fff3f3;
+  font-size: 0.82rem;
+}
+
+.stagePanel {
+  overflow: hidden;
+  min-width: 0;
+  border: 1px solid var(--job-line);
+  border-radius: 20px;
+  background: var(--job-surface);
+  box-shadow: 0 14px 38px rgba(23, 34, 48, 0.055);
+}
+
+.stageHeader {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 22px 24px;
+  border-bottom: 1px solid #e9edf1;
+  background: linear-gradient(180deg, #fff, #fafbfc);
+}
+
+.stageHeader > div {
+  min-width: 0;
+}
+
+.stageHeader p {
+  color: #a5411d;
+  font-size: 0.68rem;
+  font-weight: 780;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.stageHeader h2 {
+  margin-top: 4px;
+  color: #24303d;
+  font-size: 1.34rem;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+
+.stageHeader div > span {
+  display: block;
+  margin-top: 5px;
+  color: #748091;
+  font-size: 0.79rem;
+  line-height: 1.45;
+}
+
+.stageCount {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #526174;
+  background: #eef1f4;
+  font-size: 0.7rem;
+  font-weight: 730;
+  white-space: nowrap;
+}
+
+.stageBody {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  padding: 22px 24px 26px;
+}
+
+.customerGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
+  gap: 14px;
+}
+
+.customerCard,
+.timelineCard,
+.innerPanel,
+.approvalPanel,
+.overridePanel,
+.invoiceReady {
+  min-width: 0;
+  border: 1px solid #e3e8ed;
+  border-radius: 15px;
+  background: #fbfcfd;
+}
+
+.customerCard {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 11px;
+  align-items: center;
+  padding: 14px;
+}
+
+.customerAvatar {
+  width: 42px;
+  height: 42px;
+}
+
+.customerCard > div,
+.customerCard small,
+.customerCard strong,
+.customerCard span {
+  display: block;
+  min-width: 0;
+}
+
+.customerCard small,
+.timelineCard small {
+  color: #7b8796;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.customerCard strong {
+  color: #2d3845;
+  font-size: 0.86rem;
+  font-weight: 740;
+}
+
+.customerCard div > span {
+  overflow: hidden;
+  margin-top: 2px;
+  color: #758091;
+  font-size: 0.71rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customerCard > :global(.contact-actions) {
+  grid-column: 1 / -1;
+}
+
+.timelineCard {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+.timelineCard > div {
+  min-width: 0;
+  padding: 14px;
+  border-right: 1px solid #e6eaee;
+}
+
+.timelineCard > div:last-child {
+  border-right: 0;
+}
+
+.timelineCard strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 5px;
+  color: #374351;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+}
+
+.editSection,
+.innerPanel,
+.approvalPanel,
+.overridePanel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.editSection {
+  border-top: 1px solid #e8ecf0;
+}
+
+.subhead {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.subhead h3,
+.approvalIntro h3,
+.overridePanel h3,
+.invoiceReady h3,
+.protectedStage h3 {
+  color: #2b3643;
+  font-size: 0.98rem;
+  font-weight: 740;
+  letter-spacing: -0.015em;
+}
+
+.subhead p,
+.approvalIntro p,
+.overridePanel p,
+.invoiceReady p,
+.protectedStage p {
+  margin-top: 4px;
+  color: #748091;
+  font-size: 0.77rem;
+  line-height: 1.5;
+}
+
+.subhead > span {
+  flex: 0 0 auto;
+  color: #6d7989;
+  font-size: 0.72rem;
+  font-weight: 680;
+}
+
+.formGrid,
+.dispatchGrid {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.formGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dispatchGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.formGrid > *,
+.dispatchGrid > * {
+  min-width: 0;
+}
+
+.stageBody :global(.field) {
+  min-width: 0;
+}
+
+.stageBody :global(.field) > span:first-child {
+  color: #626f81;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.stageBody :global(input),
+.stageBody :global(select),
+.stageBody :global(textarea) {
+  min-width: 0;
+  max-width: 100%;
+  border-color: #d6dde5;
+  border-radius: 10px;
+  background-color: #fff;
+}
+
+.stageBody :global(textarea) {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.stageBody :global(input:focus),
+.stageBody :global(select:focus),
+.stageBody :global(textarea:focus) {
+  border-color: #8db9e3;
+  outline: 3px solid rgba(21, 63, 75, 0.12);
+}
+
+.stageBody :global(.segmented-control) {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.stageBody :global(.segmented-control button) {
+  min-width: 0;
+  min-height: 42px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inlineNote {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: #657386;
+  background: #f1f4f7;
+  font-size: 0.77rem;
+  line-height: 1.45;
+}
+
+.conflict {
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid #ecd59f;
+  border-radius: 11px;
+  color: #745120;
+  background: #fff8e8;
+  font-size: 0.77rem;
+}
+
+.conflict label,
+.overrideCheck {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 4px;
+  font-weight: 670;
+}
+
+.conflict input,
+.overrideCheck input {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.secondaryActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.secondaryActions :global(.button) {
+  gap: 7px;
+  min-height: 42px;
+}
+
+.photoGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.photoCard {
+  overflow: hidden;
+  min-width: 0;
+  border: 1px solid #e2e7ec;
+  border-radius: 13px;
+  background: #fff;
+}
+
+.photoCard img,
+.photoPlaceholder {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #edf1f4;
+}
+
+.photoPlaceholder {
+  display: grid;
+  place-items: center;
+  color: #7a8695;
+  font-size: 0.76rem;
+}
+
+.photoCard > div:last-child {
+  display: grid;
+  gap: 3px;
+  padding: 10px 11px;
+}
+
+.photoCard strong {
+  color: #36414f;
+  font-size: 0.77rem;
+  text-transform: capitalize;
+}
+
+.photoCard span {
+  overflow: hidden;
+  color: #7a8595;
+  font-size: 0.69rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.innerPanel,
+.approvalPanel,
+.overridePanel {
+  background: #fbfcfd;
+}
+
+.stageBody :global(.estimate-tier-grid),
+.stageBody :global(.tier-columns) {
+  min-width: 0;
+}
+
+.approvalIntro {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 11px;
+  align-items: center;
+}
+
+.approvalIntro > span {
+  width: 42px;
+  height: 42px;
+}
+
+.approvalPanel :global(.signature-status-card) {
+  margin: 0;
+  border-color: #dde4eb;
+  box-shadow: none;
+}
+
+.overridePanel {
+  border-color: #ead7aa;
+  background: #fffbf1;
+}
+
+.overrideCheck {
+  color: #6f5425;
+  font-size: 0.77rem;
+}
+
+.overrideAction,
+.quietAction {
+  min-height: 42px;
+  padding: 9px 13px;
+  border: 1px solid #d0d8e1;
+  border-radius: 10px;
+  color: #334254;
+  background: #fff;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.overrideAction {
+  justify-self: start;
+  border-color: #d9bb75;
+  color: #6d4d11;
+  background: #fff8e6;
+}
+
+.invoiceReady {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  gap: 15px;
+  align-items: center;
+  padding: 22px;
+}
+
+.invoiceReady[data-ready] {
+  border-color: #cbe5d9;
+  background: #f5fbf8;
+}
+
+.invoiceIcon {
+  width: 52px;
+  height: 52px;
+}
+
+.invoiceReady[data-ready] .invoiceIcon {
+  color: #17734f;
+  background: #e6f6ee;
+}
+
+.invoiceReady small {
+  color: #668099;
+  font-size: 0.67rem;
+  font-weight: 760;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.invoiceActions {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.protectedStage {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 13px;
+  align-items: center;
+  margin: 24px;
+  padding: 18px;
+  border: 1px solid #e2e7ec;
+  border-radius: 14px;
+  background: #f8fafb;
+}
+
+.protectedStage > span {
+  width: 46px;
+  height: 46px;
+  color: #667487;
+  background: #edf0f3;
+}
+
+.protectedStage h3,
+.protectedStage p {
+  margin: 0;
+}
+
+.stickyAction {
+  position: sticky;
+  z-index: 20;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 74px;
+  padding: 11px 12px 11px 18px;
+  border: 1px solid rgba(201, 211, 222, 0.95);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 48px rgba(21, 33, 48, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.stickyAction > div,
+.stickyAction small,
+.stickyAction strong {
+  display: block;
+  min-width: 0;
+}
+
+.stickyAction small {
+  color: #738092;
+  font-size: 0.65rem;
+  font-weight: 730;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.stickyAction strong {
+  overflow: hidden;
+  margin-top: 3px;
+  color: #374250;
+  font-size: 0.8rem;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.primaryAction {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-width: 190px;
+  min-height: 50px;
+  padding: 11px 16px;
+  border: 1px solid #2468aa;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(180deg, #337fc8, #2468aa);
+  box-shadow: 0 8px 18px rgba(21, 63, 75, 0.2);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 750;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 150ms ease, filter 150ms ease;
+}
+
+.primaryAction:hover:not(:disabled) {
+  filter: brightness(1.04);
+  box-shadow: 0 10px 22px rgba(21, 63, 75, 0.25);
+  transform: translateY(-1px);
+}
+
+.primaryAction:active:not(:disabled) {
+  box-shadow: 0 5px 12px rgba(21, 63, 75, 0.2);
+  transform: translateY(1px);
+}
+
+.primaryAction:disabled {
+  border-color: #b7c0ca;
+  color: #eef1f4;
+  background: #a8b1bc;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+@media (max-width: 1024px) {
+  .hero {
+    padding: 24px;
+  }
+
+  .assignmentStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .assignmentItem:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .dispatchGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dispatchGrid > :last-child {
+    grid-column: 1 / -1;
+  }
+
+  .stageBody :global(input[type="datetime-local"]) {
+    width: 100%;
+    min-width: 0;
+    font-size: 0.9rem;
+  }
+
+  .photoGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .page {
+    gap: 13px;
+    padding-bottom: 108px;
+  }
+
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    padding: 20px;
+    border-radius: 18px;
+  }
+
+  .heroCopy h1 {
+    font-size: clamp(1.8rem, 7vw, 2.65rem);
+  }
+
+  .headerLink {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+  }
+
+  .assignmentStrip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .assignmentItem:last-child {
+    grid-column: auto;
+  }
+
+  .assignmentItem {
+    min-height: 68px;
+  }
+
+  .stagePanel {
+    border-radius: 16px;
+  }
+
+  .stageHeader,
+  .stageBody {
+    padding: 17px;
+  }
+
+  .customerGrid,
+  .formGrid,
+  .dispatchGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dispatchGrid > :last-child {
+    grid-column: auto;
+  }
+
+  .timelineCard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .timelineCard > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .timelineCard > div:nth-child(n + 3) {
+    border-top: 1px solid #e6eaee;
+  }
+
+  .editSection,
+  .innerPanel,
+  .approvalPanel,
+  .overridePanel {
+    padding: 14px;
+  }
+
+  .stageBody :global(.segmented-control) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .invoiceReady {
+    grid-template-columns: 46px minmax(0, 1fr);
+    padding: 17px;
+  }
+
+  .invoiceReady > :last-child {
+    grid-column: 2;
+  }
+
+  .invoiceActions {
+    justify-items: start;
+  }
+
+  .invoiceIcon {
+    width: 46px;
+    height: 46px;
+  }
+
+  .stickyAction {
+    min-height: 68px;
+    padding: 9px;
+  }
+
+  .stickyAction > div {
+    display: none;
+  }
+
+  .primaryAction {
+    width: 100%;
+    min-width: 0;
+    min-height: 50px;
+  }
+}
+
+@media (max-width: 540px) {
+  .hero {
+    padding: 17px;
+  }
+
+  .heroCopy > p {
+    padding-right: 0;
+  }
+
+  .headerLink {
+    position: static;
+  }
+
+  .stageHeader {
+    display: grid;
+    gap: 10px;
+  }
+
+  .stageCount {
+    justify-self: start;
+  }
+
+  .photoGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .subhead {
+    display: grid;
+    gap: 7px;
+  }
+
+  .subhead > span {
+    justify-self: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backLink,
+  .headerLink,
+  .primaryAction {
+    transition: none;
+  }
+}

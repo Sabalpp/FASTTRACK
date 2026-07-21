@@ -1,12 +1,20 @@
 "use client";
 
-import { BriefcaseBusiness, Headset, ShieldCheck } from "lucide-react";
+import {
+  BriefcaseBusiness,
+  Headset,
+  Plus,
+  Search,
+  ShieldCheck,
+  UserRound,
+  X
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { RoleGate } from "@/components/RoleGate";
-import { Button, Card, Field, PageHeader, StatusPill } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { roleLabels, roleOptions, useAppData } from "@/lib/data-store";
 import type { Role } from "@/lib/types";
+import styles from "./users.module.css";
 
 const roleIcons = {
   owner: ShieldCheck,
@@ -19,6 +27,7 @@ export default function AdminUsersPage() {
   const { currentUser } = useAuth();
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
+  const [showAddUser, setShowAddUser] = useState(false);
   const [form, setForm] = useState({
     displayName: "",
     email: "",
@@ -28,12 +37,13 @@ export default function AdminUsersPage() {
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
-    data.createAllowedUser({
-      ...form,
-      displayName: form.displayName.trim(),
-      email: form.email.trim().toLowerCase()
-    });
+    const displayName = form.displayName.trim();
+    const email = form.email.trim().toLowerCase();
+    if (!displayName || !email) return;
+
+    data.createAllowedUser({ ...form, displayName, email });
     setForm({ displayName: "", email: "", role: "tech", active: true });
+    setShowAddUser(false);
   }
 
   const visibleUsers = useMemo(() => {
@@ -46,104 +56,167 @@ export default function AdminUsersPage() {
     });
   }, [data.allowedUsers, query, roleFilter]);
 
+  const activeCount = data.allowedUsers.filter((user) => user.active).length;
+
   return (
     <RoleGate allowed={["owner"]}>
-      <main className="page-shell users-page">
-        <PageHeader eyebrow="Owner only" title="Users" description="Control which Google accounts can access the app and what role they receive." />
-        <section className="user-role-summary-grid" aria-label="Active users by role">
-          {roleOptions.map((role) => {
-            const Icon = roleIcons[role];
-            return (
-              <Card key={role} className="user-role-card">
-                <div className="user-role-card-head">
-                  <p className="eyebrow">{roleLabels[role]}</p>
-                  <span aria-hidden="true">
-                    <Icon size={20} />
-                  </span>
-                </div>
-                <h2>{data.allowedUsers.filter((user) => user.role === role && user.active).length}</h2>
-                <p className="muted">Active users</p>
-              </Card>
-            );
-          })}
-        </section>
-        <Card className="add-user-card">
-          <p className="eyebrow">Add user</p>
-          <form className="add-user-form" onSubmit={submit}>
-            <Field label="Display name"><input required value={form.displayName} onChange={(event) => setForm((current) => ({ ...current, displayName: event.target.value }))} /></Field>
-            <Field label="Email"><input required type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} /></Field>
-            <Field label="Role">
-              <select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value as Role }))}>
+      <main className={`page-shell ${styles.page}`}>
+        <header className={styles.hero}>
+          <div>
+            <p className={styles.kicker}>Owner workspace</p>
+            <h1>Team access</h1>
+            <p className={styles.description}>Control which Google accounts can open Fast Track and what each person is allowed to do.</p>
+            <div className={styles.ownerIdentity}>
+              <span className={styles.ownerAvatar} aria-hidden="true">{initials(currentUser.displayName)}</span>
+              <span><strong>{currentUser.displayName}</strong><small>Signed in · Owner</small></span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className={showAddUser ? styles.closeAction : styles.primaryAction}
+            aria-expanded={showAddUser}
+            aria-controls="add-user-panel"
+            onClick={() => setShowAddUser((current) => !current)}
+          >
+            {showAddUser ? <X size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />}
+            {showAddUser ? "Close" : "Add user"}
+          </button>
+        </header>
+
+        {showAddUser ? (
+          <section id="add-user-panel" className={styles.addPanel} aria-labelledby="add-user-heading">
+            <div className={styles.addPanelHeading}>
+              <span aria-hidden="true"><UserRound size={20} /></span>
+              <div>
+                <h2 id="add-user-heading">Add a Google account</h2>
+                <p>The person will have access as soon as this email signs in with Google.</p>
+              </div>
+            </div>
+            <form className={styles.addForm} onSubmit={submit}>
+              <label>
+                <span>Person’s name</span>
+                <input
+                  required
+                  autoComplete="name"
+                  value={form.displayName}
+                  onChange={(event) => setForm((current) => ({ ...current, displayName: event.target.value }))}
+                  placeholder="e.g. Carlos Rivera"
+                />
+              </label>
+              <label>
+                <span>Google account</span>
+                <input
+                  required
+                  type="email"
+                  autoComplete="email"
+                  value={form.email}
+                  onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                  placeholder="name@company.com"
+                />
+              </label>
+              <label>
+                <span>Role</span>
+                <select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value as Role }))}>
+                  {roleOptions.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}
+                </select>
+              </label>
+              <button type="submit" className={styles.addSubmit}>Add to team</button>
+            </form>
+          </section>
+        ) : null}
+
+        <section className={styles.accessPanel} aria-labelledby="team-heading">
+          <div className={styles.panelHeading}>
+            <div>
+              <p className={styles.sectionLabel}>Google access</p>
+              <h2 id="team-heading">People</h2>
+              <p>{activeCount} active of {data.allowedUsers.length} total</p>
+            </div>
+            <span className={styles.resultCount} aria-live="polite">{visibleUsers.length} shown</span>
+          </div>
+
+          <div className={styles.toolbar}>
+            <label className={styles.searchField}>
+              <Search size={17} aria-hidden="true" />
+              <span className={styles.srOnly}>Search people</span>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search name or Google account"
+              />
+            </label>
+            <label className={styles.filterField}>
+              <span>Role</span>
+              <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as Role | "all")}>
+                <option value="all">All roles</option>
                 {roleOptions.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}
               </select>
-            </Field>
-            <Button type="submit">Add to allowlist</Button>
-          </form>
-        </Card>
-        <Card className="access-management-card">
-          <div className="section-head access-management-head">
-            <div>
-              <p className="eyebrow">Allowlist</p>
-              <h2>Team access</h2>
-            </div>
-            <span className="muted small">{visibleUsers.length} shown</span>
-          </div>
-          <div className="access-toolbar">
-            <label className="user-search-field">
-              <span>Search users</span>
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, email, role, status" />
             </label>
-            <div className="role-filter-tabs" aria-label="Filter users by role">
-              <button type="button" className={roleFilter === "all" ? "active" : ""} onClick={() => setRoleFilter("all")}>All</button>
-              {roleOptions.map((role) => (
-                <button key={role} type="button" className={roleFilter === role ? "active" : ""} onClick={() => setRoleFilter(role)}>
-                  {roleLabels[role]}
-                </button>
-              ))}
-            </div>
           </div>
-          <div className="user-access-list" aria-label="Allowed users">
+
+          <div className={styles.userTable} role="table" aria-label="Team access">
+            <div className={styles.tableHeader} role="row">
+              <span role="columnheader">Person</span>
+              <span role="columnheader">Google account</span>
+              <span role="columnheader">Role</span>
+              <span role="columnheader">Access</span>
+            </div>
+
             {visibleUsers.length === 0 ? (
-              <div className="user-access-empty">No users match this filter.</div>
+              <div className={styles.emptyState}>
+                <Search size={20} aria-hidden="true" />
+                <strong>No people match this search</strong>
+                <p>Try another name, email, or role.</p>
+              </div>
             ) : visibleUsers.map((user) => {
               const isSelf = isCurrentUser(user, currentUser.email);
+              const RoleIcon = roleIcons[user.role];
 
               return (
-                <div key={user.id} className="user-access-row">
-                  <div className="user-access-identity">
-                    <strong>{user.displayName}</strong>
-                    <span>{user.email}</span>
-                    {isSelf ? <small>Current signed-in owner</small> : null}
-                  </div>
-                  <label className="field compact-user-role">
-                    <span>Role</span>
+                <div key={user.id} className={styles.userRow} role="row">
+                  <span className={styles.personCell} role="cell" data-label="Person">
+                    <span className={styles.personAvatar} aria-hidden="true"><RoleIcon size={17} /></span>
+                    <span>
+                      <strong>{user.displayName}</strong>
+                      <small>{isSelf ? "You · signed-in owner" : roleLabels[user.role]}</small>
+                    </span>
+                  </span>
+
+                  <span className={styles.accountCell} role="cell" data-label="Google account">{user.email}</span>
+
+                  <label className={styles.roleCell} data-label="Role">
+                    <span className={styles.srOnly}>Role for {user.displayName}</span>
                     <select
                       value={user.role}
                       disabled={isSelf}
+                      aria-label={`Role for ${user.displayName}`}
                       onChange={(event) => data.updateAllowedUser(user.id, { role: event.target.value as Role })}
                     >
                       {roleOptions.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}
                     </select>
                   </label>
-                  <div className="user-access-status">
-                    <StatusPill tone={user.active ? "good" : "bad"}>{user.active ? "Active" : "Inactive"}</StatusPill>
+
+                  <span className={styles.accessCell} role="cell" data-label="Access">
                     <button
                       type="button"
                       role="switch"
+                      aria-label={`${user.active ? "Deactivate" : "Activate"} access for ${user.displayName}`}
                       aria-checked={user.active}
-                      className={`access-toggle ${user.active ? "on" : ""}`}
+                      className={`${styles.accessSwitch} ${user.active ? styles.accessOn : styles.accessOff}`}
                       disabled={isSelf}
+                      title={isSelf ? "Your signed-in owner access is protected" : undefined}
                       onClick={() => data.updateAllowedUser(user.id, { active: !user.active })}
                     >
-                      <span aria-hidden="true" />
-                      {user.active ? "On" : "Off"}
+                      <span className={styles.switchTrack} aria-hidden="true"><span /></span>
+                      <span>{user.active ? "Active" : "Inactive"}</span>
                     </button>
-                  </div>
+                    {isSelf ? <small>Protected</small> : null}
+                  </span>
                 </div>
               );
             })}
           </div>
-        </Card>
+        </section>
       </main>
     </RoleGate>
   );
@@ -151,4 +224,13 @@ export default function AdminUsersPage() {
 
 function isCurrentUser(user: { id: string; email: string }, currentEmail: string) {
   return user.email.toLowerCase() === currentEmail.toLowerCase();
+}
+
+function initials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "FT";
 }

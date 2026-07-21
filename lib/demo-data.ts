@@ -3,6 +3,18 @@ import type { AppState } from "@/lib/types";
 
 const now = "2026-06-02T09:00:00.000Z";
 
+// Keep the sample dispatch board useful instead of letting every open demo job
+// age into an arrival exception. UTC keeps server and browser rendering aligned.
+const demoToday = new Date();
+demoToday.setUTCHours(0, 0, 0, 0);
+
+function demoJobTime(dayOffset: number, hour: number, minute = 0) {
+  const value = new Date(demoToday);
+  value.setUTCDate(value.getUTCDate() + dayOffset);
+  value.setUTCHours(hour, minute, 0, 0);
+  return value.toISOString();
+}
+
 export const demoState: AppState = {
   allowedUsers: [
     {
@@ -115,9 +127,9 @@ export const demoState: AppState = {
       customerId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
       assignedTechId: "22222222-2222-2222-2222-222222222222",
       status: "in_progress",
-      scheduledAt: "2026-06-02T14:00:00.000Z",
-      arrivalWindowEndAt: "2026-06-02T17:00:00.000Z",
-      arrivedAt: "2026-06-02T13:52:00.000Z",
+      scheduledAt: demoJobTime(0, 14),
+      arrivalWindowEndAt: demoJobTime(0, 17),
+      arrivedAt: demoJobTime(0, 13, 52),
       serviceAddress: "421 Maple Ridge Dr, Ashburn, VA 20147",
       description: "No cooling upstairs. Customer reports unit runs constantly.",
       notes: "Outdoor unit has weak capacitor reading. Need options for repair vs replacement.",
@@ -128,8 +140,8 @@ export const demoState: AppState = {
       customerId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
       assignedTechId: "22222222-2222-2222-2222-222222222222",
       status: "scheduled",
-      scheduledAt: "2026-06-02T18:30:00.000Z",
-      arrivalWindowEndAt: "2026-06-02T21:30:00.000Z",
+      scheduledAt: demoJobTime(0, 18, 30),
+      arrivalWindowEndAt: demoJobTime(0, 21, 30),
       serviceAddress: "88 Market Station Blvd Unit 302, Leesburg, VA 20176",
       description: "Water heater not heating consistently.",
       notes: "Bring compact tool bag for closet access.",
@@ -140,8 +152,8 @@ export const demoState: AppState = {
       customerId: "cccccccc-cccc-cccc-cccc-cccccccccccc",
       assignedTechId: "33333333-3333-3333-3333-333333333333",
       status: "scheduled",
-      scheduledAt: "2026-06-03T13:00:00.000Z",
-      arrivalWindowEndAt: "2026-06-03T16:00:00.000Z",
+      scheduledAt: demoJobTime(1, 13),
+      arrivalWindowEndAt: demoJobTime(1, 16),
       serviceAddress: "209 Old Courthouse Rd, Vienna, VA 22182",
       description: "Annual HVAC inspection and thermostat upgrade quote.",
       notes: "Customer asked for good/better/best thermostat options.",
@@ -152,14 +164,14 @@ export const demoState: AppState = {
       customerId: "dddddddd-dddd-dddd-dddd-dddddddddddd",
       assignedTechId: "33333333-3333-3333-3333-333333333333",
       status: "complete",
-      scheduledAt: "2026-06-01T15:00:00.000Z",
-      arrivalWindowEndAt: "2026-06-01T18:00:00.000Z",
-      arrivedAt: "2026-06-01T15:08:00.000Z",
+      scheduledAt: demoJobTime(-1, 15),
+      arrivalWindowEndAt: demoJobTime(-1, 18),
+      arrivedAt: demoJobTime(-1, 15, 8),
       serviceAddress: "17 Cedar Branch Ct, Reston, VA 20191",
       description: "Drain line clearing and AC inspection.",
       notes: "Drain cleared. Recommend condensate safety switch.",
       createdAt: "2026-05-31T18:00:00.000Z",
-      completedAt: "2026-06-01T16:20:00.000Z"
+      completedAt: demoJobTime(-1, 16, 20)
     }
   ],
   jobPhotos: [

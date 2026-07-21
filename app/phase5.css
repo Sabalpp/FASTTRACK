@@ -1,0 +1,785 @@
+/*
+ * Fast Track product UI — Phase 5
+ *
+ * This layer is deliberately isolated from the historical stylesheet. New
+ * route work uses scoped modules while this file owns the application shell,
+ * shared primitives, responsive behavior, and interaction feedback. Once all
+ * routes have moved to the new system, the legacy declarations can be retired
+ * without another visual rewrite.
+ */
+
+:root {
+  --ft-canvas: #f4f6f8;
+  --ft-canvas-strong: #edf1f4;
+  --ft-surface: #ffffff;
+  --ft-surface-muted: #f8fafb;
+  --ft-ink: #17212b;
+  --ft-ink-soft: #3f4d5a;
+  --ft-muted: #6c7885;
+  --ft-border: #dfe5ea;
+  --ft-border-strong: #cbd4dc;
+  --ft-brand: #153f4b;
+  --ft-brand-strong: #0f3039;
+  --ft-brand-soft: #e7f0f1;
+  --ft-accent: #c45120;
+  --ft-accent-soft: #fff0e8;
+  --ft-success: #24734a;
+  --ft-success-soft: #eaf6ef;
+  --ft-warning: #93621d;
+  --ft-warning-soft: #fff7e4;
+  --ft-danger: #a53b3b;
+  --ft-danger-soft: #fff0ef;
+  --ft-info: #356b91;
+  --ft-info-soft: #ecf5fb;
+  --ft-radius-sm: 9px;
+  --ft-radius-md: 13px;
+  --ft-radius-lg: 18px;
+  --ft-shadow-sm: 0 1px 2px rgba(20, 31, 43, 0.04), 0 6px 18px rgba(20, 31, 43, 0.035);
+  --ft-shadow-md: 0 2px 5px rgba(20, 31, 43, 0.05), 0 18px 42px rgba(20, 31, 43, 0.07);
+  --ft-focus: 0 0 0 3px rgba(21, 63, 75, 0.16);
+  --ft-ease: cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+html {
+  background: var(--ft-canvas);
+}
+
+body {
+  min-width: 320px;
+  background: var(--ft-canvas);
+  color: var(--ft-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  font-weight: 450;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.ft5-app {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 15% -10%, rgba(21, 63, 75, 0.055), transparent 28rem),
+    var(--ft-canvas);
+  color: var(--ft-ink);
+}
+
+.ft5-app *,
+.ft5-auth * {
+  box-sizing: border-box;
+}
+
+.ft5-app :where(button, a, input, select, textarea, summary) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ft5-app :where(button, a, input, select, textarea, summary):focus-visible {
+  outline: none;
+  box-shadow: var(--ft-focus);
+}
+
+.ft5-app :where(button, a, summary) {
+  touch-action: manipulation;
+}
+
+/* Application shell ------------------------------------------------------- */
+
+.ft5-app .ft5-header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 100;
+  display: grid;
+  grid-template-columns: minmax(170px, 220px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  min-height: 68px;
+  padding: 9px clamp(16px, 3vw, 36px);
+  border-block-end: 1px solid rgba(203, 212, 220, 0.9);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 1px 0 rgba(23, 33, 43, 0.02);
+  backdrop-filter: saturate(160%) blur(18px);
+}
+
+.ft5-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border-radius: var(--ft-radius-sm);
+  color: var(--ft-ink);
+}
+
+.ft5-brand-mark,
+.ft5-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: var(--ft-brand);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 760;
+  letter-spacing: 0.04em;
+}
+
+.ft5-brand-copy,
+.ft5-account-copy,
+.ft5-account-context span {
+  display: grid;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.ft5-brand-copy strong {
+  font-size: 0.95rem;
+  font-weight: 720;
+  letter-spacing: -0.015em;
+}
+
+.ft5-brand-copy small,
+.ft5-account-copy small,
+.ft5-account-context small {
+  margin-block-start: 3px;
+  color: var(--ft-muted);
+  font-size: 0.72rem;
+  font-weight: 520;
+}
+
+.ft5-app .ft5-main-nav {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ft5-main-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.ft5-app .ft5-main-nav a {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 9px 13px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--ft-muted);
+  font-size: 0.88rem;
+  font-weight: 590;
+  transition: color 140ms var(--ft-ease), background 140ms var(--ft-ease), border-color 140ms var(--ft-ease), transform 140ms var(--ft-ease);
+}
+
+.ft5-app .ft5-main-nav a:hover {
+  border-color: var(--ft-border);
+  background: var(--ft-surface-muted);
+  color: var(--ft-ink);
+}
+
+.ft5-app .ft5-main-nav a:active {
+  transform: scale(0.98);
+}
+
+.ft5-app .ft5-main-nav a.active {
+  border-color: #d8e4e6;
+  background: var(--ft-brand-soft);
+  color: var(--ft-brand-strong);
+}
+
+.ft5-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  min-width: 0;
+}
+
+.ft5-account-menu {
+  position: relative;
+}
+
+.ft5-account-menu > summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 182px;
+  min-height: 48px;
+  padding: 5px 8px 5px 5px;
+  border: 1px solid var(--ft-border);
+  border-radius: 13px;
+  background: var(--ft-surface);
+  cursor: pointer;
+  list-style: none;
+  transition: border-color 140ms var(--ft-ease), box-shadow 140ms var(--ft-ease), transform 140ms var(--ft-ease);
+}
+
+.ft5-account-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ft5-account-menu > summary:hover {
+  border-color: var(--ft-border-strong);
+  box-shadow: var(--ft-shadow-sm);
+}
+
+.ft5-account-menu[open] > summary {
+  border-color: var(--ft-brand);
+  box-shadow: var(--ft-focus);
+}
+
+.ft5-account-menu[open] > summary > svg {
+  transform: rotate(180deg);
+}
+
+.ft5-account-menu > summary > svg {
+  color: var(--ft-muted);
+  transition: transform 150ms var(--ft-ease);
+}
+
+.ft5-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--ft-accent-soft);
+  color: var(--ft-accent);
+  font-size: 0.82rem;
+}
+
+.ft5-account-copy strong {
+  max-width: 126px;
+  overflow: hidden;
+  font-size: 0.82rem;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ft5-account-popover {
+  position: absolute;
+  inset-block-start: calc(100% + 8px);
+  inset-inline-end: 0;
+  display: grid;
+  width: min(288px, calc(100vw - 24px));
+  padding: 7px;
+  border: 1px solid var(--ft-border);
+  border-radius: 14px;
+  background: var(--ft-surface);
+  box-shadow: var(--ft-shadow-md);
+}
+
+.ft5-account-context {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin-block-end: 5px;
+  padding: 10px;
+  border-block-end: 1px solid var(--ft-border);
+}
+
+.ft5-account-context > svg {
+  color: var(--ft-brand);
+}
+
+.ft5-demo-role {
+  display: grid;
+  gap: 6px;
+  margin-block-end: 5px;
+  padding: 9px 10px 11px;
+  border-block-end: 1px solid var(--ft-border);
+}
+
+.ft5-demo-role > span {
+  color: var(--ft-muted);
+  font-size: 0.7rem;
+  font-weight: 680;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ft5-demo-role .role-switcher,
+.ft5-demo-role .role-switcher-tabs {
+  width: 100%;
+}
+
+.ft5-demo-role .role-switcher-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ft5-demo-role .role-switcher-tabs button {
+  min-width: 0;
+  min-height: 38px;
+  padding-inline: 5px;
+  font-size: 0.72rem;
+}
+
+.ft5-account-context strong,
+.ft5-account-context small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ft5-account-popover > a,
+.ft5-account-popover > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 43px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ft-ink-soft);
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 570;
+  text-align: left;
+}
+
+.ft5-account-popover > :where(a, button):hover {
+  background: var(--ft-surface-muted);
+  color: var(--ft-ink);
+}
+
+/* Shared layout and typography -------------------------------------------- */
+
+.ft5-app .page-shell {
+  width: min(100%, 1480px);
+  margin-inline: auto;
+  padding: clamp(22px, 3.2vw, 46px) clamp(16px, 3vw, 40px) 64px;
+}
+
+.ft5-app .page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-block-end: 24px;
+}
+
+.ft5-app .page-header > div:first-child {
+  min-width: 0;
+  max-width: 780px;
+}
+
+.ft5-app :where(h1, h2, h3) {
+  color: var(--ft-ink);
+  font-weight: 690;
+  text-wrap: balance;
+}
+
+.ft5-app h1 {
+  margin: 0;
+  font-size: clamp(1.75rem, 2.8vw, 2.65rem);
+  line-height: 1.08;
+  letter-spacing: -0.037em;
+}
+
+.ft5-app h2 {
+  font-size: clamp(1.1rem, 1.7vw, 1.4rem);
+  line-height: 1.22;
+  letter-spacing: -0.022em;
+}
+
+.ft5-app h3 {
+  font-size: 1rem;
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+}
+
+.ft5-app .page-header p,
+.ft5-app .muted,
+.ft5-app .subtle-copy {
+  color: var(--ft-muted);
+}
+
+.ft5-app .page-header p {
+  max-width: 680px;
+  margin: 8px 0 0;
+  font-size: 0.94rem;
+}
+
+.ft5-app .eyebrow {
+  margin: 0 0 6px;
+  color: var(--ft-accent);
+  font-size: 0.71rem;
+  font-weight: 720;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.ft5-app :where(.money, .metric-value, .approved-total-readout strong) {
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.025em;
+}
+
+/* Shared surfaces and controls -------------------------------------------- */
+
+.ft5-app .card {
+  border: 1px solid var(--ft-border);
+  border-radius: var(--ft-radius-lg);
+  background: var(--ft-surface);
+  box-shadow: var(--ft-shadow-sm);
+  padding: clamp(17px, 2vw, 24px);
+}
+
+.ft5-app .section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-block-end: 18px;
+}
+
+.ft5-app .section-head :where(h2, p) {
+  margin-block-end: 0;
+}
+
+.ft5-app :where(.button, .mini-button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 15px;
+  border: 1px solid var(--ft-brand);
+  border-radius: 10px;
+  background: var(--ft-brand);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 650;
+  line-height: 1.15;
+  box-shadow: 0 1px 1px rgba(15, 48, 57, 0.12);
+  transition: transform 130ms var(--ft-ease), box-shadow 130ms var(--ft-ease), background 130ms var(--ft-ease), border-color 130ms var(--ft-ease);
+}
+
+.ft5-app :where(.button, .mini-button):hover:not(:disabled) {
+  border-color: var(--ft-brand-strong);
+  background: var(--ft-brand-strong);
+  box-shadow: 0 7px 18px rgba(15, 48, 57, 0.16);
+  transform: translateY(-1px);
+}
+
+.ft5-app :where(.button, .mini-button):active:not(:disabled) {
+  box-shadow: 0 1px 2px rgba(15, 48, 57, 0.12);
+  transform: translateY(0) scale(0.985);
+}
+
+.ft5-app .button-secondary {
+  border-color: var(--ft-border-strong);
+  background: var(--ft-surface);
+  color: var(--ft-ink-soft);
+  box-shadow: none;
+}
+
+.ft5-app .button-secondary:hover:not(:disabled) {
+  border-color: var(--ft-brand);
+  background: var(--ft-brand-soft);
+  color: var(--ft-brand-strong);
+}
+
+.ft5-app .button-danger {
+  border-color: var(--ft-danger);
+  background: var(--ft-danger);
+}
+
+.ft5-app :where(.button, .mini-button):disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
+}
+
+.ft5-app :where(input, select, textarea) {
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--ft-border-strong);
+  border-radius: 10px;
+  background: var(--ft-surface);
+  color: var(--ft-ink);
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  font-weight: 480;
+  transition: border-color 130ms var(--ft-ease), box-shadow 130ms var(--ft-ease), background 130ms var(--ft-ease);
+}
+
+.ft5-app :where(input, textarea)::placeholder {
+  color: #919ca6;
+}
+
+.ft5-app :where(input, select, textarea):hover:not(:disabled) {
+  border-color: #aebac4;
+}
+
+.ft5-app :where(input, select, textarea):focus {
+  border-color: var(--ft-brand);
+  box-shadow: var(--ft-focus);
+}
+
+.ft5-app :where(input, select, textarea):disabled {
+  background: var(--ft-surface-muted);
+  color: var(--ft-muted);
+}
+
+.ft5-app .field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.ft5-app .field > span:first-child {
+  color: var(--ft-ink-soft);
+  font-size: 0.8rem;
+  font-weight: 640;
+}
+
+.ft5-app :where(.two-column, .three-column) {
+  align-items: start;
+}
+
+.ft5-app :where(.two-column, .three-column) > * {
+  min-width: 0;
+}
+
+.ft5-app .two-column {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ft5-app .pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: fit-content;
+  min-height: 27px;
+  padding: 4px 9px;
+  border: 1px solid var(--ft-border);
+  border-radius: 999px;
+  background: var(--ft-surface-muted);
+  color: var(--ft-ink-soft);
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.ft5-app .pill-good {
+  border-color: #cbe4d5;
+  background: var(--ft-success-soft);
+  color: var(--ft-success);
+}
+
+.ft5-app .pill-warn {
+  border-color: #ead9af;
+  background: var(--ft-warning-soft);
+  color: var(--ft-warning);
+}
+
+.ft5-app .pill-bad {
+  border-color: #eccdca;
+  background: var(--ft-danger-soft);
+  color: var(--ft-danger);
+}
+
+.ft5-app .pill-info {
+  border-color: #cadeec;
+  background: var(--ft-info-soft);
+  color: var(--ft-info);
+}
+
+.ft5-app :where(.success-message, .field-error, .inline-warning) {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.84rem;
+  font-weight: 560;
+}
+
+.ft5-app .success-message {
+  border: 1px solid #cbe4d5;
+  background: var(--ft-success-soft);
+  color: var(--ft-success);
+}
+
+.ft5-app .field-error {
+  border: 1px solid #eccdca;
+  background: var(--ft-danger-soft);
+  color: var(--ft-danger);
+}
+
+.ft5-app .inline-warning {
+  border: 1px solid #ead9af;
+  background: var(--ft-warning-soft);
+  color: var(--ft-warning);
+}
+
+.ft5-app .empty-state {
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+  padding: 26px;
+  border: 1px dashed var(--ft-border-strong);
+  border-radius: var(--ft-radius-md);
+  background: var(--ft-surface-muted);
+  color: var(--ft-muted);
+}
+
+.ft5-app .empty-state :where(strong, p) {
+  margin: 0;
+}
+
+/* Existing utility surfaces receive the same feedback language. */
+.ft5-app :where(.record-row, .list-card, .quick-action-card, .dashboard-section-card, .contact-action, .part-card, .photo-card, .tier-card, .estimate-choice) {
+  border-radius: var(--ft-radius-md);
+  transition: transform 140ms var(--ft-ease), border-color 140ms var(--ft-ease), box-shadow 140ms var(--ft-ease), background 140ms var(--ft-ease);
+}
+
+.ft5-app :where(.record-row, .list-card, .quick-action-card, .dashboard-section-card, .contact-action, .part-card, .photo-card, .tier-card, .estimate-choice):hover {
+  border-color: var(--ft-border-strong);
+  box-shadow: var(--ft-shadow-sm);
+  transform: translateY(-1px);
+}
+
+.ft5-app :where(.record-row, .list-card, .quick-action-card, .dashboard-section-card, .contact-action, .part-card, .photo-card, .tier-card, .estimate-choice):active {
+  transform: translateY(0) scale(0.994);
+}
+
+.ft5-app .address-autocomplete,
+.ft5-app .address-autocomplete > input {
+  min-width: 0;
+}
+
+.ft5-app .address-suggestions {
+  overflow: hidden;
+  border: 1px solid var(--ft-border);
+  border-radius: 12px;
+  background: var(--ft-surface);
+  box-shadow: var(--ft-shadow-md);
+}
+
+.ft5-app .address-suggestions button {
+  min-height: 50px;
+  border-radius: 0;
+}
+
+/* Responsive shell and global safeguards --------------------------------- */
+
+@media (max-width: 1080px) {
+  .ft5-app .ft5-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
+  .ft5-brand-copy {
+    display: none;
+  }
+
+  .ft5-app .ft5-main-nav {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 900px) {
+  .ft5-app .ft5-header {
+    min-height: 64px;
+    padding-inline: 12px;
+  }
+
+  .ft5-app .ft5-main-nav a {
+    min-height: 46px;
+    padding-inline: 11px;
+  }
+
+  .ft5-account-menu > summary {
+    min-width: 48px;
+    grid-template-columns: auto auto;
+  }
+
+  .ft5-account-copy {
+    display: none;
+  }
+
+  .ft5-app .page-shell {
+    padding-block-start: 24px;
+  }
+
+  .ft5-app :where(.two-column, .three-column) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ft5-app input[type="datetime-local"] {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 680px) {
+  .ft5-app .ft5-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
+  .ft5-brand-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .ft5-app .ft5-main-nav a {
+    width: 46px;
+    padding-inline: 0;
+  }
+
+  .ft5-app .ft5-main-nav a span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .ft5-app .page-header,
+  .ft5-app .section-head {
+    display: grid;
+    align-items: start;
+  }
+
+  .ft5-app .page-action,
+  .ft5-app .page-action .button {
+    width: 100%;
+  }
+
+  .ft5-app .page-shell {
+    padding-inline: 12px;
+    padding-block-end: 88px;
+  }
+}
+
+@media (pointer: coarse) {
+  .ft5-app :where(.button, .mini-button, .ft5-account-popover > a, .ft5-account-popover > button) {
+    min-height: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ft5-app *,
+  .ft5-app *::before,
+  .ft5-app *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

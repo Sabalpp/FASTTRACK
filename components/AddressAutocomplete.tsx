@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 type AddressSelection = {
   formatted: string;
@@ -96,11 +96,11 @@ type GoogleMapsApi = {
   };
 };
 
-const DMV_BOUNDS = {
-  north: 39.35,
-  south: 37.85,
-  east: -76.55,
-  west: -78.75
+const NOVA_BOUNDS = {
+  north: 39.18,
+  south: 38.48,
+  east: -76.86,
+  west: -77.92
 };
 
 declare global {
@@ -131,6 +131,7 @@ export function AddressAutocomplete({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const listboxId = useId();
   const sessionToken = useMemo(
     () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now())),
     []
@@ -219,11 +220,23 @@ export function AddressAutocomplete({
         }}
         onBlur={() => window.setTimeout(() => setOpen(false), 140)}
         autoComplete="street-address"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={provider !== "manual" && open && suggestions.length > 0}
+        aria-controls={provider !== "manual" && suggestions.length > 0 ? listboxId : undefined}
+        aria-busy={busy}
       />
       {provider !== "manual" && open && suggestions.length > 0 ? (
-        <div className="address-suggestions" role="listbox">
+        <div className="address-suggestions" id={listboxId} role="listbox" aria-label="Suggested addresses">
           {suggestions.map((suggestion) => (
-            <button key={suggestion.id} type="button" onMouseDown={() => void selectSuggestion(suggestion)}>
+            <button
+              key={suggestion.id}
+              type="button"
+              role="option"
+              aria-selected="false"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => void selectSuggestion(suggestion)}
+            >
               <strong>{suggestion.name}</strong>
               <span>{suggestion.secondary}</span>
             </button>
@@ -242,7 +255,7 @@ async function suggestGoogleAddresses(apiKey: string, query: string): Promise<Su
     service.getPlacePredictions(
       {
         input: query,
-        bounds: DMV_BOUNDS,
+        bounds: NOVA_BOUNDS,
         componentRestrictions: { country: "us" },
         types: ["address"]
       },

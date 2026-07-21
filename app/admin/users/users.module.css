@@ -1,0 +1,610 @@
+.page {
+  display: grid;
+  gap: 20px;
+  color: #19222d;
+}
+
+.hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 6px 2px 2px;
+}
+
+.kicker,
+.sectionLabel {
+  margin: 0 0 5px;
+  color: #a5411d;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 0;
+  color: #18212c;
+  font-size: clamp(1.8rem, 3.3vw, 2.65rem);
+  font-weight: 720;
+  letter-spacing: -0.045em;
+  line-height: 1.04;
+}
+
+.description {
+  max-width: 620px;
+  margin: 10px 0 0;
+  color: #6d7b88;
+  font-size: 0.88rem;
+  line-height: 1.52;
+}
+
+.ownerIdentity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.ownerIdentity > span:last-child {
+  display: grid;
+  gap: 1px;
+}
+
+.ownerIdentity strong {
+  color: #263646;
+  font-size: 0.86rem;
+  font-weight: 690;
+}
+
+.ownerIdentity small {
+  color: #72808c;
+  font-size: 0.74rem;
+}
+
+.ownerAvatar,
+.personAvatar,
+.addPanelHeading > span {
+  display: grid;
+  place-items: center;
+  border: 1px solid #d8e0e8;
+  background: #f2f5f7;
+  color: #294050;
+}
+
+.ownerAvatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 760;
+}
+
+.primaryAction,
+.closeAction,
+.addSubmit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 9px;
+  background: #263846;
+  box-shadow: 0 5px 14px rgba(20, 36, 49, 0.14);
+  color: #fff;
+  padding: 0 17px;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 690;
+  cursor: pointer;
+  transition: transform 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.closeAction {
+  border: 1px solid #cdd6dd;
+  background: #fff;
+  box-shadow: none;
+  color: #344a5a;
+}
+
+.primaryAction:hover,
+.primaryAction:focus-visible,
+.addSubmit:hover,
+.addSubmit:focus-visible {
+  background: #182a38;
+  box-shadow: 0 8px 20px rgba(20, 36, 49, 0.2);
+  transform: translateY(-1px);
+}
+
+.closeAction:hover,
+.closeAction:focus-visible {
+  border-color: #aab7c1;
+  background: #f7f9fa;
+  box-shadow: none;
+  transform: translateY(-1px);
+}
+
+.primaryAction:active,
+.closeAction:active,
+.addSubmit:active {
+  transform: translateY(0);
+}
+
+.addPanel,
+.accessPanel {
+  border: 1px solid #dfe5ea;
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(17, 31, 43, 0.035);
+}
+
+.addPanel {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  animation: reveal 170ms ease-out;
+}
+
+.addPanelHeading {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.addPanelHeading > span {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+}
+
+.addPanelHeading h2,
+.panelHeading h2 {
+  margin: 0;
+  color: #18212c;
+  font-size: 1.18rem;
+  font-weight: 710;
+  letter-spacing: -0.025em;
+}
+
+.addPanelHeading p,
+.panelHeading p:not(.sectionLabel) {
+  margin: 4px 0 0;
+  color: #708090;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.addForm {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(220px, 1.25fr) minmax(150px, 0.65fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.addForm label,
+.filterField {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #667582;
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.addForm input,
+.addForm select,
+.filterField select,
+.searchField input,
+.roleCell select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid #ccd6dd;
+  border-radius: 8px;
+  background: #fff;
+  color: #263846;
+  padding: 0 11px;
+  font: inherit;
+  font-size: 0.82rem;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.addForm input:focus,
+.addForm select:focus,
+.filterField select:focus,
+.searchField:focus-within,
+.roleCell select:focus {
+  border-color: #7e94a4;
+  box-shadow: 0 0 0 3px rgba(56, 90, 112, 0.11);
+}
+
+.addSubmit {
+  min-width: 116px;
+}
+
+.accessPanel {
+  padding: 20px;
+}
+
+.panelHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.resultCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  border: 1px solid #dce3e8;
+  border-radius: 999px;
+  background: #f7f9fa;
+  color: #60717e;
+  padding: 4px 10px;
+  font-size: 0.71rem;
+  font-weight: 660;
+  white-space: nowrap;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(150px, 190px);
+  gap: 12px;
+  align-items: end;
+  margin-top: 18px;
+}
+
+.searchField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid #ccd6dd;
+  border-radius: 8px;
+  background: #fff;
+  color: #75848f;
+  padding: 0 11px;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.searchField input {
+  min-height: 40px;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.searchField input:focus {
+  box-shadow: none;
+}
+
+.userTable {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid #e3e8ec;
+  border-radius: 10px;
+}
+
+.tableHeader,
+.userRow {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.05fr) minmax(220px, 1.3fr) minmax(145px, 0.65fr) minmax(118px, 0.55fr);
+  gap: 16px;
+  align-items: center;
+}
+
+.tableHeader {
+  min-height: 40px;
+  background: #f7f9fa;
+  color: #6f7d89;
+  padding: 0 14px;
+  font-size: 0.68rem;
+  font-weight: 680;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.userRow {
+  min-height: 72px;
+  border-top: 1px solid #e8ecef;
+  background: #fff;
+  padding: 11px 14px;
+  transition: background 140ms ease;
+}
+
+.userRow:hover {
+  background: #fafbfc;
+}
+
+.personCell {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.personAvatar {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+}
+
+.personCell > span:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.personCell strong {
+  overflow: hidden;
+  color: #22323f;
+  font-size: 0.84rem;
+  font-weight: 690;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personCell small,
+.accessCell small {
+  color: #74828f;
+  font-size: 0.7rem;
+}
+
+.accountCell {
+  overflow: hidden;
+  color: #566977;
+  font-size: 0.79rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roleCell {
+  min-width: 0;
+}
+
+.roleCell select {
+  min-height: 40px;
+  background: #fbfcfc;
+  font-size: 0.78rem;
+}
+
+.roleCell select:disabled {
+  border-color: transparent;
+  background: #f2f5f7;
+  color: #4f606d;
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.accessCell {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+}
+
+.accessSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 102px;
+  min-height: 40px;
+  border: 1px solid #d4dce2;
+  border-radius: 8px;
+  background: #fff;
+  color: #566875;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 660;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.accessSwitch:hover:not(:disabled),
+.accessSwitch:focus-visible:not(:disabled) {
+  border-color: #9caeba;
+  box-shadow: 0 0 0 3px rgba(56, 90, 112, 0.1);
+}
+
+.switchTrack {
+  position: relative;
+  display: block;
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: #c4ced5;
+  transition: background 150ms ease;
+}
+
+.switchTrack > span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(24, 40, 52, 0.22);
+  transition: transform 150ms ease;
+}
+
+.accessOn {
+  border-color: #c8dacf;
+  background: #f4f8f5;
+  color: #39634a;
+}
+
+.accessOn .switchTrack {
+  background: #56856a;
+}
+
+.accessOn .switchTrack > span {
+  transform: translateX(12px);
+}
+
+.accessOff {
+  color: #697985;
+}
+
+.accessSwitch:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.emptyState {
+  display: grid;
+  place-items: center;
+  min-height: 170px;
+  color: #788692;
+  padding: 24px;
+  text-align: center;
+}
+
+.emptyState strong {
+  margin-top: 8px;
+  color: #344754;
+  font-size: 0.86rem;
+}
+
+.emptyState p {
+  margin: 3px 0 0;
+  font-size: 0.76rem;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 900px) {
+  .addForm {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .addSubmit {
+    width: 100%;
+  }
+
+  .tableHeader,
+  .userRow {
+    grid-template-columns: minmax(150px, 1fr) minmax(195px, 1.2fr) minmax(125px, 0.65fr) 108px;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 720px) {
+  .hero,
+  .panelHeading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .primaryAction {
+    width: 100%;
+  }
+
+  .closeAction {
+    width: 100%;
+  }
+
+  .addPanel,
+  .accessPanel {
+    padding: 16px;
+  }
+
+  .addForm,
+  .toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .tableHeader {
+    display: none;
+  }
+
+  .userTable {
+    display: grid;
+    gap: 9px;
+    overflow: visible;
+    border: 0;
+  }
+
+  .userRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(112px, 0.52fr);
+    gap: 11px 16px;
+    border: 1px solid #e3e8ec;
+    border-radius: 10px;
+    padding: 13px;
+  }
+
+  .userRow:first-of-type {
+    border-top: 1px solid #e3e8ec;
+  }
+
+  .personCell,
+  .accountCell {
+    grid-column: 1 / -1;
+  }
+
+  .accountCell {
+    padding-bottom: 10px;
+    border-bottom: 1px solid #edf0f2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .roleCell,
+  .accessCell {
+    position: relative;
+    padding-top: 18px;
+  }
+
+  .roleCell::before,
+  .accessCell::before {
+    position: absolute;
+    top: 0;
+    left: 0;
+    color: #7a8791;
+    content: attr(data-label);
+    font-size: 0.65rem;
+    font-weight: 680;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .addPanel {
+    animation: none;
+  }
+
+  .primaryAction,
+  .closeAction,
+  .addSubmit,
+  .addForm input,
+  .addForm select,
+  .filterField select,
+  .searchField,
+  .roleCell select,
+  .accessSwitch,
+  .switchTrack,
+  .switchTrack > span {
+    transition: none;
+  }
+}

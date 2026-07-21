@@ -1,206 +1,296 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarPlus, Clock3, FileText, Package, Users } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarPlus,
+  CircleAlert,
+  FileText,
+  Search,
+  UserRound
+} from "lucide-react";
 import { useMemo } from "react";
-import { useAuth } from "@/lib/auth";
-import { useAppData } from "@/lib/data-store";
-import { canScheduleJobs, canViewInvoice, canViewJob } from "@/lib/access";
-import { formatDateTime } from "@/lib/date";
-import { compareJobsForDispatch, formatServiceWindow, getServiceWindowTiming } from "@/lib/service-window";
-import { useCurrentTime } from "@/lib/use-current-time";
-import { ButtonLink, Card, EmptyState, StatusPill } from "@/components/ui";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { OperationsChart } from "@/components/OperationsChart";
+import { canScheduleJobs, canViewInvoice, canViewJob } from "@/lib/access";
+import { useAuth } from "@/lib/auth";
+import { roleLabels, useAppData } from "@/lib/data-store";
+import { formatDateTime } from "@/lib/date";
+import {
+  compareJobsForDispatch,
+  formatServiceWindow,
+  getServiceWindowTiming
+} from "@/lib/service-window";
+import type { InvoiceStatus, Job, JobStatus } from "@/lib/types";
+import { useCurrentTime } from "@/lib/use-current-time";
+import styles from "./dashboard.module.css";
 
-const roleActions = {
-  owner: [
-    { title: "Parts", body: "Catalog", href: "/parts", Icon: Package },
-    { title: "Users", body: "Access", href: "/admin/users", Icon: Users }
-  ],
-  tech: [
-    { title: "Customer", body: "Create", href: "/customers/new?next=job", Icon: Users },
-    { title: "Assigned", body: "Open work", href: "/jobs", Icon: FileText }
-  ],
-  call_center: [
-    { title: "Customers", body: "Find", href: "/customers", Icon: Users },
-    { title: "New", body: "Create", href: "/customers/new", Icon: CalendarPlus }
-  ]
+const jobStatusLabels: Record<JobStatus, string> = {
+  scheduled: "Scheduled",
+  in_progress: "In progress",
+  complete: "Complete",
+  cancelled: "Cancelled"
+};
+
+const invoiceStatusLabels: Record<InvoiceStatus, string> = {
+  draft: "Draft",
+  sent: "Sent",
+  paid: "Paid",
+  cancelled: "Cancelled"
 };
 
 export default function DashboardPage() {
   const { currentUser } = useAuth();
   const data = useAppData();
   const now = useCurrentTime();
-  const visibleJobs = useMemo(() => data.jobs.filter((job) => canViewJob(currentUser, job)), [currentUser, data.jobs]);
+
+  const visibleJobs = useMemo(
+    () => data.jobs.filter((job) => canViewJob(currentUser, job)),
+    [currentUser, data.jobs]
+  );
+  const activeJobs = useMemo(
+    () => visibleJobs
+      .filter((job) => job.status !== "complete" && job.status !== "cancelled")
+      .sort((a, b) => compareJobsForDispatch(a, b, now)),
+    [now, visibleJobs]
+  );
   const visibleInvoices = useMemo(
-    () => data.invoices.filter((invoice) => canViewInvoice(currentUser, invoice, data.jobs)),
+    () => data.invoices
+      .filter((invoice) => canViewInvoice(currentUser, invoice, data.jobs))
+      .sort((a, b) => Date.parse(b.updatedAt || b.createdAt) - Date.parse(a.updatedAt || a.createdAt)),
     [currentUser, data.invoices, data.jobs]
   );
-  const draftInvoices = visibleInvoices.filter((invoice) => invoice.status === "draft");
-  const invoiceQueue = visibleInvoices.slice(0, 5);
-  const activeJobs = visibleJobs
-    .filter((job) => job.status !== "complete" && job.status !== "cancelled")
-    .sort((a, b) => compareJobsForDispatch(a, b, now));
-  const lateJobs = activeJobs.filter((job) => getServiceWindowTiming(job, now).tone === "bad").length;
-  const dueSoonJobs = activeJobs.filter((job) => getServiceWindowTiming(job, now).label === "Due soon").length;
-  const dashboardTitle = currentUser.role === "owner" ? "Operations" : currentUser.role === "tech" ? "Today" : "Desk";
-  const queueJobs = activeJobs.slice(0, 6);
-  const workItems = [
-    ...queueJobs.map((job) => {
-      const customer = data.customers.find((candidate) => candidate.id === job.customerId);
-      const tech = data.allowedUsers.find((candidate) => candidate.id === job.assignedTechId);
-      const arrivalTiming = getServiceWindowTiming(job, now);
-      return {
-        id: job.id,
-        href: `/jobs/${job.id}`,
-        type: "Job",
-        title: customer?.name ?? "Unknown customer",
-        detail: job.description,
-        owner: tech?.displayName ?? "Unassigned",
-        date: formatServiceWindow(job.scheduledAt, job.arrivalWindowEndAt),
-        status: arrivalTiming.label,
-        tone: arrivalTiming.tone
-      };
-    }),
-    ...invoiceQueue.map((invoice) => {
-      const job = data.jobs.find((candidate) => candidate.id === invoice.jobId);
-      const customer = data.customers.find((candidate) => candidate.id === job?.customerId);
-      return {
-        id: invoice.id,
-        href: `/invoices/${invoice.id}`,
-        type: "Invoice",
-        title: invoice.invoiceNumber,
-        detail: customer?.name ?? "Unknown customer",
-        owner: invoice.sentToEmail ?? "Not sent",
-        date: invoice.createdAt ? formatDateTime(invoice.createdAt) : "",
-        status: invoice.status,
-        tone: invoice.status === "paid" ? "good" as const : invoice.status === "cancelled" ? "bad" as const : "warn" as const
-      };
-    })
-  ].slice(0, 8);
+  const invoiceTasks = visibleInvoices.filter((invoice) => invoice.status !== "paid" && invoice.status !== "cancelled");
+  const arrivalExceptions = activeJobs.filter((job) => getServiceWindowTiming(job, now).tone === "bad").length;
+  const inProgressJobs = activeJobs.filter((job) => job.status === "in_progress").length;
+  const draftInvoices = visibleInvoices.filter((invoice) => invoice.status === "draft").length;
+  const isCallCenter = currentUser.role === "call_center";
 
   return (
-    <main className="page-shell dashboard-page shad-dashboard-page">
-      <section className="dashboard-site-header">
-        <div>
-          <h1>{dashboardTitle}</h1>
+    <main className={`page-shell ${styles.page}`}>
+      <header className={styles.hero}>
+        <div className={styles.heroCopy}>
+          <p className={styles.kicker}>{dashboardKicker(currentUser.role)}</p>
+          <h1>{dashboardTitle(currentUser.role)}</h1>
+          <div className={styles.identityLine}>
+            <span className={styles.avatar} aria-hidden="true">{initials(currentUser.displayName)}</span>
+            <span>
+              <strong>{currentUser.displayName}</strong>
+              <small>{roleLabels[currentUser.role]}</small>
+            </span>
+          </div>
         </div>
-      </section>
 
-      <section className="dashboard-section-cards" aria-label="Dashboard summary">
         {canScheduleJobs(currentUser.role) ? (
-          <Link href="/jobs/new" className="dashboard-section-card dashboard-section-card-primary">
-            <span><CalendarPlus size={20} aria-hidden="true" /></span>
-            <div>
-              <strong>Schedule service</strong>
-            </div>
+          <Link href="/jobs/new" className={styles.primaryAction}>
+            <CalendarPlus size={19} aria-hidden="true" />
+            Schedule service
           </Link>
         ) : null}
-        <Link href="/jobs" className="dashboard-section-card">
-          <span><Clock3 size={20} aria-hidden="true" /></span>
+      </header>
+
+      <section className={styles.workloadPanel} aria-labelledby="workload-heading">
+        <div className={styles.sectionHeading}>
           <div>
-            <p>Open jobs</p>
+            <p className={styles.sectionLabel}>Live operations</p>
+            <h2 id="workload-heading">Workload</h2>
+            <p>Scheduled, active, and completed service calls by day.</p>
+          </div>
+          <Link href="/jobs" className={styles.textLink}>View all jobs <ArrowRight size={16} aria-hidden="true" /></Link>
+        </div>
+
+        <div className={styles.workloadMetrics} aria-label="Current workload summary">
+          <div>
             <strong>{activeJobs.length}</strong>
-            <small>{lateJobs} late · {dueSoonJobs} due soon</small>
+            <span>Open jobs</span>
           </div>
-        </Link>
-        {currentUser.role !== "call_center" ? (
-          <Link href="/invoices" className="dashboard-section-card">
-            <span><FileText size={20} aria-hidden="true" /></span>
-            <div>
-              <p>Draft invoices</p>
-              <strong>{draftInvoices.length}</strong>
-              <small>Needs review</small>
-            </div>
-          </Link>
-        ) : null}
-        <Link href="/customers" className="dashboard-section-card">
-          <span><Users size={20} aria-hidden="true" /></span>
           <div>
-            <p>Customers</p>
-            <strong>{data.customers.length}</strong>
-            <small>Search and schedule</small>
+            <strong>{inProgressJobs}</strong>
+            <span>In progress</span>
           </div>
-        </Link>
-        {currentUser.role === "owner" ? (
-          <Link href="/parts" className="dashboard-section-card">
-            <span><Package size={20} aria-hidden="true" /></span>
+          <div className={arrivalExceptions > 0 ? styles.metricAttention : undefined}>
+            <strong>{arrivalExceptions}</strong>
+            <span>Arrival exceptions</span>
+          </div>
+          {!isCallCenter ? (
             <div>
-              <p>Parts</p>
-              <strong>{data.parts.length}</strong>
-              <small>Catalog items</small>
+              <strong>{draftInvoices}</strong>
+              <span>Invoice drafts</span>
             </div>
-          </Link>
-        ) : null}
+          ) : null}
+        </div>
+
+        <div className={styles.chartWrap}>
+          <OperationsChart jobs={visibleJobs} />
+        </div>
       </section>
 
-      <Card className="ops-chart-card dashboard-chart-panel">
-        <div className="section-head">
+      {isCallCenter ? (
+        <section className={styles.lookupPanel} aria-labelledby="customer-lookup-heading">
+          <div className={styles.lookupIcon} aria-hidden="true"><Search size={19} /></div>
           <div>
-            <h2>Workload</h2>
-            <p className="subtle-copy">Scheduled, active, and completed jobs by day.</p>
+            <h2 id="customer-lookup-heading">Find a customer</h2>
+            <p>Search contact details before scheduling or updating a service call.</p>
           </div>
-        </div>
-        <OperationsChart jobs={visibleJobs} />
-      </Card>
-
-      {currentUser.role === "call_center" ? (
-        <Card className="search-command-card">
-          <p className="eyebrow">Customer lookup</p>
           <GlobalSearch />
-          <div className="action-row">
-            <ButtonLink href="/customers/new">Create customer</ButtonLink>
-            <ButtonLink href="/jobs/new" variant="secondary">Schedule service</ButtonLink>
-          </div>
-        </Card>
+          <Link href="/customers/new" className={styles.secondaryAction}>Create customer</Link>
+        </section>
       ) : null}
 
-      <section className="dashboard-lower-grid">
-        <Card className="dashboard-table-card">
-          <div className="section-head">
+      <section className={styles.queuePanel} aria-labelledby="job-queue-heading">
+        <div className={styles.sectionHeading}>
+          <div>
+            <p className={styles.sectionLabel}>{currentUser.role === "tech" ? "Your route" : "Dispatch"}</p>
+            <h2 id="job-queue-heading">{currentUser.role === "tech" ? "Your job queue" : "Job queue"}</h2>
+            <p>Service windows, assigned workers, and recorded arrival details.</p>
+          </div>
+          <Link href="/jobs" className={styles.textLink}>All jobs <ArrowRight size={16} aria-hidden="true" /></Link>
+        </div>
+
+        {activeJobs.length === 0 ? (
+          <div className={styles.emptyState}>
+            <span aria-hidden="true"><CalendarPlus size={22} /></span>
             <div>
-              <h2>Active work</h2>
-              <p className="subtle-copy">Jobs and invoice drafts that need attention.</p>
-            </div>
-            <div className="action-row">
-              <ButtonLink href="/jobs" variant="secondary">All jobs</ButtonLink>
-              {currentUser.role !== "call_center" ? <ButtonLink href="/invoices" variant="secondary">Invoices</ButtonLink> : null}
+              <strong>No open jobs</strong>
+              <p>{currentUser.role === "tech" ? "New assignments will appear here." : "Your active service queue is clear."}</p>
             </div>
           </div>
-          {workItems.length === 0 ? (
-            <EmptyState title="No work yet" description="Schedule a service call to start." action={canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new">Schedule service</ButtonLink> : undefined} />
-          ) : (
-            <div className="dashboard-work-list" aria-label="Active work">
-              {workItems.map((row) => (
-                <Link key={`${row.type}-${row.id}`} href={row.href} className="dashboard-work-row">
-                  <span className="work-row-type">{row.type}</span>
-                  <span className="work-row-main">
-                    <strong>{row.title}</strong>
-                    <small>{row.detail}</small>
+        ) : (
+          <div className={styles.jobTable} role="table" aria-label="Open job queue">
+            <div className={styles.tableHeader} role="row">
+              <span role="columnheader">Customer</span>
+              <span role="columnheader">Worker</span>
+              <span role="columnheader">Service window</span>
+              <span role="columnheader">Arrival</span>
+              <span role="columnheader">Status</span>
+            </div>
+            {activeJobs.slice(0, 7).map((job) => {
+              const customer = data.customers.find((candidate) => candidate.id === job.customerId);
+              const tech = data.allowedUsers.find((candidate) => candidate.id === job.assignedTechId);
+              const arrival = arrivalDetails(job, now);
+
+              return (
+                <Link key={job.id} href={`/jobs/${job.id}`} className={styles.jobRow} role="row">
+                  <span className={styles.customerCell} role="cell" data-label="Customer">
+                    <strong>{customer?.name ?? "Unknown customer"}</strong>
+                    <small>{job.description}</small>
                   </span>
-                  <span className="work-row-meta">
-                    <small>{row.owner}</small>
-                    <small>{row.date}</small>
+                  <span className={styles.workerCell} role="cell" data-label="Worker">
+                    <span className={styles.workerIcon} aria-hidden="true"><UserRound size={16} /></span>
+                    <span>
+                      <strong>{tech?.displayName ?? "Unassigned"}</strong>
+                      <small>{tech ? roleLabels[tech.role] : "Technician"}</small>
+                    </span>
                   </span>
-                  <span className="work-row-status"><StatusPill tone={row.tone}>{row.status}</StatusPill></span>
+                  <span className={styles.windowCell} role="cell" data-label="Service window">
+                    <strong>{formatServiceWindow(job.scheduledAt, job.arrivalWindowEndAt)}</strong>
+                    <small>{job.serviceAddress}</small>
+                  </span>
+                  <span className={styles.arrivalCell} role="cell" data-label="Arrival">
+                    <strong>{arrival.label}</strong>
+                    {arrival.exception ? <small className={styles.exception}><CircleAlert size={13} aria-hidden="true" /> {arrival.exception}</small> : <small>{arrival.detail}</small>}
+                  </span>
+                  <span className={styles.statusCell} role="cell" data-label="Status">
+                    <span className={`${styles.status} ${styles[`status_${job.status}`]}`}>{jobStatusLabels[job.status]}</span>
+                    <ArrowRight size={17} aria-hidden="true" />
+                  </span>
                 </Link>
-              ))}
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {!isCallCenter ? (
+        <section className={styles.queuePanel} aria-labelledby="invoice-tasks-heading">
+          <div className={styles.sectionHeading}>
+            <div>
+              <p className={styles.sectionLabel}>Billing</p>
+              <h2 id="invoice-tasks-heading">Invoice tasks</h2>
+              <p>Drafts and sent invoices that still need attention.</p>
+            </div>
+            <Link href="/invoices" className={styles.textLink}>All invoices <ArrowRight size={16} aria-hidden="true" /></Link>
+          </div>
+
+          {invoiceTasks.length === 0 ? (
+            <div className={styles.emptyState}>
+              <span aria-hidden="true"><FileText size={22} /></span>
+              <div><strong>No invoice tasks</strong><p>Nothing needs billing attention right now.</p></div>
+            </div>
+          ) : (
+            <div className={styles.invoiceList} aria-label="Invoice tasks">
+              {invoiceTasks.slice(0, 5).map((invoice) => {
+                const job = data.jobs.find((candidate) => candidate.id === invoice.jobId);
+                const customer = data.customers.find((candidate) => candidate.id === job?.customerId);
+                const customerEmail = invoice.sentToEmail ?? customer?.email;
+                return (
+                  <Link key={invoice.id} href={`/invoices/${invoice.id}`} className={styles.invoiceRow}>
+                    <span className={styles.invoiceIcon} aria-hidden="true"><FileText size={18} /></span>
+                    <span className={styles.invoiceMain}>
+                      <strong>{invoice.invoiceNumber}</strong>
+                      <small>{customer?.name ?? "Unknown customer"}</small>
+                    </span>
+                    <span className={styles.invoiceDelivery}>
+                      <strong>{customerEmail ? "Customer email" : "Email needed"}</strong>
+                      <small>{customerEmail ?? "Add an email before sending"}</small>
+                    </span>
+                    <span className={`${styles.status} ${styles[`invoice_${invoice.status}`]}`}>{invoiceStatusLabels[invoice.status]}</span>
+                    <span className={styles.invoiceDate}>{formatDateTime(invoice.updatedAt || invoice.createdAt)}</span>
+                    <ArrowRight className={styles.rowArrow} size={17} aria-hidden="true" />
+                  </Link>
+                );
+              })}
             </div>
           )}
-        </Card>
-
-        <section className="dashboard-action-panel" aria-label="Quick actions">
-          {roleActions[currentUser.role].map((action) => (
-            <Link key={action.title} href={action.href} className="quick-action-card">
-              <span className="quick-action-arrow">→</span>
-              <action.Icon size={18} aria-hidden="true" />
-              <strong>{action.title}</strong>
-              <p>{action.body}</p>
-            </Link>
-          ))}
         </section>
-      </section>
+      ) : null}
     </main>
   );
+}
+
+function dashboardKicker(role: "owner" | "tech" | "call_center") {
+  if (role === "tech") return "Technician workspace";
+  if (role === "call_center") return "Call center workspace";
+  return "Owner workspace";
+}
+
+function dashboardTitle(role: "owner" | "tech" | "call_center") {
+  if (role === "tech") return "Today’s work";
+  if (role === "call_center") return "Service desk";
+  return "Operations overview";
+}
+
+function initials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "FT";
+}
+
+function arrivalDetails(job: Job, now: number) {
+  const timing = getServiceWindowTiming(job, now);
+  if (job.arrivedAt) {
+    const arrived = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(job.arrivedAt));
+    return {
+      label: `Arrived ${arrived}`,
+      detail: timing.tone === "info" ? "Before window" : timing.tone === "good" ? "Within window" : undefined,
+      exception: timing.tone === "bad" ? "Outside window" : undefined
+    };
+  }
+
+  if (job.status === "in_progress") {
+    return {
+      label: "Arrival not recorded",
+      detail: timing.tone === "bad" ? undefined : "Work is in progress",
+      exception: timing.tone === "bad" ? "Window exceeded" : undefined
+    };
+  }
+
+  return {
+    label: "Awaiting arrival",
+    detail: timing.tone === "warn" ? "Window ending soon" : "Not recorded",
+    exception: timing.tone === "bad" ? "Window exceeded" : undefined
+  };
 }
