@@ -1,612 +1,408 @@
-import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import type { ReactNode } from "react";
+import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import React from "react";
 import { branding } from "@/lib/branding";
-import { tierLabels } from "@/lib/data-store";
-import { formatDate } from "@/lib/date";
+import { formatDate, formatDateTime } from "@/lib/date";
+import { balanceDue, firstPopulatedTier, invoiceOptionLabels, selectedSubtotal, selectedTotal } from "@/lib/invoice";
 import { money, percent } from "@/lib/money";
-import type { Customer, Invoice, Job, JobLineItem, Tier } from "@/lib/types";
+import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem, Tier } from "@/lib/types";
 
-const tierOrder: Tier[] = ["good", "better", "best"];
-
-const authorizationText =
-  "An estimate includes diagnosis/estimate, parts, and labor. I hereby authorize repairs and agree to pay for them upon completion of the job. If repairs require a part order, I agree to pay a deposit. I understand that the deposited amount will apply to the total for the trip to install parts. Company/technicians are not responsible for damages.";
-
-export function InvoicePdfDocument({
-  invoice,
-  job,
-  customer,
-  items
-}: {
+export type InvoicePdfDocumentProps = {
   invoice: Invoice;
   job: Job;
   customer: Customer;
   items: JobLineItem[];
-}) {
-  const selectedTier = invoice.selectedTier ?? "good";
-  const selectedSubtotal = totalFor(invoice, selectedTier, "subtotal");
-  const selectedTotal = totalFor(invoice, selectedTier, "total");
-  const selectedTax = selectedTotal - selectedSubtotal;
+  signatures?: InvoiceSignature[];
+};
+
+type InvoiceViewModel = {
+  invoice: Invoice;
+  job: Job;
+  customer: Customer;
+  selectedTier?: Tier;
+  subtotal: number;
+  tax: number;
+  total: number;
+  customerSignature?: InvoiceSignature;
+  technicianSignature?: InvoiceSignature;
+};
+
+export function InvoicePdfDocument({ invoice, job, customer, items, signatures = [] }: InvoicePdfDocumentProps) {
+  const selectedTier = firstPopulatedTier(invoice);
+  const selectedInvoice = selectedTier ? { ...invoice, selectedTier } : invoice;
+  const selectedItems = selectedTier
+    ? items.filter((item) => item.tier === selectedTier).sort((left, right) => left.sortOrder - right.sortOrder)
+    : [];
+  const subtotal = selectedTier ? selectedSubtotal(selectedInvoice) : 0;
+  const total = selectedTier ? selectedTotal(selectedInvoice) : 0;
+  const activeSignatures = signatures.filter((signature) => signature.status === "active");
+  const viewModel: InvoiceViewModel = {
+    invoice: selectedInvoice,
+    job,
+    customer,
+    selectedTier,
+    subtotal,
+    tax: total - subtotal,
+    total,
+    customerSignature: activeSignatures.find((signature) => signature.purpose === "invoice_approval"),
+    technicianSignature: activeSignatures.find((signature) => signature.purpose === "technician_acknowledgement")
+  };
+
+  const addressWeight = [customer.name, customer.addressLine1, customer.addressLine2, customer.city, customer.email, job.serviceAddress]
+    .filter(Boolean)
+    .join(" ").length;
+  const totalItemUnits = selectedItems.reduce((sum, item) => sum + itemUnits(item), 0);
+  const singlePage = totalItemUnits <= 4 && addressWeight <= 300 && (invoice.notes || job.notes).length <= 340;
+  const itemPages = singlePage ? [selectedItems] : paginateItems(selectedItems, addressWeight > 300 ? 6 : 8, 15);
+  const totalPages = singlePage ? 1 : itemPages.length + 1;
 
   return (
-    <Document title={invoice.invoiceNumber} author={branding.businessName}>
-      <Page size="LETTER" style={styles.page}>
-        <View style={styles.header}>
-          <View style={styles.logoBlock}>
-            <Text style={styles.logoMain}>FAST TRACK</Text>
-            <Text style={styles.logoSub}>REPAIR SERVICE</Text>
-          </View>
-          <View style={styles.contactBlock}>
-            <Text style={styles.contactLine}>13817 Fount Beattie Ct.</Text>
-            <Text style={styles.contactLine}>CENTREVILLE, VA 20121</Text>
-            <Text style={styles.contactLine}>PHONE: +1 7038995615</Text>
-            <Text style={styles.contactLine}>E-MAIL: Info@fasttrackdmv.org</Text>
-            <Text style={styles.contactLine}>WEBSITE: WWW.FASTTRACKDMV.ORG</Text>
-          </View>
-          <View style={styles.invoiceMeta}>
-            <View style={styles.metaLine}>
-              <Text style={styles.metaLabel}>INVOICE NO:</Text>
-              <Text style={styles.metaValue}>{invoice.invoiceNumber}</Text>
-            </View>
-            <View style={styles.metaLine}>
-              <Text style={styles.metaLabel}>DATE:</Text>
-              <Text style={styles.metaValue}>{formatDate(invoice.createdAt)}</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.bodyGrid}>
-          <View style={styles.leftColumn}>
-            <CustomerTable customer={customer} job={job} />
-            <EquipmentTable />
-            <Band title="NATURE OF SERVICE REQUEST" />
-            <Box minHeight={40}>
-              <Text style={styles.valueText}>{job.description}</Text>
-            </Box>
-            <Band title="GOOD / BETTER / BEST OPTIONS" />
-            <View style={styles.optionsTable}>
-              {tierOrder.map((tier) => (
-                <TierOption
-                  key={tier}
-                  tier={tier}
-                  invoice={invoice}
-                  items={items.filter((item) => item.tier === tier)}
-                  selected={tier === selectedTier}
-                />
-              ))}
-            </View>
-            <Band title="SERVICE PERFORMED / DIAGNOSIS" />
-            <Box minHeight={50}>
-              <Text style={styles.valueText}>{job.notes || "Diagnosis and work performed will be recorded here."}</Text>
-            </Box>
-            <View style={styles.noticeBox}>
-              <Text style={styles.noticeText}>
-                WE DO NOT USE HOURLY RATE where parts or service are required. The app records parts, service, photos,
-                authorization, and invoice totals so the technician does not need to carry the paper sheet.
-              </Text>
-            </View>
-            <View style={styles.paymentBox}>
-              <Text style={styles.paymentTitle}>PAYMENT</Text>
-              <Text style={styles.paymentText}>Payment method: cash, check, card, or payment link.</Text>
-              <Text style={styles.paymentText}>Production app should use Stripe/Square payment links. Do not store raw card number or CVV.</Text>
-            </View>
-          </View>
-
-          <View style={styles.rightColumn}>
-            <View style={styles.stateBand}>
-              <Text style={styles.stateText}>DC</Text>
-              <Text style={styles.stateText}>MD</Text>
-              <Text style={styles.stateText}>VA</Text>
-            </View>
-
-            <Section title="AUTHORIZATION OF REPAIR">
-              <Text style={styles.termsText}>{authorizationText}</Text>
-              <Signature label="CUSTOMER SIGNATURE" />
-            </Section>
-
-            <Section title="COMPLETION OF WORK">
-              <Text style={styles.termsText}>I hereby acknowledge satisfactory performance of completion of repairs.</Text>
-              <Signature label="CUSTOMER SIGNATURE / DATE" />
-            </Section>
-
-            <View style={styles.couponBox}>
-              <Text style={styles.couponBig}>$50 OFF</Text>
-              <Text style={styles.couponText}>ON YOUR NEXT</Text>
-              <Text style={styles.couponText}>COMPLETE REPAIR</Text>
-            </View>
-
-            <CostSummary
-              subtotal={selectedSubtotal}
-              tax={selectedTax}
-              total={selectedTotal}
-              taxRate={invoice.taxRate}
-              selectedTier={selectedTier}
-            />
-          </View>
-        </View>
-      </Page>
+    <Document
+      title={`${invoice.invoiceNumber} - ${customer.name}`}
+      author={branding.businessName}
+      subject="Service invoice"
+      creator="Fast Track HVAC + Plumbing"
+    >
+      {singlePage ? (
+        <Page size="LETTER" style={styles.page}>
+          <DocumentHeader invoice={invoice} />
+          <InvoiceIntro model={viewModel} />
+          <ServiceHeading model={viewModel} />
+          <LineItemsTable items={selectedItems} />
+          <InvoiceSummary model={viewModel} compact />
+          <DocumentFooter invoice={invoice} pageNumber={1} totalPages={1} />
+        </Page>
+      ) : (
+        <>
+          {itemPages.map((pageItems, index) => (
+            <Page key={`items-${index}`} size="LETTER" style={styles.page}>
+              <DocumentHeader invoice={invoice} />
+              {index === 0 ? (
+                <>
+                  <InvoiceIntro model={viewModel} />
+                  <ServiceHeading model={viewModel} />
+                </>
+              ) : (
+                <ContinuationHeading title="Approved work continued" invoice={invoice} />
+              )}
+              <LineItemsTable items={pageItems} />
+              <DocumentFooter invoice={invoice} pageNumber={index + 1} totalPages={totalPages} />
+            </Page>
+          ))}
+          <Page size="LETTER" style={styles.page}>
+            <DocumentHeader invoice={invoice} />
+            <ContinuationHeading title="Invoice summary & approval" invoice={invoice} />
+            <InvoiceSummary model={viewModel} />
+            <DocumentFooter invoice={invoice} pageNumber={totalPages} totalPages={totalPages} />
+          </Page>
+        </>
+      )}
     </Document>
   );
 }
 
-function CustomerTable({ customer, job }: { customer: Customer; job: Job }) {
+function DocumentHeader({ invoice }: { invoice: Invoice }) {
   return (
-    <View style={styles.table}>
-      <View style={styles.row}>
-        <Field label="CUSTOMER NAME" value={customer.name} flex={2} />
-        <Field label="PHONE" value={customer.phone} flex={1} />
-      </View>
-      <View style={styles.row}>
-        <Field label="JOB STREET" value={customer.addressLine1} flex={1} />
-      </View>
-      <View style={styles.row}>
-        <Field label="UNIT NO." value={customer.addressLine2 ?? ""} flex={0.8} />
-        <Field label="CITY" value={customer.city} flex={1} />
-        <Field label="STATE" value={customer.state} flex={0.55} />
-        <Field label="ZIP CODE" value={customer.zip} flex={0.8} />
-      </View>
-      <View style={styles.row}>
-        <Field label="CUSTOMER EMAIL" value={customer.email ?? ""} flex={1} />
-      </View>
-      <View style={styles.row}>
-        <Field label="SERVICE ADDRESS" value={job.serviceAddress} flex={1} />
-      </View>
-    </View>
-  );
-}
-
-function EquipmentTable() {
-  return (
-    <View style={styles.table}>
-      {[1, 2].map((index) => (
-        <View key={index}>
-          <View style={styles.row}>
-            <Field label={`APPLIANCE ${index} TYPE / BRAND`} value="" flex={1} />
-          </View>
-          <View style={styles.row}>
-            <Field label="MODEL NO." value="" flex={1} />
-            <Field label="SERIAL NO. / MFG. NO." value="" flex={1} />
-          </View>
+    <View style={styles.header}>
+      <View style={styles.brandBlock}>
+        <View style={styles.brandMark}><Text style={styles.brandMarkText}>FT</Text></View>
+        <View style={styles.brandCopy}>
+          <Text style={styles.brandName}>{branding.businessName}</Text>
+          <Text style={styles.brandContact}>{branding.address}</Text>
+          <Text style={styles.brandContact}>{branding.phone}  |  {branding.email}</Text>
         </View>
-      ))}
+      </View>
+      <View style={styles.invoiceBlock}>
+        <Text style={styles.invoiceTitle}>INVOICE</Text>
+        <Text style={styles.invoiceNumber}>{invoice.invoiceNumber}</Text>
+      </View>
+      <View style={styles.headerRule} />
     </View>
   );
 }
 
-function TierOption({
-  tier,
-  invoice,
-  items,
-  selected
-}: {
-  tier: Tier;
-  invoice: Invoice;
-  items: JobLineItem[];
-  selected: boolean;
-}) {
-  const subtotal = totalFor(invoice, tier, "subtotal");
-  const total = totalFor(invoice, tier, "total");
-
+function DocumentFooter({ invoice, pageNumber, totalPages }: { invoice: Invoice; pageNumber: number; totalPages: number }) {
   return (
-    <View style={[styles.optionBlock, selected ? styles.optionSelected : {}]}>
-      <View style={styles.optionHead}>
-        <Text style={styles.optionTitle}>{tierLabels[tier]}{selected ? " - SELECTED" : ""}</Text>
-        <Text style={styles.optionTotal}>{money(total)}</Text>
+    <View fixed style={styles.footer}>
+      <Text>{branding.website}  |  {invoice.invoiceNumber}</Text>
+      <Text>Page {pageNumber} of {totalPages}</Text>
+    </View>
+  );
+}
+
+function InvoiceIntro({ model }: { model: InvoiceViewModel }) {
+  const { invoice, job, customer } = model;
+  const billToAddress = [customer.addressLine1, customer.addressLine2, `${customer.city}, ${customer.state} ${customer.zip}`]
+    .filter(Boolean)
+    .join("\n");
+  const serviceDate = job.completedAt ?? job.arrivedAt ?? job.scheduledAt;
+  return (
+    <>
+      <View style={styles.invoiceIntro}>
+        <View style={styles.partyColumn}>
+          <Text style={styles.kicker}>BILL TO</Text>
+          <Text style={styles.partyName}>{customer.name}</Text>
+          <Text style={styles.bodyText}>{billToAddress}</Text>
+          <Text style={styles.bodyText}>{customer.phone}</Text>
+          {customer.email ? <Text style={styles.bodyText}>{customer.email}</Text> : null}
+        </View>
+        <View style={styles.partyColumn}>
+          <Text style={styles.kicker}>SERVICE LOCATION</Text>
+          <Text style={styles.partyName}>{job.serviceAddress}</Text>
+          <Text style={styles.bodyText}>{job.description}</Text>
+        </View>
       </View>
-      {items.length === 0 ? (
-        <Text style={styles.emptyText}>No items on this option.</Text>
-      ) : (
-        items.slice(0, 4).map((item) => (
-          <View key={item.id} style={styles.itemRow}>
-            <Text style={styles.itemDescription}>{item.description}</Text>
-            <Text style={styles.itemAmount}>{item.quantity} x {money(item.unitPrice)}</Text>
-          </View>
-        ))
+      <View style={styles.factGrid}>
+        <Fact label="Issue date" value={formatDate(invoice.createdAt)} />
+        <Fact label="Service date" value={formatDate(serviceDate)} />
+        <Fact label="Invoice status" value={invoice.status.replaceAll("_", " ")} />
+        <Fact label="Payment" value={paymentLabel(invoice.paymentStatus)} last />
+      </View>
+    </>
+  );
+}
+
+function ServiceHeading({ model }: { model: InvoiceViewModel }) {
+  return (
+    <View style={styles.sectionHeading}>
+      <View>
+        <Text style={styles.kicker}>SERVICE DETAILS</Text>
+        <Text style={styles.sectionTitle}>{invoiceOptionLabels[model.invoice.optionLabel]}</Text>
+      </View>
+      <Text style={styles.sectionAmount}>{money(model.total)}</Text>
+    </View>
+  );
+}
+
+function ContinuationHeading({ title, invoice }: { title: string; invoice: Invoice }) {
+  return (
+    <View style={styles.continuationHeading}>
+      <View><Text style={styles.kicker}>SERVICE INVOICE</Text><Text style={styles.continuationTitle}>{title}</Text></View>
+      <View style={styles.continuationMeta}><Text>{invoice.invoiceNumber}</Text><Text>{formatDate(invoice.createdAt)}</Text></View>
+    </View>
+  );
+}
+
+function LineItemsTable({ items }: { items: JobLineItem[] }) {
+  return (
+    <View style={styles.table}>
+      <View style={styles.tableHeader}>
+        <Text style={[styles.tableHeaderText, styles.descriptionColumn]}>DESCRIPTION</Text>
+        <Text style={[styles.tableHeaderText, styles.qtyColumn]}>QTY</Text>
+        <Text style={[styles.tableHeaderText, styles.rateColumn]}>RATE</Text>
+        <Text style={[styles.tableHeaderText, styles.amountColumn]}>AMOUNT</Text>
+      </View>
+      {items.length > 0 ? items.map((item, index) => (
+        <View key={item.id} wrap={false} style={[styles.tableRow, index % 2 === 1 ? styles.tableRowAlternate : {}]}>
+          <Text style={[styles.tableCell, styles.descriptionColumn]}>{item.description}</Text>
+          <Text style={[styles.tableCell, styles.numericCell, styles.qtyColumn]}>{formatQuantity(item.quantity)}</Text>
+          <Text style={[styles.tableCell, styles.numericCell, styles.rateColumn]}>{money(item.unitPrice)}</Text>
+          <Text style={[styles.tableCell, styles.numericCell, styles.amountColumn]}>{money(item.quantity * item.unitPrice)}</Text>
+        </View>
+      )) : (
+        <View style={styles.emptyRow}><Text style={styles.emptyText}>No approved work items are selected.</Text></View>
       )}
-      <View style={styles.optionFoot}>
-        <Text style={styles.mutedText}>{items.length} line item{items.length === 1 ? "" : "s"}</Text>
-        <Text style={styles.mutedText}>Subtotal {money(subtotal)}</Text>
-      </View>
     </View>
   );
 }
 
-function CostSummary({
-  subtotal,
-  tax,
-  total,
-  taxRate,
-  selectedTier
-}: {
-  subtotal: number;
-  tax: number;
-  total: number;
-  taxRate: number;
-  selectedTier: Tier;
-}) {
-  const rows = [
-    ["JOB COST", money(subtotal)],
-    ["SERVICE CALL", "Included"],
-    ["SUB-TOTAL", money(subtotal)],
-    [`TAX ${percent(taxRate)}`, money(tax)],
-    ["DEPOSIT", "$0.00"],
-    ["PAY THIS AMOUNT", money(total)]
-  ];
-
+function InvoiceSummary({ model, compact = false }: { model: InvoiceViewModel; compact?: boolean }) {
+  const { invoice, job, customerSignature, technicianSignature } = model;
   return (
-    <View style={styles.costTable}>
-      <View style={styles.costSelected}>
-        <Text style={styles.costSelectedLabel}>APPROVED OPTION</Text>
-        <Text style={styles.costSelectedValue}>{tierLabels[selectedTier]}</Text>
-      </View>
-      {rows.map(([label, value]) => (
-        <View key={label} style={styles.costRow}>
-          <Text style={styles.costLabel}>{label}</Text>
-          <Text style={styles.costValue}>{value}</Text>
+    <View style={compact ? styles.compactSummary : styles.summaryPageBody}>
+      <View style={styles.summaryArea}>
+        <View style={styles.notesCard}>
+          <Text style={styles.kicker}>WORK SUMMARY & NOTES</Text>
+          <Text style={styles.notesText}>{invoice.notes || job.notes || "No additional notes."}</Text>
         </View>
-      ))}
+        <View style={styles.totalsCard}>
+          <TotalRow label="Subtotal" value={money(model.subtotal)} />
+          <TotalRow label={`Tax (${percent(invoice.taxRate)})`} value={money(model.tax)} />
+          <TotalRow label="Total" value={money(model.total)} strong />
+          <TotalRow label="Paid" value={money(invoice.amountPaid)} />
+          <View style={styles.balanceRow}>
+            <Text style={styles.balanceLabel}>BALANCE DUE</Text>
+            <Text style={styles.balanceValue}>{money(balanceDue(invoice))}</Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.paymentNotice}>
+        <Text style={styles.paymentNoticeTitle}>PAYMENT STATUS: {paymentLabel(invoice.paymentStatus).toUpperCase()}</Text>
+        <Text style={styles.paymentNoticeText}>Reference {invoice.invoiceNumber} with payment. Card details are never collected on this document.</Text>
+      </View>
+
+      <View style={styles.approvalSection}>
+        <Text style={styles.kicker}>REVIEW & APPROVAL</Text>
+        <Text style={styles.approvalTerms}>The signer confirms that the listed work and charges were reviewed and approved. The signature is linked to this invoice and retained with an audit timestamp.</Text>
+        <View style={styles.signatureGrid}>
+          <SignatureBlock signature={customerSignature} title="Customer approval" wide={!technicianSignature} />
+          {technicianSignature ? <SignatureBlock signature={technicianSignature} title="Technician / company" /> : null}
+        </View>
+      </View>
+
+      <View style={styles.thankYou}>
+        <Text style={styles.thankYouTitle}>Thank you for choosing Fast Track.</Text>
+        <Text style={styles.thankYouText}>Questions? Call {branding.phone} or email {branding.email}.</Text>
+      </View>
     </View>
   );
 }
 
-function Field({ label, value, flex }: { label: string; value: string; flex: number }) {
+function Fact({ label, value, last = false }: { label: string; value: string; last?: boolean }) {
   return (
-    <View style={[styles.field, { flex }]}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <Text style={styles.fieldValue}>{value || " "}</Text>
+    <View style={[styles.fact, last ? styles.factLast : {}]}>
+      <Text style={styles.factLabel}>{label}</Text>
+      <Text style={styles.factValue}>{value}</Text>
     </View>
   );
 }
 
-function Band({ title }: { title: string }) {
+function TotalRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
   return (
-    <View style={styles.band}>
-      <Text style={styles.bandText}>{title}</Text>
+    <View style={[styles.totalRow, strong ? styles.totalRowStrong : {}]}>
+      <Text style={strong ? styles.totalStrongText : styles.totalText}>{label}</Text>
+      <Text style={strong ? styles.totalStrongText : styles.totalText}>{value}</Text>
     </View>
   );
 }
 
-function Box({ children, minHeight }: { children: ReactNode; minHeight: number }) {
-  return <View style={[styles.box, { minHeight }]}>{children}</View>;
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function SignatureBlock({ signature, title, wide = false }: { signature?: InvoiceSignature; title: string; wide?: boolean }) {
   return (
-    <View style={styles.rightSection}>
-      <Band title={title} />
-      <View style={styles.rightSectionBody}>{children}</View>
-    </View>
-  );
-}
-
-function Signature({ label }: { label: string }) {
-  return (
-    <View style={styles.signatureBlock}>
-      <Text style={styles.signatureX}>X</Text>
+    <View style={[styles.signatureCard, wide ? styles.signatureCardWide : {}]}>
+      <Text style={styles.signatureTitle}>{title}</Text>
+      <View style={styles.signatureImageArea}>
+        {signature?.imageUrl ? <Image src={signature.imageUrl} style={styles.signatureImage} /> : <Text style={styles.signaturePending}>Signature not saved</Text>}
+      </View>
       <View style={styles.signatureLine} />
-      <Text style={styles.signatureLabel}>{label}</Text>
+      <Text style={styles.signatureName}>{signature?.signerName ?? "Pending"}</Text>
+      <Text style={styles.signatureMeta}>{signature ? `${roleLabel(signature.signerRole)}  |  ${formatDateTime(signature.signedAt)}` : "No approval timestamp"}</Text>
     </View>
   );
 }
 
-function totalFor(invoice: Invoice, tier: Tier, kind: "subtotal" | "total") {
-  if (tier === "good") return kind === "subtotal" ? invoice.subtotalGood : invoice.totalGood;
-  if (tier === "best") return kind === "subtotal" ? invoice.subtotalBest : invoice.totalBest;
-  return kind === "subtotal" ? invoice.subtotalBetter : invoice.totalBetter;
+function paginateItems(items: JobLineItem[], firstCapacity: number, continuationCapacity: number) {
+  if (items.length === 0) return [[]];
+  const pages: JobLineItem[][] = [];
+  let page: JobLineItem[] = [];
+  let used = 0;
+  let capacity = firstCapacity;
+  for (const item of items) {
+    const units = itemUnits(item);
+    if (page.length > 0 && used + units > capacity) {
+      pages.push(page);
+      page = [];
+      used = 0;
+      capacity = continuationCapacity;
+    }
+    page.push(item);
+    used += units;
+  }
+  if (page.length > 0) pages.push(page);
+  return pages;
 }
 
-const blue = "#173977";
-const band = "#8799cc";
-const line = "#173977";
+function itemUnits(item: JobLineItem) {
+  return Math.max(1, Math.ceil(item.description.length / 110));
+}
+
+function formatQuantity(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function paymentLabel(status: Invoice["paymentStatus"]) {
+  if (status === "partially_paid") return "Partially paid";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function roleLabel(role: InvoiceSignature["signerRole"]) {
+  if (role === "customer") return "Customer";
+  if (role === "technician") return "Technician";
+  return "Company";
+}
+
+const colors = {
+  ink: "#102A36",
+  muted: "#5F6F78",
+  line: "#DCE5E9",
+  soft: "#F4F8F9",
+  brand: "#164E63",
+  accent: "#F97316",
+  white: "#FFFFFF",
+  green: "#166534"
+};
 
 const styles = StyleSheet.create({
-  page: {
-    padding: 28,
-    color: blue,
-    fontFamily: "Helvetica",
-    fontSize: 7.4,
-    lineHeight: 1.25
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 8
-  },
-  logoBlock: {
-    width: 118,
-    paddingTop: 12
-  },
-  logoMain: {
-    fontSize: 18,
-    fontWeight: 700,
-    letterSpacing: 0.8
-  },
-  logoSub: {
-    fontSize: 7,
-    fontWeight: 700,
-    marginTop: 2
-  },
-  contactBlock: {
-    flex: 1,
-    paddingTop: 3
-  },
-  contactLine: {
-    fontSize: 9.6,
-    fontWeight: 700,
-    marginBottom: 2
-  },
-  invoiceMeta: {
-    width: 154,
-    paddingTop: 8
-  },
-  metaLine: {
-    flexDirection: "row",
-    marginBottom: 14
-  },
-  metaLabel: {
-    width: 62,
-    fontSize: 10,
-    fontWeight: 700
-  },
-  metaValue: {
-    flex: 1,
-    borderBottomWidth: 1,
-    borderBottomColor: line,
-    fontSize: 9,
-    fontWeight: 700,
-    paddingBottom: 2
-  },
-  bodyGrid: {
-    flexDirection: "row"
-  },
-  leftColumn: {
-    width: "63%",
-    paddingRight: 6
-  },
-  rightColumn: {
-    width: "37%"
-  },
-  table: {
-    borderWidth: 1,
-    borderColor: line,
-    marginBottom: 4
-  },
-  row: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: line
-  },
-  field: {
-    minHeight: 20,
-    borderRightWidth: 1,
-    borderRightColor: line,
-    paddingHorizontal: 4,
-    paddingVertical: 3
-  },
-  fieldLabel: {
-    fontSize: 5.8,
-    fontWeight: 700,
-    marginBottom: 2
-  },
-  fieldValue: {
-    color: "#111827",
-    fontSize: 7.2,
-    fontWeight: 700
-  },
-  band: {
-    backgroundColor: band,
-    borderColor: line,
-    borderWidth: 1,
-    paddingVertical: 4,
-    paddingHorizontal: 4
-  },
-  bandText: {
-    color: blue,
-    fontSize: 8,
-    fontWeight: 700,
-    textAlign: "center"
-  },
-  box: {
-    borderWidth: 1,
-    borderTopWidth: 0,
-    borderColor: line,
-    padding: 5,
-    marginBottom: 4
-  },
-  valueText: {
-    color: "#17202a",
-    fontSize: 7.6,
-    fontWeight: 700
-  },
-  optionsTable: {
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: line,
-    marginBottom: 4
-  },
-  optionBlock: {
-    borderBottomWidth: 1,
-    borderBottomColor: line,
-    padding: 5
-  },
-  optionSelected: {
-    backgroundColor: "#eef6ff"
-  },
-  optionHead: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 3
-  },
-  optionTitle: {
-    fontSize: 8,
-    fontWeight: 700
-  },
-  optionTotal: {
-    color: "#17202a",
-    fontSize: 9,
-    fontWeight: 700
-  },
-  itemRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 2
-  },
-  itemDescription: {
-    color: "#17202a",
-    flex: 1,
-    fontSize: 7
-  },
-  itemAmount: {
-    color: "#17202a",
-    fontSize: 7,
-    textAlign: "right",
-    width: 70
-  },
-  optionFoot: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 2
-  },
-  mutedText: {
-    color: "#536173",
-    fontSize: 6.6
-  },
-  emptyText: {
-    color: "#536173",
-    fontSize: 7,
-    marginBottom: 2
-  },
-  noticeBox: {
-    borderWidth: 1,
-    borderColor: line,
-    padding: 5,
-    minHeight: 36,
-    marginBottom: 4
-  },
-  noticeText: {
-    fontSize: 6.4,
-    fontWeight: 700
-  },
-  paymentBox: {
-    borderWidth: 1,
-    borderColor: line,
-    padding: 5,
-    minHeight: 38
-  },
-  paymentTitle: {
-    fontSize: 7,
-    fontWeight: 700,
-    marginBottom: 2
-  },
-  paymentText: {
-    color: "#17202a",
-    fontSize: 6.6
-  },
-  stateBand: {
-    backgroundColor: band,
-    borderWidth: 1,
-    borderColor: line,
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingVertical: 5,
-    marginBottom: 4
-  },
-  stateText: {
-    fontSize: 10,
-    fontWeight: 700
-  },
-  rightSection: {
-    marginBottom: 4
-  },
-  rightSectionBody: {
-    borderWidth: 1,
-    borderTopWidth: 0,
-    borderColor: line,
-    padding: 6,
-    minHeight: 82
-  },
-  termsText: {
-    color: "#17202a",
-    fontSize: 6.8,
-    fontWeight: 700,
-    marginBottom: 8
-  },
-  signatureBlock: {
-    marginTop: 8
-  },
-  signatureX: {
-    fontSize: 11,
-    fontWeight: 700
-  },
-  signatureLine: {
-    borderBottomWidth: 1,
-    borderBottomColor: line,
-    marginLeft: 18,
-    marginTop: -9,
-    height: 10
-  },
-  signatureLabel: {
-    fontSize: 5.5,
-    fontWeight: 700,
-    marginLeft: 30,
-    marginTop: 2
-  },
-  couponBox: {
-    borderWidth: 1,
-    borderColor: line,
-    padding: 10,
-    marginBottom: 4,
-    textAlign: "center"
-  },
-  couponBig: {
-    fontSize: 18,
-    fontWeight: 700,
-    marginBottom: 3,
-    textAlign: "center"
-  },
-  couponText: {
-    fontSize: 13,
-    fontWeight: 700,
-    marginBottom: 2,
-    textAlign: "center"
-  },
-  costTable: {
-    borderWidth: 1,
-    borderColor: line
-  },
-  costSelected: {
-    borderBottomWidth: 1,
-    borderBottomColor: line,
-    padding: 5
-  },
-  costSelectedLabel: {
-    fontSize: 6,
-    fontWeight: 700
-  },
-  costSelectedValue: {
-    color: "#17202a",
-    fontSize: 9,
-    fontWeight: 700
-  },
-  costRow: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: line,
-    minHeight: 22
-  },
-  costLabel: {
-    width: 88,
-    borderRightWidth: 1,
-    borderRightColor: line,
-    fontSize: 8,
-    fontWeight: 700,
-    padding: 5
-  },
-  costValue: {
-    color: "#17202a",
-    flex: 1,
-    fontSize: 8,
-    fontWeight: 700,
-    padding: 5,
-    textAlign: "right"
-  }
+  page: { paddingTop: 30, paddingRight: 40, paddingBottom: 46, paddingLeft: 40, backgroundColor: colors.white, color: colors.ink, fontFamily: "Helvetica", fontSize: 8.6, lineHeight: 1.35 },
+  header: { position: "relative", height: 66, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 },
+  brandBlock: { flexDirection: "row", alignItems: "center", width: "72%" },
+  brandMark: { width: 36, height: 36, marginRight: 10, borderRadius: 9, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center" },
+  brandMarkText: { color: colors.white, fontSize: 14, fontWeight: 700, letterSpacing: 0.5 },
+  brandCopy: { flex: 1 },
+  brandName: { color: colors.brand, fontSize: 13, fontWeight: 700, marginBottom: 1 },
+  brandContact: { color: colors.muted, fontSize: 7.2, marginBottom: 1 },
+  invoiceBlock: { alignItems: "flex-end", minWidth: 92 },
+  invoiceTitle: { color: colors.brand, fontSize: 17, fontWeight: 700, letterSpacing: 1.1, lineHeight: 1.05 },
+  invoiceNumber: { color: colors.muted, fontSize: 8.5, marginTop: 3, lineHeight: 1.1 },
+  headerRule: { position: "absolute", left: 0, right: 0, bottom: 0, height: 3, backgroundColor: colors.accent },
+  invoiceIntro: { flexDirection: "row", marginBottom: 10 },
+  partyColumn: { width: "50%", paddingRight: 16 },
+  kicker: { color: colors.accent, fontSize: 6.8, fontWeight: 700, letterSpacing: 0.75, marginBottom: 4 },
+  partyName: { color: colors.ink, fontSize: 10, fontWeight: 700, marginBottom: 2 },
+  bodyText: { color: colors.muted, fontSize: 7.8, marginBottom: 1 },
+  factGrid: { flexDirection: "row", borderWidth: 1, borderColor: colors.line, borderRadius: 6, marginBottom: 12, backgroundColor: colors.soft },
+  fact: { width: "25%", paddingVertical: 6, paddingHorizontal: 9, borderRightWidth: 1, borderRightColor: colors.line },
+  factLast: { borderRightWidth: 0 },
+  factLabel: { color: colors.muted, fontSize: 6.3, textTransform: "uppercase", marginBottom: 2 },
+  factValue: { color: colors.ink, fontSize: 7.8, fontWeight: 700, textTransform: "capitalize" },
+  sectionHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 6 },
+  sectionTitle: { fontSize: 12.5, fontWeight: 700 },
+  sectionAmount: { color: colors.brand, fontSize: 13.5, fontWeight: 700 },
+  continuationHeading: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 10 },
+  continuationTitle: { color: colors.ink, fontSize: 14, fontWeight: 700 },
+  continuationMeta: { alignItems: "flex-end", color: colors.muted, fontSize: 7.5 },
+  table: { borderWidth: 1, borderColor: colors.line, borderRadius: 6, overflow: "hidden", marginBottom: 10 },
+  tableHeader: { flexDirection: "row", backgroundColor: colors.brand, paddingVertical: 6, paddingHorizontal: 9 },
+  tableHeaderText: { color: colors.white, fontSize: 6.5, fontWeight: 700, letterSpacing: 0.35 },
+  tableRow: { flexDirection: "row", paddingVertical: 6, paddingHorizontal: 9, borderTopWidth: 1, borderTopColor: colors.line },
+  tableRowAlternate: { backgroundColor: colors.soft },
+  tableCell: { color: colors.ink, fontSize: 7.7, paddingRight: 7 },
+  numericCell: { textAlign: "right", paddingRight: 0 },
+  descriptionColumn: { width: "56%" },
+  qtyColumn: { width: "10%", textAlign: "right" },
+  rateColumn: { width: "17%", textAlign: "right" },
+  amountColumn: { width: "17%", textAlign: "right" },
+  emptyRow: { padding: 12, alignItems: "center" },
+  emptyText: { color: colors.muted, fontSize: 8 },
+  compactSummary: { marginTop: 0 },
+  summaryPageBody: { paddingTop: 4 },
+  summaryArea: { flexDirection: "row", marginBottom: 9 },
+  notesCard: { width: "56%", minHeight: 70, marginRight: 14, padding: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 6 },
+  notesText: { color: colors.muted, fontSize: 7.8 },
+  totalsCard: { width: "44%", borderWidth: 1, borderColor: colors.line, borderRadius: 6, overflow: "hidden" },
+  totalRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4, paddingHorizontal: 9, borderBottomWidth: 1, borderBottomColor: colors.line },
+  totalRowStrong: { backgroundColor: colors.soft },
+  totalText: { color: colors.muted, fontSize: 7.5 },
+  totalStrongText: { color: colors.ink, fontSize: 8, fontWeight: 700 },
+  balanceRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingHorizontal: 9, backgroundColor: colors.brand },
+  balanceLabel: { color: colors.white, fontSize: 7.2, fontWeight: 700 },
+  balanceValue: { color: colors.white, fontSize: 9.5, fontWeight: 700 },
+  paymentNotice: { padding: 7, borderLeftWidth: 3, borderLeftColor: colors.green, backgroundColor: "#F0FDF4", marginBottom: 9 },
+  paymentNoticeTitle: { color: colors.green, fontSize: 6.8, fontWeight: 700, marginBottom: 2 },
+  paymentNoticeText: { color: colors.muted, fontSize: 7.4 },
+  approvalSection: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 8, marginBottom: 8 },
+  approvalTerms: { color: colors.muted, fontSize: 7.2, marginBottom: 6 },
+  signatureGrid: { flexDirection: "row" },
+  signatureCard: { width: "50%", minHeight: 76, padding: 8, borderWidth: 1, borderColor: colors.line, borderRadius: 6 },
+  signatureCardWide: { width: "100%" },
+  signatureTitle: { color: colors.ink, fontSize: 7.4, fontWeight: 700 },
+  signatureImageArea: { height: 34, justifyContent: "center", alignItems: "center", marginTop: 1 },
+  signatureImage: { width: 145, height: 32, objectFit: "contain" },
+  signaturePending: { color: colors.muted, fontSize: 7.3 },
+  signatureLine: { height: 1, backgroundColor: colors.ink, marginBottom: 2 },
+  signatureName: { color: colors.ink, fontSize: 7.5, fontWeight: 700 },
+  signatureMeta: { color: colors.muted, fontSize: 6.2, marginTop: 1 },
+  thankYou: { alignItems: "center", paddingTop: 3 },
+  thankYouTitle: { color: colors.brand, fontSize: 9.5, fontWeight: 700, marginBottom: 1 },
+  thankYouText: { color: colors.muted, fontSize: 6.9 },
+  footer: { position: "absolute", left: 40, right: 40, bottom: 20, flexDirection: "row", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 5, color: colors.muted, fontSize: 6.5 }
 });

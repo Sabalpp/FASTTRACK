@@ -482,12 +482,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const { error } = await supabase!.from("job_line_items").insert(lineItemToRow(lineItem));
         if (error) throw error;
       });
-      if (invoicePatch) {
-        persistSupabase("invoice totals update", async () => {
-          const { error } = await supabase!.from("invoices").update(invoicePatchToRow(invoicePatch.patch)).eq("id", invoicePatch.id);
-          if (error) throw error;
-        });
-      }
       return lineItem;
     }
 
@@ -516,12 +510,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const { error } = await supabase!.from("job_line_items").update(lineItemPatchToRow(input)).eq("id", id);
         if (error) throw error;
       });
-      if (invoicePatch) {
-        persistSupabase("invoice totals update", async () => {
-          const { error } = await supabase!.from("invoices").update(invoicePatchToRow(invoicePatch.patch)).eq("id", invoicePatch.id);
-          if (error) throw error;
-        });
-      }
     }
 
     function deleteLineItem(id: string) {
@@ -540,12 +528,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         const { error } = await supabase!.from("job_line_items").delete().eq("id", id);
         if (error) throw error;
       });
-      if (invoicePatch) {
-        persistSupabase("invoice totals update", async () => {
-          const { error } = await supabase!.from("invoices").update(invoicePatchToRow(invoicePatch.patch)).eq("id", invoicePatch.id);
-          if (error) throw error;
-        });
-      }
     }
 
     function createPart(input: NewPartInput) {
@@ -565,6 +547,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     function createOrUpdateInvoiceDraft(jobId: string, createdBy: string) {
+      if (!demoMode) throw new Error("Production invoice drafts must be created through the protected invoice workflow.");
       const existing = state.invoices.find((invoice) => invoice.jobId === jobId);
       const items = state.jobLineItems.filter((item) => item.jobId === jobId);
       const draft = buildInvoiceDraft({
@@ -589,6 +572,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     function updateInvoice(id: string, input: Partial<Invoice>) {
+      if (!demoMode) {
+        setLastError("Production invoices must be updated through the protected invoice workflow.");
+        return;
+      }
       setState((current) => ({
         ...current,
         invoices: current.invoices.map((invoice) => (invoice.id === id ? { ...invoice, ...input } : invoice))
@@ -600,6 +587,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     function sendInvoice(id: string, email: string) {
+      if (!demoMode) {
+        setLastError("Production invoice delivery must be recorded through the protected invoice workflow.");
+        return;
+      }
       const sentAt = new Date().toISOString();
       const sentPatch: Partial<Invoice> = {
         status: "sent",
@@ -921,6 +912,16 @@ function normalizeDemoState(state: AppState): AppState {
     jobs: (state.jobs ?? []).map((job) => ({
       ...job,
       arrivalWindowEndAt: job.arrivalWindowEndAt ?? defaultServiceWindowEndAt(job.scheduledAt) ?? job.scheduledAt
+    })),
+    invoices: (state.invoices ?? []).map((invoice) => ({
+      ...invoice,
+      optionLabel: invoice.optionLabel ?? "approved_work",
+      notes: invoice.notes ?? "",
+      paymentStatus: invoice.paymentStatus ?? "unpaid",
+      amountPaid: invoice.amountPaid ?? 0,
+      approvalStatus: invoice.approvalStatus ?? "not_signed",
+      pdfVersion: invoice.pdfVersion ?? 0,
+      updatedAt: invoice.updatedAt ?? invoice.createdAt
     }))
   };
 }

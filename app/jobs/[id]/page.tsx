@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { PenLine } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { tierOptions, useAppData } from "@/lib/data-store";
@@ -18,6 +19,8 @@ import { AppointmentConfirmationCard } from "@/components/AppointmentConfirmatio
 import { TierColumns } from "@/components/TierColumns";
 import { Button, ButtonLink, Card, EmptyState, Field, PageHeader, StatusPill, TwoColumn } from "@/components/ui";
 import { WorkflowRail } from "@/components/WorkflowRail";
+import { SignatureDialog } from "@/components/SignatureDialog";
+import { SignatureStatusCard } from "@/components/SignatureStatusCard";
 import {
   defaultServiceWindowEndAt,
   findTechnicianWindowConflicts,
@@ -26,7 +29,10 @@ import {
 } from "@/lib/service-window";
 import { useCurrentTime } from "@/lib/use-current-time";
 import { dispatchJobConfirmations, fetchJobConfirmations } from "@/lib/appointment-confirmations-client";
-import type { AppointmentNotificationSummary, Job, JobStatus } from "@/lib/types";
+import { completeProtectedJob, createProtectedInvoiceDraft } from "@/lib/invoices-client";
+import { demoMode } from "@/lib/runtime";
+import { loadSignatures, rejectSignature, saveSignature } from "@/lib/signatures-client";
+import type { AppointmentNotificationSummary, InvoiceSignature, Job, JobStatus } from "@/lib/types";
 
 export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
@@ -53,6 +59,14 @@ export default function JobDetailPage() {
   const [confirmationError, setConfirmationError] = useState<string | undefined>();
   const canManageConfirmations = currentUser.role === "owner" || currentUser.role === "call_center";
   const canEditCustomerFacingFields = canManageConfirmations;
+  const [invoiceBusy, setInvoiceBusy] = useState(false);
+  const [invoiceError, setInvoiceError] = useState<string | undefined>();
+  const [completionSignatures, setCompletionSignatures] = useState<InvoiceSignature[]>([]);
+  const [signatureLoading, setSignatureLoading] = useState(false);
+  const [signatureError, setSignatureError] = useState<string | undefined>();
+  const [signatureDialogOpen, setSignatureDialogOpen] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overrideConfirmed, setOverrideConfirmed] = useState(false);
   const now = useCurrentTime();
   const confirmationPollingNeeded = shouldPollConfirmationStatus(confirmations, now);
   const scheduledAtIso = localDateTimeIso(scheduledAt);
@@ -85,6 +99,8 @@ export default function JobDetailPage() {
     setConflictConfirmed(false);
     setArrivalError(undefined);
     setSaveError(undefined);
+    setOverrideReason("");
+    setOverrideConfirmed(false);
   }, [job?.id]);
 
   useEffect(() => {
@@ -150,6 +166,25 @@ export default function JobDetailPage() {
     };
   }, [canManageConfirmations, confirmationPollingNeeded, job?.id]);
 
+  async function refreshCompletionSignatures() {
+    if (!job?.id) return;
+    setSignatureLoading(true);
+    setSignatureError(undefined);
+    try {
+      setCompletionSignatures(await loadSignatures({ type: "job", id: job.id }));
+    } catch (error) {
+      setSignatureError(error instanceof Error ? error.message : "The customer signature could not be loaded.");
+    } finally {
+      setSignatureLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!job?.id || currentUser.role === "call_center") return;
+    void refreshCompletionSignatures();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id, currentUser.role]);
+
   if (!job || !canViewJob(currentUser, job)) {
     return (
       <main className="page-shell">
@@ -170,6 +205,9 @@ export default function JobDetailPage() {
   const photos = data.jobPhotos.filter((photo) => photo.jobId === job.id);
   const items = data.jobLineItems.filter((item) => item.jobId === job.id).sort((a, b) => a.sortOrder - b.sortOrder);
   const invoice = data.invoices.find((candidate) => candidate.jobId === job.id);
+  const canEditLineItems = !invoice
+    ? currentUser.role !== "call_center"
+    : currentUser.role === "owner" && invoice.approvalStatus !== "signed";
   const jobId = job.id;
   const jobNav = data.jobs
     .filter((candidate) => canViewJob(currentUser, candidate))
@@ -177,6 +215,9 @@ export default function JobDetailPage() {
   const jobIndex = jobNav.findIndex((candidate) => candidate.id === job.id);
   const previousJob = jobIndex > 0 ? jobNav[jobIndex - 1] : undefined;
   const nextJob = jobIndex >= 0 && jobIndex < jobNav.length - 1 ? jobNav[jobIndex + 1] : undefined;
+  const completionSignature = completionSignatures.find((signature) => signature.status === "active" && signature.purpose === "work_completion");
+  const rejectedCompletionSignature = completionSignatures.find((signature) => signature.status === "rejected" && signature.purpose === "work_completion");
+  const ownerOverrideReady = currentUser.role === "owner" && overrideConfirmed && overrideReason.trim().length >= 10;
 
   async function saveInspect() {
     if (canEditDispatch && (!scheduledAtIso || !arrivalWindowEndAtIso || !validWindow)) return;
@@ -189,17 +230,45 @@ export default function JobDetailPage() {
       patch.serviceAddress = nextAddress;
     }
     if (currentUser.role !== "call_center" && notes !== jobRecord.notes) patch.notes = notes;
-    if (currentUser.role !== "call_center" && status !== jobRecord.status) patch.status = status;
+    const completingJob = currentUser.role !== "call_center" && status === "complete" && jobRecord.status !== "complete";
+    if (currentUser.role !== "call_center" && status !== jobRecord.status && !completingJob) patch.status = status;
     if (canEditDispatch) {
       const nextAssignedTechId = assignedTechId || null;
       if (nextAssignedTechId !== (jobRecord.assignedTechId ?? null)) patch.assignedTechId = nextAssignedTechId;
       if (scheduledAtIso && scheduledAtIso !== jobRecord.scheduledAt) patch.scheduledAt = scheduledAtIso;
       if (arrivalWindowEndAtIso && arrivalWindowEndAtIso !== jobRecord.arrivalWindowEndAt) patch.arrivalWindowEndAt = arrivalWindowEndAtIso;
     }
+    if (completingJob && !completionSignature && !ownerOverrideReady) {
+      setSaveError(currentUser.role === "owner"
+        ? "Collect the customer signature or confirm an owner override with a reason."
+        : "Collect the customer signature before completing this job.");
+      return;
+    }
     setSaveBusy(true);
     setSaveError(undefined);
     try {
       await data.updateJob(jobId, patch);
+      if (completingJob) {
+        if (demoMode) {
+          const completedAt = new Date().toISOString();
+          await data.updateJob(jobId, {
+            status: "complete",
+            completedAt,
+            ...(completionSignature ? {} : {
+              completionSignatureOverrideAt: completedAt,
+              completionSignatureOverrideBy: currentUser.id,
+              completionSignatureOverrideReason: overrideReason.trim()
+            })
+          });
+        } else {
+          const completedJob = await completeProtectedJob(jobId, completionSignature ? undefined : overrideReason.trim());
+          data.setState((current) => ({
+            ...current,
+            jobs: current.jobs.map((candidate) => candidate.id === completedJob.id ? completedJob : candidate)
+          }));
+        }
+        setStatus("complete");
+      }
       const customerFacingChange = Boolean(
         patch.scheduledAt !== undefined
         || patch.arrivalWindowEndAt !== undefined
@@ -228,9 +297,55 @@ export default function JobDetailPage() {
     }
   }
 
-  function buildInvoice() {
-    const draft = data.createOrUpdateInvoiceDraft(jobId, currentUser.id);
-    router.push(`/invoices/${draft.id}`);
+  async function buildInvoice() {
+    setInvoiceBusy(true);
+    setInvoiceError(undefined);
+    try {
+      const draft = demoMode
+        ? data.createOrUpdateInvoiceDraft(jobId, currentUser.id)
+        : await createProtectedInvoiceDraft(jobId);
+      if (!demoMode) {
+        data.setState((current) => ({
+          ...current,
+          invoices: current.invoices.some((candidate) => candidate.id === draft.id)
+            ? current.invoices.map((candidate) => candidate.id === draft.id ? draft : candidate)
+            : [draft, ...current.invoices]
+        }));
+      }
+      router.push(`/invoices/${draft.id}`);
+    } catch (error) {
+      setInvoiceError(error instanceof Error ? error.message : "The invoice draft could not be built.");
+    } finally {
+      setInvoiceBusy(false);
+    }
+  }
+
+  async function saveCompletionSignature(input: { signerName: string; signerRole: "customer" | "technician" | "company"; image: Blob; width: number; height: number }) {
+    const saved = await saveSignature({
+      target: { type: "job", id: jobId },
+      purpose: "work_completion",
+      signerName: input.signerName,
+      signerRole: "customer",
+      image: input.image,
+      width: input.width,
+      height: input.height,
+      invoiceId: invoice?.id,
+      jobId,
+      collectedBy: currentUser.id
+    });
+    setCompletionSignatures((current) => [saved, ...current.map((signature) => (
+      signature.status === "active" && signature.purpose === "work_completion"
+        ? { ...signature, status: "rejected" as const, rejectedAt: saved.signedAt, rejectionReason: "Replaced by a newly collected signature." }
+        : signature
+    ))]);
+    setSignatureDialogOpen(false);
+    setSignatureError(undefined);
+  }
+
+  async function rejectCompletionSignature(reason: string) {
+    if (!completionSignature) return;
+    const rejected = await rejectSignature({ type: "job", id: jobId }, completionSignature.id, reason);
+    setCompletionSignatures((current) => current.map((signature) => signature.id === rejected.id ? { ...signature, ...rejected } : signature));
   }
 
   async function markArrived() {
@@ -287,10 +402,11 @@ export default function JobDetailPage() {
           ) : null}
           <div className="metric-pill"><strong>{photos.length}</strong><span>photos</span></div>
           <div className="metric-pill"><strong>{items.length}</strong><span>line items</span></div>
-          {canSeeMoney(currentUser.role) ? <Button onClick={buildInvoice} disabled={items.length === 0}>{invoice ? "Rebuild draft" : "Build invoice"}</Button> : null}
+          {canSeeMoney(currentUser.role) ? <Button onClick={() => void buildInvoice()} disabled={items.length === 0 || invoiceBusy}>{invoiceBusy ? "Building invoice..." : invoice ? "Refresh invoice" : "Build invoice"}</Button> : null}
         </div>
       </section>
       {arrivalError ? <p className="field-error" role="alert">{arrivalError}</p> : null}
+      {invoiceError ? <p className="field-error" role="alert">{invoiceError}</p> : null}
 
       {canManageConfirmations ? (
         <AppointmentConfirmationCard
@@ -404,6 +520,7 @@ export default function JobDetailPage() {
                     || (currentUser.role === "tech" && (option === "scheduled" || option === "cancelled"))
                     || ((option === "in_progress" || option === "complete") && !job.arrivedAt)
                     || (option === "scheduled" && Boolean(job.arrivedAt))
+                    || (option === "complete" && currentUser.role !== "owner" && !completionSignature)
                   }
                 >
                   {option.replace("_", " ")}
@@ -432,10 +549,28 @@ export default function JobDetailPage() {
             <textarea value={notes} onChange={(event) => setNotes(event.target.value)} disabled={currentUser.role === "call_center"} />
           </Field>
         ) : null}
+        {status === "complete" && job.status !== "complete" && !completionSignature && currentUser.role === "owner" ? (
+          <div className="owner-signature-override">
+            <strong>Owner completion override</strong>
+            <p>Use only when the customer cannot sign. The reason and owner identity are kept in the job audit record.</p>
+            <Field label="Override reason">
+              <textarea value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Explain why a customer signature could not be collected." />
+            </Field>
+            <label className="override-confirmation">
+              <input type="checkbox" checked={overrideConfirmed} onChange={(event) => setOverrideConfirmed(event.target.checked)} />
+              I am explicitly overriding the required customer signature as the owner.
+            </label>
+          </div>
+        ) : null}
         {saveError ? <p className="field-error" role="alert">{saveError}</p> : null}
         <Button
           onClick={saveInspect}
-          disabled={saveBusy || (canEditDispatch && !validWindow) || (canEditDispatch && conflicts.length > 0 && !conflictConfirmed)}
+          disabled={
+            saveBusy
+            || (canEditDispatch && !validWindow)
+            || (canEditDispatch && conflicts.length > 0 && !conflictConfirmed)
+            || (status === "complete" && job.status !== "complete" && !completionSignature && !ownerOverrideReady)
+          }
         >
           {saveBusy ? "Saving..." : saved ? "Saved" : "Save job"}
         </Button>
@@ -462,6 +597,39 @@ export default function JobDetailPage() {
         </Card>
       ) : null}
 
+      {currentUser.role !== "call_center" ? (
+        <Card className="job-signature-card">
+          <div className="section-head">
+            <div>
+              <p className="eyebrow">Case approval</p>
+              <h2>Customer work-completion signature</h2>
+              <p className="muted">Have the customer review the completed work on the iPad, then draw and save their signature.</p>
+            </div>
+            <PenLine size={24} aria-hidden="true" />
+          </div>
+          <SignatureStatusCard
+            title="Work reviewed and approved"
+            signature={completionSignature}
+            rejectedSignature={rejectedCompletionSignature}
+            loading={signatureLoading}
+            error={signatureError}
+            drawLabel="Collect customer signature"
+            onDraw={() => setSignatureDialogOpen(true)}
+            onRetry={() => void refreshCompletionSignatures()}
+            canReject={currentUser.role === "owner" && job.status !== "complete"}
+            onReject={completionSignature ? rejectCompletionSignature : undefined}
+            drawDisabled={job.status === "complete" || job.status === "cancelled"}
+          />
+          <p className="signature-completion-note">
+            {completionSignature
+              ? "Signature saved. The job can now be completed."
+              : currentUser.role === "owner"
+                ? "A saved signature is required unless you explicitly record an owner override while completing the job."
+                : "A saved customer signature is required before the Complete status becomes available."}
+          </p>
+        </Card>
+      ) : null}
+
       {canSeeMoney(currentUser.role) ? (
         <>
           <Card>
@@ -472,7 +640,15 @@ export default function JobDetailPage() {
               </div>
               <p className="muted">Good {tierCounts.good} · Better {tierCounts.better} · Best {tierCounts.best}</p>
             </div>
-            <LineItemForm jobId={job.id} />
+            {canEditLineItems ? (
+              <LineItemForm jobId={job.id} />
+            ) : (
+              <p className="muted">
+                {invoice?.approvalStatus === "signed"
+                  ? "Charges are locked to the saved customer approval. An owner must reject that signature before changing work items."
+                  : "Invoice charges are owner-controlled after a draft is created. You can still collect the customer signature."}
+              </p>
+            )}
           </Card>
 
           <Card>
@@ -486,9 +662,9 @@ export default function JobDetailPage() {
             <TierColumns
               items={items}
               taxRate={0.06}
-              editable
-              onEdit={data.updateLineItem}
-              onDelete={data.deleteLineItem}
+              editable={canEditLineItems}
+              onEdit={canEditLineItems ? data.updateLineItem : undefined}
+              onDelete={canEditLineItems ? data.deleteLineItem : undefined}
             />
           </Card>
 
@@ -508,7 +684,7 @@ export default function JobDetailPage() {
                   <strong>Ready for review</strong>
                   <p className="muted">Owner sends after the draft is saved.</p>
                 </div>
-                <Button onClick={buildInvoice}>{invoice ? "Rebuild draft" : "Build invoice"}</Button>
+                <Button onClick={() => void buildInvoice()} disabled={invoiceBusy}>{invoiceBusy ? "Building invoice..." : invoice ? "Refresh invoice" : "Build invoice"}</Button>
               </div>
             )}
           </Card>
@@ -520,6 +696,16 @@ export default function JobDetailPage() {
           <p className="muted">Call center can schedule and update basics only.</p>
         </Card>
       )}
+
+      <SignatureDialog
+        open={signatureDialogOpen}
+        title="Customer work approval"
+        description="The customer confirms that the completed work was reviewed and approved. Saving must finish before the job can be completed."
+        signerRole="customer"
+        defaultSignerName={customer?.name}
+        onCancel={() => setSignatureDialogOpen(false)}
+        onSave={saveCompletionSignature}
+      />
     </main>
   );
 }

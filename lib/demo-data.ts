@@ -326,8 +326,15 @@ export const demoState: AppState = {
       totalBetter: 0,
       totalBest: 0,
       status: "draft",
+      optionLabel: "approved_work",
+      notes: "Drain cleared and system inspected. Condensate safety switch recommended for a future visit.",
+      paymentStatus: "unpaid",
+      amountPaid: 0,
+      approvalStatus: "not_signed",
+      pdfVersion: 0,
       createdAt: "2026-06-01T16:30:00.000Z",
-      createdBy: "33333333-3333-3333-3333-333333333333"
+      createdBy: "33333333-3333-3333-3333-333333333333",
+      updatedAt: "2026-06-01T16:30:00.000Z"
     }
   ],
   callLogs: [

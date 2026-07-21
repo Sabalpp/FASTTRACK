@@ -4,6 +4,12 @@ export type PhotoKind = "before" | "after" | "other";
 export type Unit = "each" | "hour" | "lb" | "visit" | "other";
 export type Tier = "good" | "better" | "best";
 export type InvoiceStatus = "draft" | "sent" | "paid" | "cancelled";
+export type InvoiceOptionLabel = "standard_service" | "approved_work" | "selected_option" | "custom_estimate";
+export type InvoicePaymentStatus = "unpaid" | "partially_paid" | "paid" | "refunded" | "void";
+export type InvoiceApprovalStatus = "not_signed" | "signed";
+export type SignaturePurpose = "invoice_approval" | "work_completion" | "technician_acknowledgement";
+export type SignatureSignerRole = "customer" | "technician" | "company";
+export type SignatureStatus = "active" | "rejected";
 export type CallDirection = "inbound" | "outbound";
 export type CallEventType = "pre_call" | "post_call" | "call_modified" | "unknown";
 export type SmsConsentStatus = "unknown" | "opted_in" | "opted_out";
@@ -54,6 +60,9 @@ export type Job = {
   originatingCallId?: string;
   createdAt: string;
   completedAt?: string | null;
+  completionSignatureOverrideAt?: string;
+  completionSignatureOverrideBy?: string;
+  completionSignatureOverrideReason?: string;
 };
 
 export type JobPhoto = {
@@ -102,11 +111,42 @@ export type Invoice = {
   totalBetter: number;
   totalBest: number;
   status: InvoiceStatus;
+  optionLabel: InvoiceOptionLabel;
+  notes: string;
+  paymentStatus: InvoicePaymentStatus;
+  amountPaid: number;
+  approvalStatus: InvoiceApprovalStatus;
+  approvedAt?: string;
   pdfStoragePath?: string;
+  pdfVersion: number;
+  pdfGeneratedAt?: string;
+  pdfSha256?: string;
+  pdfSizeBytes?: number;
   sentToEmail?: string;
   sentAt?: string;
   createdAt: string;
   createdBy: string;
+  updatedAt: string;
+};
+
+export type InvoiceSignature = {
+  id: string;
+  invoiceId?: string;
+  jobId: string;
+  purpose: SignaturePurpose;
+  signerName: string;
+  signerRole: SignatureSignerRole;
+  status: SignatureStatus;
+  storagePath?: string;
+  imageUrl?: string;
+  contentSha256: string;
+  documentSha256: string;
+  signedAt: string;
+  collectedBy: string;
+  createdAt: string;
+  rejectedAt?: string;
+  rejectedBy?: string;
+  rejectionReason?: string;
 };
 
 export type CallLog = {

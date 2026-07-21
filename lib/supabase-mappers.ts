@@ -25,7 +25,7 @@ type AllowedUserRow = {
   created_at: string;
 };
 
-type CustomerRow = {
+export type CustomerRow = {
   id: string;
   name: string;
   phone: string;
@@ -76,7 +76,7 @@ type AppointmentNotificationRow = {
   created_by: string | null;
 };
 
-type JobRow = {
+export type JobRow = {
   id: string;
   customer_id: string;
   assigned_tech_id: string | null;
@@ -90,6 +90,9 @@ type JobRow = {
   originating_call_id: string | null;
   created_at: string;
   completed_at: string | null;
+  completion_signature_override_at?: string | null;
+  completion_signature_override_by?: string | null;
+  completion_signature_override_reason?: string | null;
 };
 
 type JobPhotoRow = {
@@ -113,7 +116,7 @@ type PartRow = {
   created_at: string;
 };
 
-type JobLineItemRow = {
+export type JobLineItemRow = {
   id: string;
   job_id: string;
   part_id: string | null;
@@ -125,7 +128,7 @@ type JobLineItemRow = {
   sort_order: number;
 };
 
-type InvoiceRow = {
+export type InvoiceRow = {
   id: string;
   job_id: string;
   invoice_number: string;
@@ -138,11 +141,22 @@ type InvoiceRow = {
   total_better: string | number;
   total_best: string | number;
   status: Invoice["status"];
+  option_label?: Invoice["optionLabel"] | null;
+  notes?: string | null;
+  payment_status?: Invoice["paymentStatus"] | null;
+  amount_paid?: string | number | null;
+  approval_status?: Invoice["approvalStatus"] | null;
+  approved_at?: string | null;
   pdf_storage_path: string | null;
+  pdf_version?: number | null;
+  pdf_generated_at?: string | null;
+  pdf_sha256?: string | null;
+  pdf_size_bytes?: number | null;
   sent_to_email: string | null;
   sent_at: string | null;
   created_at: string;
   created_by: string | null;
+  updated_at?: string | null;
 };
 
 type CallLogRow = {
@@ -331,7 +345,10 @@ export function jobFromRow(row: JobRow): Job {
     notes: row.notes ?? "",
     originatingCallId: row.originating_call_id ?? undefined,
     createdAt: row.created_at,
-    completedAt: row.completed_at ?? undefined
+    completedAt: row.completed_at ?? undefined,
+    completionSignatureOverrideAt: row.completion_signature_override_at ?? undefined,
+    completionSignatureOverrideBy: row.completion_signature_override_by ?? undefined,
+    completionSignatureOverrideReason: row.completion_signature_override_reason ?? undefined
   };
 }
 
@@ -348,7 +365,10 @@ export function jobToRow(job: Job): DbPayload {
     notes: job.notes,
     originating_call_id: job.originatingCallId || null,
     created_at: job.createdAt,
-    completed_at: job.completedAt || null
+    completed_at: job.completedAt || null,
+    completion_signature_override_at: job.completionSignatureOverrideAt || null,
+    completion_signature_override_by: job.completionSignatureOverrideBy || null,
+    completion_signature_override_reason: job.completionSignatureOverrideReason || null
   };
 }
 
@@ -364,6 +384,9 @@ export function jobPatchToRow(input: Partial<Job>): DbPayload {
   if (input.notes !== undefined) row.notes = input.notes;
   if (input.originatingCallId !== undefined) row.originating_call_id = input.originatingCallId || null;
   if (Object.prototype.hasOwnProperty.call(input, "completedAt")) row.completed_at = input.completedAt || null;
+  if (input.completionSignatureOverrideAt !== undefined) row.completion_signature_override_at = input.completionSignatureOverrideAt || null;
+  if (input.completionSignatureOverrideBy !== undefined) row.completion_signature_override_by = input.completionSignatureOverrideBy || null;
+  if (input.completionSignatureOverrideReason !== undefined) row.completion_signature_override_reason = input.completionSignatureOverrideReason || null;
   return row;
 }
 
@@ -471,11 +494,22 @@ export function invoiceFromRow(row: InvoiceRow): Invoice {
     totalBetter: Number(row.total_better),
     totalBest: Number(row.total_best),
     status: row.status,
+    optionLabel: row.option_label ?? "approved_work",
+    notes: row.notes ?? "",
+    paymentStatus: row.payment_status ?? "unpaid",
+    amountPaid: Number(row.amount_paid ?? 0),
+    approvalStatus: row.approval_status ?? "not_signed",
+    approvedAt: row.approved_at ?? undefined,
     pdfStoragePath: row.pdf_storage_path ?? undefined,
+    pdfVersion: Number(row.pdf_version ?? 0),
+    pdfGeneratedAt: row.pdf_generated_at ?? undefined,
+    pdfSha256: row.pdf_sha256 ?? undefined,
+    pdfSizeBytes: row.pdf_size_bytes ?? undefined,
     sentToEmail: row.sent_to_email ?? undefined,
     sentAt: row.sent_at ?? undefined,
     createdAt: row.created_at,
-    createdBy: row.created_by ?? ""
+    createdBy: row.created_by ?? "",
+    updatedAt: row.updated_at ?? row.created_at
   };
 }
 
@@ -493,11 +527,22 @@ export function invoiceToRow(invoice: Invoice): DbPayload {
     total_better: invoice.totalBetter,
     total_best: invoice.totalBest,
     status: invoice.status,
+    option_label: invoice.optionLabel,
+    notes: invoice.notes,
+    payment_status: invoice.paymentStatus,
+    amount_paid: invoice.amountPaid,
+    approval_status: invoice.approvalStatus,
+    approved_at: invoice.approvedAt || null,
     pdf_storage_path: invoice.pdfStoragePath || null,
+    pdf_version: invoice.pdfVersion,
+    pdf_generated_at: invoice.pdfGeneratedAt || null,
+    pdf_sha256: invoice.pdfSha256 || null,
+    pdf_size_bytes: invoice.pdfSizeBytes ?? null,
     sent_to_email: invoice.sentToEmail || null,
     sent_at: invoice.sentAt || null,
     created_at: invoice.createdAt,
-    created_by: invoice.createdBy || null
+    created_by: invoice.createdBy || null,
+    updated_at: invoice.updatedAt
   };
 }
 
@@ -513,10 +558,21 @@ export function invoicePatchToRow(input: Partial<Invoice>): DbPayload {
   if (input.totalBetter !== undefined) row.total_better = input.totalBetter;
   if (input.totalBest !== undefined) row.total_best = input.totalBest;
   if (input.status !== undefined) row.status = input.status;
+  if (input.optionLabel !== undefined) row.option_label = input.optionLabel;
+  if (input.notes !== undefined) row.notes = input.notes;
+  if (input.paymentStatus !== undefined) row.payment_status = input.paymentStatus;
+  if (input.amountPaid !== undefined) row.amount_paid = input.amountPaid;
+  if (input.approvalStatus !== undefined) row.approval_status = input.approvalStatus;
+  if (input.approvedAt !== undefined) row.approved_at = input.approvedAt || null;
   if (input.pdfStoragePath !== undefined) row.pdf_storage_path = input.pdfStoragePath || null;
+  if (input.pdfVersion !== undefined) row.pdf_version = input.pdfVersion;
+  if (input.pdfGeneratedAt !== undefined) row.pdf_generated_at = input.pdfGeneratedAt || null;
+  if (input.pdfSha256 !== undefined) row.pdf_sha256 = input.pdfSha256 || null;
+  if (input.pdfSizeBytes !== undefined) row.pdf_size_bytes = input.pdfSizeBytes ?? null;
   if (input.sentToEmail !== undefined) row.sent_to_email = input.sentToEmail || null;
   if (input.sentAt !== undefined) row.sent_at = input.sentAt || null;
   if (input.createdBy !== undefined) row.created_by = input.createdBy || null;
+  if (input.updatedAt !== undefined) row.updated_at = input.updatedAt;
   return row;
 }
 

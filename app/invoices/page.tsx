@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
 import { canViewInvoice } from "@/lib/access";
 import { money } from "@/lib/money";
+import { firstPopulatedTier, invoiceOptionLabels, selectedTotal } from "@/lib/invoice";
 import { EmptyState, PageHeader, StatusPill } from "@/components/ui";
 
 export default function InvoicesPage() {
@@ -34,6 +35,8 @@ export default function InvoicesPage() {
           visibleInvoices.map((invoice) => {
             const job = data.jobs.find((candidate) => candidate.id === invoice.jobId);
             const customer = data.customers.find((candidate) => candidate.id === job?.customerId);
+            const selectedTier = firstPopulatedTier(invoice);
+            const displayInvoice = selectedTier ? { ...invoice, selectedTier } : invoice;
             return (
               <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="record-row invoice-row">
                 <div className="record-main">
@@ -41,8 +44,8 @@ export default function InvoicesPage() {
                   <span>{customer?.name ?? "Unknown customer"}</span>
                 </div>
                 <div className="record-meta">
-                  <span>Good {money(invoice.totalGood)}</span>
-                  <small>Better {money(invoice.totalBetter)} · Best {money(invoice.totalBest)}</small>
+                  <span>{invoiceOptionLabels[invoice.optionLabel]}</span>
+                  <small>{selectedTier ? money(selectedTotal(displayInvoice)) : "Awaiting approved work"} · {invoice.paymentStatus.replace("_", " ")}</small>
                 </div>
                 <div className="record-side">
                   <StatusPill tone={invoice.status === "sent" || invoice.status === "paid" ? "good" : "warn"}>{invoice.status}</StatusPill>

@@ -2,30 +2,19 @@
 
 import { useEffect, useRef } from "react";
 import { formatDate } from "@/lib/date";
+import { firstPopulatedTier, invoiceOptionLabels, selectedSubtotal, selectedTotal } from "@/lib/invoice";
 import { money, percent } from "@/lib/money";
-import type { Customer, Invoice, Job, JobLineItem, Tier } from "@/lib/types";
+import type { Customer, Invoice, Job, JobLineItem } from "@/lib/types";
 
 const PAGE_WIDTH = 816;
 const PAGE_HEIGHT = 1056;
-const BLUE = "#173977";
-const BAND = "#8799cc";
-const DARK = "#17202a";
-const MUTED = "#536173";
+const INK = "#102a36";
+const MUTED = "#5f6f78";
+const LINE = "#dce5e9";
+const BRAND = "#164e63";
+const ACCENT = "#f97316";
 
-const tierNames: Record<Tier, string> = {
-  good: "Good",
-  better: "Better",
-  best: "Best"
-};
-
-const tierOrder: Tier[] = ["good", "better", "best"];
-
-export function InvoiceCanvasPreview({
-  invoice,
-  job,
-  customer,
-  items
-}: {
+export function InvoiceCanvasPreview({ invoice, job, customer, items }: {
   invoice: Invoice;
   job: Job;
   customer: Customer;
@@ -37,12 +26,11 @@ export function InvoiceCanvasPreview({
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context) return;
-
-    const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
-    canvas.width = PAGE_WIDTH * pixelRatio;
-    canvas.height = PAGE_HEIGHT * pixelRatio;
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    drawPaperInvoice(context, invoice, job, customer, items);
+    const ratio = Math.max(1, window.devicePixelRatio || 1);
+    canvas.width = PAGE_WIDTH * ratio;
+    canvas.height = PAGE_HEIGHT * ratio;
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    drawInvoice(context, invoice, job, customer, items);
   }, [customer, invoice, items, job]);
 
   return (
@@ -59,316 +47,105 @@ export function InvoiceCanvasPreview({
   );
 }
 
-function drawPaperInvoice(
+function drawInvoice(
   context: CanvasRenderingContext2D,
   invoice: Invoice,
   job: Job,
   customer: Customer,
   items: JobLineItem[]
 ) {
-  const selectedTier = invoice.selectedTier ?? "good";
-  const subtotal = totalFor(invoice, selectedTier, "subtotal");
-  const total = totalFor(invoice, selectedTier, "total");
-  const tax = total - subtotal;
+  const selectedTier = firstPopulatedTier(invoice);
+  const selectedInvoice = selectedTier ? { ...invoice, selectedTier } : invoice;
+  const selectedItems = selectedTier ? items.filter((item) => item.tier === selectedTier) : [];
+  const subtotal = selectedTier ? selectedSubtotal(selectedInvoice) : 0;
+  const total = selectedTier ? selectedTotal(selectedInvoice) : 0;
 
   context.clearRect(0, 0, PAGE_WIDTH, PAGE_HEIGHT);
-  context.fillStyle = "#ffffff";
+  context.fillStyle = "#fff";
   context.fillRect(0, 0, PAGE_WIDTH, PAGE_HEIGHT);
 
-  drawHeader(context, invoice);
+  roundedRect(context, 48, 40, 52, 52, 12, BRAND);
+  drawText(context, "FT", 74, 73, "700 20px Arial", "#fff", "center");
+  drawText(context, "Fast Track Repair Service", 116, 61, "700 22px Arial", BRAND);
+  drawText(context, "13817 Fount Beattie Ct., Centreville, VA 20121", 116, 81, "12px Arial", MUTED);
+  drawText(context, "INVOICE", 768, 62, "700 27px Arial", BRAND, "right");
+  drawText(context, invoice.invoiceNumber, 768, 84, "700 13px Arial", MUTED, "right");
+  context.fillStyle = ACCENT;
+  context.fillRect(48, 108, 720, 4);
 
-  const leftX = 44;
-  const leftW = 466;
-  const rightX = 526;
-  const rightW = 246;
-  let leftY = 210;
-  let rightY = 210;
+  drawText(context, "BILL TO", 48, 153, "700 10px Arial", ACCENT);
+  drawText(context, customer.name, 48, 178, "700 18px Arial", INK);
+  drawText(context, customer.addressLine1, 48, 199, "13px Arial", MUTED);
+  drawText(context, `${customer.city}, ${customer.state} ${customer.zip}`, 48, 218, "13px Arial", MUTED);
+  drawText(context, customer.phone, 48, 237, "13px Arial", MUTED);
 
-  leftY = drawCustomerTable(context, leftX, leftY, leftW, customer, job) + 10;
-  leftY = drawEquipmentTable(context, leftX, leftY, leftW) + 10;
-  leftY = drawBandBox(context, leftX, leftY, leftW, "NATURE OF SERVICE REQUEST", job.description, 82) + 10;
-  leftY = drawOptions(context, leftX, leftY, leftW, invoice, items, selectedTier) + 10;
-  leftY = drawBandBox(
-    context,
-    leftX,
-    leftY,
-    leftW,
-    "SERVICE PERFORMED / DIAGNOSIS",
-    job.notes || "Diagnosis and work performed will be recorded here.",
-    76
-  ) + 10;
-  leftY = drawNotice(context, leftX, leftY, leftW) + 10;
-  drawPaymentNotice(context, leftX, leftY, leftW);
+  drawText(context, "SERVICE LOCATION", 426, 153, "700 10px Arial", ACCENT);
+  wrapText(context, job.serviceAddress, 426, 178, 342, 20, "700 15px Arial", INK, 2);
+  wrapText(context, job.description, 426, 225, 342, 18, "12px Arial", MUTED, 2);
 
-  rightY = drawStateBand(context, rightX, rightY, rightW) + 10;
-  rightY = drawAuthorization(context, rightX, rightY, rightW) + 10;
-  rightY = drawCompletion(context, rightX, rightY, rightW) + 10;
-  rightY = drawCoupon(context, rightX, rightY, rightW) + 10;
-  drawCostTable(context, rightX, rightY, rightW, selectedTier, subtotal, tax, total, invoice.taxRate);
-}
-
-function drawHeader(context: CanvasRenderingContext2D, invoice: Invoice) {
-  text(context, "FAST TRACK", 52, 72, "700 25px Arial, sans-serif", BLUE);
-  text(context, "REPAIR SERVICE", 94, 93, "700 10px Arial, sans-serif", BLUE);
-
-  const contactX = 245;
-  const lines = [
-    "13817 Fount Beattie Ct.",
-    "CENTREVILLE, VA 20121",
-    "PHONE: +1 7038995615",
-    "E-MAIL: Info@fasttrackdmv.org",
-    "WEBSITE: WWW.FASTTRACKDMV.ORG"
+  roundedRect(context, 48, 276, 720, 70, 8, "#f4f8f9", LINE);
+  const facts = [
+    ["ISSUE DATE", formatDate(invoice.createdAt)],
+    ["SERVICE DATE", formatDate(job.completedAt ?? job.arrivedAt ?? job.scheduledAt)],
+    ["STATUS", invoice.status.replace("_", " ")],
+    ["PAYMENT", invoice.paymentStatus.replace("_", " ")]
   ];
-  lines.forEach((lineValue, index) => {
-    text(context, lineValue, contactX, 56 + index * 22, "700 15px Georgia, serif", BLUE);
+  facts.forEach(([label, value], index) => {
+    const x = 65 + index * 178;
+    drawText(context, label, x, 301, "700 9px Arial", MUTED);
+    drawText(context, value, x, 326, "700 13px Arial", INK);
   });
 
-  text(context, "INVOICE NO:", 602, 66, "700 15px Georgia, serif", BLUE);
-  line(context, 705, 66, 768, 66, BLUE, 1);
-  text(context, invoice.invoiceNumber, 767, 61, "700 11px Arial, sans-serif", DARK, "right");
-  text(context, "DATE:", 602, 109, "700 18px Georgia, serif", BLUE);
-  line(context, 662, 109, 768, 109, BLUE, 1);
-  text(context, formatDate(invoice.createdAt), 767, 104, "700 11px Arial, sans-serif", DARK, "right");
+  drawText(context, "SERVICE DETAILS", 48, 393, "700 10px Arial", ACCENT);
+  drawText(context, invoiceOptionLabels[invoice.optionLabel], 48, 421, "700 22px Arial", INK);
+  drawText(context, money(total), 768, 421, "700 22px Arial", BRAND, "right");
 
-  line(context, 44, 178, 772, 178, BLUE, 2);
-}
+  const tableTop = 448;
+  context.fillStyle = BRAND;
+  context.fillRect(48, tableTop, 720, 38);
+  drawText(context, "DESCRIPTION", 62, tableTop + 24, "700 10px Arial", "#fff");
+  drawText(context, "QTY", 580, tableTop + 24, "700 10px Arial", "#fff", "right");
+  drawText(context, "RATE", 676, tableTop + 24, "700 10px Arial", "#fff", "right");
+  drawText(context, "AMOUNT", 754, tableTop + 24, "700 10px Arial", "#fff", "right");
 
-function drawCustomerTable(
-  context: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  customer: Customer,
-  job: Job
-) {
-  const rows = [
-    [
-      { label: "CUSTOMER NAME", value: customer.name, w: width * 0.64 },
-      { label: "PHONE", value: customer.phone, w: width * 0.36 }
-    ],
-    [{ label: "JOB STREET", value: customer.addressLine1, w: width }],
-    [
-      { label: "UNIT NO.", value: customer.addressLine2 ?? "", w: width * 0.22 },
-      { label: "CITY", value: customer.city, w: width * 0.34 },
-      { label: "STATE", value: customer.state, w: width * 0.16 },
-      { label: "ZIP CODE", value: customer.zip, w: width * 0.28 }
-    ],
-    [{ label: "CUSTOMER EMAIL", value: customer.email ?? "", w: width }],
-    [{ label: "SERVICE ADDRESS", value: job.serviceAddress, w: width }]
-  ];
-
-  let cursorY = y;
-  rows.forEach((row) => {
-    let cursorX = x;
-    row.forEach((field) => {
-      drawField(context, cursorX, cursorY, field.w, 32, field.label, field.value);
-      cursorX += field.w;
-    });
-    cursorY += 32;
-  });
-  return cursorY;
-}
-
-function drawEquipmentTable(context: CanvasRenderingContext2D, x: number, y: number, width: number) {
-  let cursorY = y;
-  [1, 2].forEach((index) => {
-    drawField(context, x, cursorY, width, 32, `APPLIANCE ${index} TYPE / BRAND`, "");
-    cursorY += 32;
-    drawField(context, x, cursorY, width / 2, 32, "MODEL NO.", "");
-    drawField(context, x + width / 2, cursorY, width / 2, 32, "SERIAL NO. / MFG. NO.", "");
-    cursorY += 32;
-  });
-  return cursorY;
-}
-
-function drawBandBox(
-  context: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  title: string,
-  value: string,
-  height: number
-) {
-  band(context, x, y, width, title);
-  rect(context, x, y + 24, width, height, "#ffffff", BLUE);
-  wrapText(context, value, x + 10, y + 48, width - 20, 18, "700 13px Arial, sans-serif", DARK, 3);
-  return y + 24 + height;
-}
-
-function drawOptions(
-  context: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  invoice: Invoice,
-  items: JobLineItem[],
-  selectedTier: Tier
-) {
-  band(context, x, y, width, "GOOD / BETTER / BEST OPTIONS");
-  let cursorY = y + 24;
-
-  tierOrder.forEach((tier) => {
-    const tierItems = items.filter((item) => item.tier === tier);
-    const total = totalFor(invoice, tier, "total");
-    rect(context, x, cursorY, width, 82, tier === selectedTier ? "#eef6ff" : "#ffffff", BLUE);
-    text(context, `${tierNames[tier]}${tier === selectedTier ? " - SELECTED" : ""}`, x + 10, cursorY + 22, "700 13px Arial, sans-serif", BLUE);
-    text(context, money(total), x + width - 10, cursorY + 22, "700 15px Arial, sans-serif", DARK, "right");
-
-    if (tierItems.length === 0) {
-      text(context, "No items on this option.", x + 10, cursorY + 48, "12px Arial, sans-serif", MUTED);
-    } else {
-      tierItems.slice(0, 2).forEach((item, index) => {
-        const rowY = cursorY + 46 + index * 18;
-        wrapText(context, item.description, x + 10, rowY, width - 122, 14, "12px Arial, sans-serif", DARK, 1);
-        text(context, `${item.quantity} x ${money(item.unitPrice)}`, x + width - 10, rowY, "12px Arial, sans-serif", DARK, "right");
-      });
-    }
-    cursorY += 82;
+  const visibleItems = selectedItems.slice(0, 8);
+  visibleItems.forEach((item, index) => {
+    const y = tableTop + 38 + index * 52;
+    context.fillStyle = index % 2 ? "#f7fafb" : "#fff";
+    context.fillRect(48, y, 720, 52);
+    context.strokeStyle = LINE;
+    context.strokeRect(48, y, 720, 52);
+    wrapText(context, item.description, 62, y + 22, 440, 16, "13px Arial", INK, 2);
+    drawText(context, String(item.quantity), 580, y + 30, "13px Arial", INK, "right");
+    drawText(context, money(item.unitPrice), 676, y + 30, "13px Arial", INK, "right");
+    drawText(context, money(item.quantity * item.unitPrice), 754, y + 30, "700 13px Arial", INK, "right");
   });
 
-  return cursorY;
+  if (visibleItems.length === 0) drawText(context, "Approved work has not been selected.", 62, tableTop + 78, "13px Arial", MUTED);
+  if (selectedItems.length > visibleItems.length) {
+    drawText(context, `+ ${selectedItems.length - visibleItems.length} more item(s) on the generated PDF`, 62, tableTop + 38 + visibleItems.length * 52 + 24, "12px Arial", MUTED);
+  }
+
+  const totalsY = Math.min(850, tableTop + 70 + Math.max(visibleItems.length, 1) * 52);
+  roundedRect(context, 492, totalsY, 276, 144, 8, "#f4f8f9", LINE);
+  totalLine(context, "Subtotal", money(subtotal), totalsY + 28);
+  totalLine(context, `Tax (${percent(invoice.taxRate)})`, money(total - subtotal), totalsY + 55);
+  totalLine(context, "Paid", money(invoice.amountPaid), totalsY + 82);
+  context.fillStyle = BRAND;
+  context.fillRect(492, totalsY + 94, 276, 50);
+  drawText(context, "BALANCE DUE", 508, totalsY + 125, "700 12px Arial", "#fff");
+  drawText(context, money(Math.max(0, total - invoice.amountPaid)), 752, totalsY + 125, "700 18px Arial", "#fff", "right");
+
+  drawText(context, invoice.approvalStatus === "signed" ? "CUSTOMER APPROVAL SAVED" : "CUSTOMER SIGNATURE PENDING", 48, 1000, "700 10px Arial", invoice.approvalStatus === "signed" ? "#166534" : MUTED);
+  drawText(context, `${invoice.invoiceNumber}  ·  Preview`, 768, 1020, "11px Arial", MUTED, "right");
 }
 
-function drawNotice(context: CanvasRenderingContext2D, x: number, y: number, width: number) {
-  rect(context, x, y, width, 54, "#ffffff", BLUE);
-  wrapText(
-    context,
-    "WE DO NOT USE HOURLY RATE where parts or service are required. The app records parts, service, photos, authorization, and invoice totals so the technician does not need to carry the paper sheet.",
-    x + 10,
-    y + 20,
-    width - 20,
-    14,
-    "700 10px Arial, sans-serif",
-    BLUE,
-    3
-  );
-  return y + 54;
+function totalLine(context: CanvasRenderingContext2D, label: string, value: string, y: number) {
+  drawText(context, label, 508, y, "12px Arial", MUTED);
+  drawText(context, value, 752, y, "700 12px Arial", INK, "right");
 }
 
-function drawPaymentNotice(context: CanvasRenderingContext2D, x: number, y: number, width: number) {
-  rect(context, x, y, width, 54, "#ffffff", BLUE);
-  text(context, "PAYMENT", x + 10, y + 20, "700 11px Arial, sans-serif", BLUE);
-  wrapText(
-    context,
-    "Payment method: cash, check, card, or payment link. Use Stripe/Square payment links; do not store raw card number or CVV.",
-    x + 10,
-    y + 39,
-    width - 20,
-    14,
-    "11px Arial, sans-serif",
-    DARK,
-    2
-  );
-}
-
-function drawStateBand(context: CanvasRenderingContext2D, x: number, y: number, width: number) {
-  rect(context, x, y, width, 28, BAND, BLUE);
-  text(context, "DC", x + width * 0.18, y + 20, "700 15px Georgia, serif", BLUE, "center");
-  text(context, "MD", x + width * 0.5, y + 20, "700 15px Georgia, serif", BLUE, "center");
-  text(context, "VA", x + width * 0.82, y + 20, "700 15px Georgia, serif", BLUE, "center");
-  return y + 28;
-}
-
-function drawAuthorization(context: CanvasRenderingContext2D, x: number, y: number, width: number) {
-  band(context, x, y, width, "AUTHORIZATION OF REPAIR");
-  rect(context, x, y + 24, width, 190, "#ffffff", BLUE);
-  wrapText(
-    context,
-    "An estimate includes diagnosis/estimate, parts, and labor. I hereby authorize repairs and agree to pay for them upon completion of the job. If repairs require a part order, I agree to pay a deposit. Company/technicians are not responsible for damages.",
-    x + 10,
-    y + 48,
-    width - 20,
-    15,
-    "700 11px Arial, sans-serif",
-    DARK,
-    7
-  );
-  signature(context, x + 24, y + 160, width - 48, "CUSTOMER SIGNATURE");
-  return y + 214;
-}
-
-function drawCompletion(context: CanvasRenderingContext2D, x: number, y: number, width: number) {
-  band(context, x, y, width, "COMPLETION OF WORK");
-  rect(context, x, y + 24, width, 104, "#ffffff", BLUE);
-  wrapText(
-    context,
-    "I hereby acknowledge satisfactory performance of completion of repairs.",
-    x + 10,
-    y + 51,
-    width - 20,
-    15,
-    "700 11px Arial, sans-serif",
-    DARK,
-    2
-  );
-  signature(context, x + 24, y + 94, width - 48, "CUSTOMER SIGNATURE / DATE");
-  return y + 128;
-}
-
-function drawCoupon(context: CanvasRenderingContext2D, x: number, y: number, width: number) {
-  rect(context, x, y, width, 94, "#ffffff", BLUE);
-  rect(context, x + 10, y + 10, width - 20, 74, "#ffffff", BLUE);
-  text(context, "$50 OFF", x + width / 2, y + 36, "700 22px Georgia, serif", BLUE, "center");
-  text(context, "ON YOUR NEXT", x + width / 2, y + 58, "700 17px Georgia, serif", BLUE, "center");
-  text(context, "COMPLETE REPAIR", x + width / 2, y + 78, "700 17px Georgia, serif", BLUE, "center");
-  return y + 94;
-}
-
-function drawCostTable(
-  context: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  selectedTier: Tier,
-  subtotal: number,
-  tax: number,
-  total: number,
-  taxRate: number
-) {
-  const rows = [
-    ["APPROVED OPTION", tierNames[selectedTier]],
-    ["JOB COST", money(subtotal)],
-    ["SERVICE CALL", "Included"],
-    ["SUB-TOTAL", money(subtotal)],
-    [`TAX ${percent(taxRate)}`, money(tax)],
-    ["DEPOSIT", "$0.00"],
-    ["PAY THIS AMOUNT", money(total)]
-  ];
-
-  rows.forEach(([label, value], index) => {
-    const rowY = y + index * 34;
-    rect(context, x, rowY, width, 34, "#ffffff", BLUE);
-    line(context, x + 112, rowY, x + 112, rowY + 34, BLUE, 1);
-    text(context, label, x + 8, rowY + 22, "700 11px Arial, sans-serif", BLUE);
-    text(context, value, x + width - 8, rowY + 22, "700 12px Arial, sans-serif", DARK, "right");
-  });
-}
-
-function drawField(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, label: string, value: string) {
-  rect(context, x, y, width, height, "#ffffff", BLUE);
-  text(context, label, x + 6, y + 12, "700 8px Arial, sans-serif", BLUE);
-  wrapText(context, value, x + 6, y + 27, width - 12, 13, "700 11px Arial, sans-serif", DARK, 1);
-}
-
-function band(context: CanvasRenderingContext2D, x: number, y: number, width: number, label: string) {
-  rect(context, x, y, width, 24, BAND, BLUE);
-  text(context, label, x + width / 2, y + 16, "700 11px Georgia, serif", BLUE, "center");
-}
-
-function signature(context: CanvasRenderingContext2D, x: number, y: number, width: number, label: string) {
-  text(context, "X", x, y + 2, "700 16px Georgia, serif", BLUE);
-  line(context, x + 26, y, x + width, y, BLUE, 1);
-  text(context, label, x + 48, y + 15, "700 8px Arial, sans-serif", BLUE);
-}
-
-function totalFor(invoice: Invoice, tier: Tier, kind: "subtotal" | "total") {
-  if (tier === "good") return kind === "subtotal" ? invoice.subtotalGood : invoice.totalGood;
-  if (tier === "best") return kind === "subtotal" ? invoice.subtotalBest : invoice.totalBest;
-  return kind === "subtotal" ? invoice.subtotalBetter : invoice.totalBetter;
-}
-
-function text(
+function drawText(
   context: CanvasRenderingContext2D,
   value: string,
   x: number,
@@ -377,8 +154,8 @@ function text(
   color: string,
   align: CanvasTextAlign = "left"
 ) {
-  context.fillStyle = color;
   context.font = font;
+  context.fillStyle = color;
   context.textAlign = align;
   context.textBaseline = "alphabetic";
   context.fillText(value, x, y);
@@ -393,55 +170,58 @@ function wrapText(
   lineHeight: number,
   font: string,
   color: string,
-  maxLines = 3
+  maxLines: number
 ) {
   context.font = font;
   context.fillStyle = color;
   context.textAlign = "left";
   const words = value.split(/\s+/).filter(Boolean);
-  let lineValue = "";
-  let lineY = y;
-  let linesDrawn = 0;
-
-  words.forEach((word) => {
-    if (linesDrawn >= maxLines) return;
-    const testLine = lineValue ? `${lineValue} ${word}` : word;
-    if (context.measureText(testLine).width > maxWidth && lineValue) {
-      context.fillText(lineValue, x, lineY);
-      linesDrawn += 1;
-      lineValue = word;
-      lineY += lineHeight;
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (context.measureText(candidate).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+      if (lines.length === maxLines) break;
     } else {
-      lineValue = testLine;
+      line = candidate;
     }
-  });
-
-  if (lineValue && linesDrawn < maxLines) {
-    context.fillText(lineValue, x, lineY);
   }
+  if (line && lines.length < maxLines) lines.push(line);
+  lines.forEach((lineValue, index) => context.fillText(lineValue, x, y + index * lineHeight));
 }
 
-function line(context: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, color: string, width: number) {
-  context.strokeStyle = color;
-  context.lineWidth = width;
-  context.beginPath();
-  context.moveTo(x1, y1);
-  context.lineTo(x2, y2);
-  context.stroke();
-}
-
-function rect(
+function roundedRect(
   context: CanvasRenderingContext2D,
   x: number,
   y: number,
   width: number,
   height: number,
+  radius: number,
   fill: string,
-  stroke: string
+  stroke?: string
 ) {
+  context.beginPath();
+  if (typeof context.roundRect === "function") {
+    context.roundRect(x, y, width, height, radius);
+  } else {
+    const safeRadius = Math.min(radius, width / 2, height / 2);
+    context.moveTo(x + safeRadius, y);
+    context.lineTo(x + width - safeRadius, y);
+    context.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+    context.lineTo(x + width, y + height - safeRadius);
+    context.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+    context.lineTo(x + safeRadius, y + height);
+    context.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+    context.lineTo(x, y + safeRadius);
+    context.quadraticCurveTo(x, y, x + safeRadius, y);
+    context.closePath();
+  }
   context.fillStyle = fill;
-  context.strokeStyle = stroke;
-  context.lineWidth = 1;
-  context.fillRect(x, y, width, height);
-  context.strokeRect(x, y, width, height);
+  context.fill();
+  if (stroke) {
+    context.strokeStyle = stroke;
+    context.stroke();
+  }
 }
