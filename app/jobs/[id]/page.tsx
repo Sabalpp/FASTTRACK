@@ -6,9 +6,7 @@ import {
   ArrowLeft,
   Check,
   ChevronRight,
-  CircleUserRound,
   FileText,
-  Mail,
   MapPin,
   MessageSquare,
   PenLine,
@@ -20,24 +18,24 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { tierOptions, useAppData } from "@/lib/data-store";
 import { canScheduleJobs, canSeeMoney, canSeePhotos, canViewJob } from "@/lib/access";
-import { dateInputValue, formatDateTime } from "@/lib/date";
+import { formatDateTime } from "@/lib/date";
 import { money } from "@/lib/money";
 import { formatPhone } from "@/lib/phone";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { LineItemForm } from "@/components/LineItemForm";
 import { PhotoUploader } from "@/components/PhotoUploader";
 import { AppointmentConfirmationCard } from "@/components/AppointmentConfirmationCard";
+import { ArrivalWindowField } from "@/components/ArrivalWindowField";
 import { TierColumns } from "@/components/TierColumns";
 import { Button, EmptyState, Field, StatusPill, TwoColumn } from "@/components/ui";
 import { JobStageNav, jobStages, type JobStage } from "@/components/JobStageNav";
 import { SignatureDialog } from "@/components/SignatureDialog";
 import { SignatureStatusCard } from "@/components/SignatureStatusCard";
 import {
-  defaultServiceWindowEndAt,
   findTechnicianWindowConflicts,
-  formatServiceWindow,
-  isValidServiceWindow
+  formatServiceWindow
 } from "@/lib/service-window";
+import { arrivalWindowDraftFromRange, resolveArrivalWindow } from "@/lib/arrival-window";
 import { useCurrentTime } from "@/lib/use-current-time";
 import { dispatchJobConfirmations, fetchJobConfirmations } from "@/lib/appointment-confirmations-client";
 import { completeProtectedJob, createProtectedInvoiceDraft } from "@/lib/invoices-client";
@@ -60,9 +58,7 @@ export default function JobDetailPage() {
   const [assignedTechId, setAssignedTechId] = useState(job?.assignedTechId ?? "");
   const [jobDescription, setJobDescription] = useState(job?.description ?? "");
   const [serviceAddress, setServiceAddress] = useState(job?.serviceAddress ?? "");
-  const [scheduledAt, setScheduledAt] = useState(dateInputValue(job?.scheduledAt));
-  const [arrivalWindowEndAt, setArrivalWindowEndAt] = useState(dateInputValue(job?.arrivalWindowEndAt ?? defaultServiceWindowEndAt(job?.scheduledAt)));
-  const [conflictConfirmed, setConflictConfirmed] = useState(false);
+  const [arrivalWindowDraft, setArrivalWindowDraft] = useState(() => arrivalWindowDraftFromRange(job?.scheduledAt, job?.arrivalWindowEndAt));
   const [arrivalBusy, setArrivalBusy] = useState(false);
   const [arrivalError, setArrivalError] = useState<string | undefined>();
   const [confirmations, setConfirmations] = useState<AppointmentNotificationSummary[]>([]);
@@ -80,11 +76,13 @@ export default function JobDetailPage() {
   const [overrideReason, setOverrideReason] = useState("");
   const [overrideConfirmed, setOverrideConfirmed] = useState(false);
   const [activeStage, setActiveStage] = useState<JobStage>("overview");
+  const [dispatchEditing, setDispatchEditing] = useState(false);
   const now = useCurrentTime();
   const confirmationPollingNeeded = shouldPollConfirmationStatus(confirmations, now);
-  const scheduledAtIso = localDateTimeIso(scheduledAt);
-  const arrivalWindowEndAtIso = localDateTimeIso(arrivalWindowEndAt);
-  const validWindow = isValidServiceWindow(scheduledAtIso, arrivalWindowEndAtIso);
+  const arrivalWindowResolution = resolveArrivalWindow(arrivalWindowDraft);
+  const scheduledAtIso = arrivalWindowResolution.status === "valid" ? arrivalWindowResolution.startAt : undefined;
+  const arrivalWindowEndAtIso = arrivalWindowResolution.status === "valid" ? arrivalWindowResolution.endAt : undefined;
+  const validWindow = arrivalWindowResolution.status === "valid";
   const dispatchChanged = Boolean(job && (
     (assignedTechId || null) !== (job.assignedTechId ?? null)
     || (scheduledAtIso && scheduledAtIso !== job.scheduledAt)
@@ -107,15 +105,21 @@ export default function JobDetailPage() {
     setAssignedTechId(job.assignedTechId ?? "");
     setJobDescription(job.description);
     setServiceAddress(job.serviceAddress);
-    setScheduledAt(dateInputValue(job.scheduledAt));
-    setArrivalWindowEndAt(dateInputValue(job.arrivalWindowEndAt ?? defaultServiceWindowEndAt(job.scheduledAt)));
-    setConflictConfirmed(false);
+    setArrivalWindowDraft(arrivalWindowDraftFromRange(job.scheduledAt, job.arrivalWindowEndAt));
     setArrivalError(undefined);
     setSaveError(undefined);
     setOverrideReason("");
     setOverrideConfirmed(false);
     setActiveStage("overview");
+    setDispatchEditing(false);
   }, [job?.id]);
+
+  useEffect(() => {
+    if (currentUser.role === "call_center" && activeStage !== "overview") {
+      setActiveStage("overview");
+    }
+    if (currentUser.role === "tech") setDispatchEditing(false);
+  }, [activeStage, currentUser.role]);
 
   useEffect(() => {
     if (!job?.id) return;
@@ -227,10 +231,9 @@ export default function JobDetailPage() {
   const rejectedCompletionSignature = completionSignatures.find((signature) => signature.status === "rejected" && signature.purpose === "work_completion");
   const ownerOverrideReady = currentUser.role === "owner" && overrideConfirmed && overrideReason.trim().length >= 10;
 
-  async function saveInspect(statusOverride?: JobStatus) {
+  async function saveInspect(statusOverride?: JobStatus): Promise<boolean> {
     const nextStatus = statusOverride ?? status;
-    if (canEditDispatch && (!scheduledAtIso || !arrivalWindowEndAtIso || !validWindow)) return;
-    if (canEditDispatch && conflicts.length > 0 && !conflictConfirmed) return;
+    if (canEditDispatch && (!scheduledAtIso || !arrivalWindowEndAtIso || !validWindow)) return false;
     const patch: Partial<Job> = {};
     const nextDescription = jobDescription.trim() || jobRecord.description;
     const nextAddress = serviceAddress.trim() || jobRecord.serviceAddress;
@@ -251,7 +254,7 @@ export default function JobDetailPage() {
       setSaveError(currentUser.role === "owner"
         ? "Collect the customer signature or confirm an owner override with a reason."
         : "Collect the customer signature before completing this job.");
-      return;
+      return false;
     }
     setSaveBusy(true);
     setSaveError(undefined);
@@ -299,8 +302,10 @@ export default function JobDetailPage() {
       }
       setSaved(true);
       window.setTimeout(() => setSaved(false), 1400);
+      return true;
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "The job could not be saved.");
+      return false;
     } finally {
       setSaveBusy(false);
     }
@@ -372,6 +377,20 @@ export default function JobDetailPage() {
     }
   }
 
+  async function markEnRoute(): Promise<boolean> {
+    setArrivalBusy(true);
+    setArrivalError(undefined);
+    try {
+      await data.markJobEnRoute(jobId);
+      return true;
+    } catch (error) {
+      setArrivalError(error instanceof Error ? error.message : "The en-route status could not be recorded.");
+      return false;
+    } finally {
+      setArrivalBusy(false);
+    }
+  }
+
   async function processConfirmations(mode: "retry" | "resend") {
     setConfirmationBusy(true);
     setConfirmationError(undefined);
@@ -386,7 +405,13 @@ export default function JobDetailPage() {
   }
 
   const tierCounts = Object.fromEntries(tierOptions.map((tier) => [tier, items.filter((item) => item.tier === tier).length]));
-  const canRecordArrival = !job.arrivedAt
+  const canMarkEnRoute = !job.enRouteAt
+    && !job.arrivedAt
+    && status !== "complete"
+    && status !== "cancelled"
+    && currentUser.role !== "call_center";
+  const canRecordArrival = Boolean(job.enRouteAt)
+    && !job.arrivedAt
     && status !== "complete"
     && status !== "cancelled"
     && currentUser.role !== "call_center";
@@ -404,22 +429,27 @@ export default function JobDetailPage() {
     approval: Boolean(completionSignature),
     invoice: Boolean(invoice)
   };
-  const primaryHidden = currentUser.role === "call_center" && activeStage !== "overview";
+  const visibleStages: JobStage[] = currentUser.role === "call_center"
+    ? ["overview"]
+    : jobStages.map((candidate) => candidate.id);
+  const primaryHidden = dispatchEditing || currentUser.role === "call_center";
   const primaryDisabled = activeStage === "work"
     ? items.length === 0
     : activeStage === "approval"
       ? !job.arrivedAt || status === "cancelled" || (Boolean(completionSignature) && saveBusy)
       : activeStage === "invoice"
         ? items.length === 0 || invoiceBusy
-        : activeStage === "overview" && currentUser.role === "call_center"
-          ? saveBusy || (canEditDispatch && !validWindow) || (canEditDispatch && conflicts.length > 0 && !conflictConfirmed)
-          : arrivalBusy || saveBusy;
+        : arrivalBusy || saveBusy;
   const primaryLabel = activeStage === "overview"
-    ? currentUser.role === "call_center"
-      ? saveBusy ? "Saving…" : saved ? "Saved" : "Save changes"
-      : canRecordArrival
-        ? arrivalBusy ? "Recording arrival…" : "Arrive and start"
-        : "Continue to photos"
+    ? status === "cancelled"
+      ? "Back to schedule"
+      : status === "complete"
+        ? invoice ? "Open invoice" : "Continue to invoice"
+        : canMarkEnRoute
+          ? arrivalBusy ? "Updating…" : "On my way"
+          : canRecordArrival
+            ? arrivalBusy ? "Recording arrival…" : "Arrived — start job"
+            : "Continue to photos"
     : activeStage === "photos"
       ? "Continue to work"
       : activeStage === "work"
@@ -434,8 +464,17 @@ export default function JobDetailPage() {
 
   async function handlePrimaryAction() {
     if (activeStage === "overview") {
-      if (currentUser.role === "call_center") {
-        await saveInspect();
+      if (status === "cancelled") {
+        router.push("/jobs");
+        return;
+      }
+      if (status === "complete") {
+        if (invoice) router.push(`/invoices/${invoice.id}`);
+        else setActiveStage("invoice");
+        return;
+      }
+      if (canMarkEnRoute) {
+        await markEnRoute();
         return;
       }
       if (canRecordArrival) {
@@ -479,129 +518,148 @@ export default function JobDetailPage() {
       <Link href="/jobs" className={styles.backLink}><ArrowLeft size={17} aria-hidden="true" />Back to jobs</Link>
 
       <header className={styles.hero}>
-        <div className={styles.heroCopy}>
-          <div className={styles.heroEyebrow}>
-            <span>Service job</span>
-            <StatusPill tone={status === "complete" ? "good" : status === "cancelled" ? "bad" : "info"}>{status.replace("_", " ")}</StatusPill>
+        <div className={styles.heroTop}>
+          <div className={styles.heroCopy}>
+            <div className={styles.heroEyebrow}>
+              <span>Service job</span>
+              <StatusPill tone={status === "complete" ? "good" : status === "cancelled" ? "bad" : "info"}>{status.replace("_", " ")}</StatusPill>
+            </div>
+            <h1>{jobDescription || job.description}</h1>
+            <p>{customer?.name ?? "Unknown customer"}{customer ? ` · ${formatPhone(customer.phone)}` : ""}</p>
           </div>
-          <h1>{jobDescription || job.description}</h1>
-          <p>For {customer?.name ?? "unknown customer"}</p>
+          <div className={styles.headerActions}>
+            {invoice ? <Link href={`/invoices/${invoice.id}`} className={styles.headerLink}><FileText size={17} aria-hidden="true" />Open invoice</Link> : null}
+            {canEditDispatch ? (
+              <button type="button" className={styles.editDispatchAction} aria-expanded={dispatchEditing} onClick={() => setDispatchEditing((open) => !open)}>
+                {dispatchEditing ? "Close editor" : "Edit dispatch"}
+              </button>
+            ) : null}
+          </div>
         </div>
-        {invoice ? <Link href={`/invoices/${invoice.id}`} className={styles.headerLink}><FileText size={17} aria-hidden="true" />Open invoice</Link> : null}
 
-        <div className={styles.assignmentStrip}>
-          <div className={styles.assignmentItem}>
-            <span><small>Assigned technician</small><strong>{tech?.displayName ?? "Unassigned"}</strong><em>{tech ? roleLabel(tech.role) : "Needs assignment"}</em></span>
+        <div className={styles.summaryGrid} data-dispatch={currentUser.role !== "tech" || undefined}>
+          <div className={styles.summaryFact}>
+            <small>Arrival window</small>
+            <strong>{formatServiceWindow(scheduledAtIso ?? job.scheduledAt, arrivalWindowEndAtIso ?? job.arrivalWindowEndAt)}</strong>
+            <em>{job.arrivedAt ? `Arrived ${formatDateTime(job.arrivedAt)}` : job.enRouteAt ? `En route since ${formatDateTime(job.enRouteAt)}` : "Not yet en route"}</em>
           </div>
-          <div className={styles.assignmentItem}>
-            <span><small>Customer window</small><strong>{formatServiceWindow(scheduledAtIso ?? job.scheduledAt, arrivalWindowEndAtIso ?? job.arrivalWindowEndAt)}</strong><em>{job.arrivedAt ? `Arrived ${formatDateTime(job.arrivedAt)}` : "Arrival not recorded"}</em></span>
+          <div className={styles.summaryFact}>
+            <small>Service address</small>
+            <strong>{serviceAddress || job.serviceAddress}</strong>
           </div>
-          <div className={styles.assignmentItem}>
-            <span><small>Service address</small><strong>{serviceAddress || job.serviceAddress}</strong></span>
-          </div>
+          {currentUser.role !== "tech" ? (
+            <div className={styles.summaryFact}>
+              <small>Assigned technician</small>
+              <strong>{tech?.displayName ?? "Unassigned"}</strong>
+              <em>{tech ? roleLabel(tech.role) : "Needs assignment"}</em>
+            </div>
+          ) : null}
+        </div>
+
+        <div className={styles.customerActions} aria-label={customer ? `Contact ${customer.name}` : "Job actions"}>
+          {customer ? <a href={`tel:${customer.phoneDigits || customer.phone}`}><Phone size={17} aria-hidden="true" /><span>Call</span></a> : null}
+          {customer ? <a href={`sms:${customer.phoneDigits || customer.phone}`}><MessageSquare size={17} aria-hidden="true" /><span>Text</span></a> : null}
+          <a href={mapsHref(serviceAddress || job.serviceAddress)} target="_blank" rel="noreferrer"><MapPin size={17} aria-hidden="true" /><span>Directions</span></a>
         </div>
       </header>
 
-      <JobStageNav active={activeStage} onChange={setActiveStage} counts={stageCounts} completion={stageCompletion} />
+      <JobStageNav active={activeStage} onChange={setActiveStage} counts={stageCounts} completion={stageCompletion} visibleStages={visibleStages} />
 
       {arrivalError ? <p className={styles.errorBanner} role="alert">{arrivalError}</p> : null}
       {invoiceError ? <p className={styles.errorBanner} role="alert">{invoiceError}</p> : null}
 
       {activeStage === "overview" && canManageConfirmations ? (
-        <AppointmentConfirmationCard
-          notifications={confirmations}
-          loading={confirmationsLoading}
-          busy={confirmationBusy || saveBusy}
-          error={confirmationError}
-          canManage
-          activeJob={job.status === "scheduled" || job.status === "cancelled"}
-          onRetry={() => void processConfirmations("retry")}
-          onResend={() => void processConfirmations("resend")}
-        />
+        <details className={styles.confirmationDisclosure}>
+          <summary>
+            <span><strong>Customer confirmations</strong><small>View delivery status and resend options</small></span>
+            <ChevronRight size={18} aria-hidden="true" />
+          </summary>
+          <div className={styles.confirmationBody}>
+            <AppointmentConfirmationCard
+              notifications={confirmations}
+              loading={confirmationsLoading}
+              busy={confirmationBusy || saveBusy}
+              error={confirmationError}
+              canManage
+              activeJob={job.status === "scheduled" || job.status === "cancelled"}
+              onRetry={() => void processConfirmations("retry")}
+              onResend={() => void processConfirmations("resend")}
+            />
+          </div>
+        </details>
       ) : null}
 
       <div
-        className={styles.stagePanel}
+        className={`${styles.stagePanel} ${activeStage === "overview" && !dispatchEditing ? styles.overviewPanel : ""}`}
         role="tabpanel"
         id={`job-stage-panel-${activeStage}`}
         aria-labelledby={`job-stage-${activeStage}`}
       >
-        <div className={styles.stageHeader}>
-          <div><p>{stage.label}</p><h2>{stageTitle(activeStage)}</h2><span>{stageDescription(activeStage)}</span></div>
-          {activeStage === "photos" && photos.length === 0 ? null : <span className={styles.stageCount}>{activeStage === "photos" ? `${photos.length} saved` : activeStage === "work" ? `${items.length} items` : activeStage === "approval" ? completionSignature ? "Signed" : "Signature needed" : activeStage === "invoice" ? invoice ? "Draft ready" : "Not built" : job.arrivedAt ? "Arrival recorded" : "Scheduled"}</span>}
-        </div>
+        {activeStage !== "overview" || dispatchEditing ? (
+          <div className={styles.stageHeader}>
+            <div><p>{dispatchEditing ? "Dispatch" : stage.label}</p><h2>{dispatchEditing ? "Edit job details" : stageTitle(activeStage)}</h2><span>{dispatchEditing ? "Update the customer-facing service details, arrival window, and assignment." : stageDescription(activeStage)}</span></div>
+            {activeStage === "photos" && photos.length === 0 ? null : activeStage === "overview" ? null : <span className={styles.stageCount}>{activeStage === "photos" ? `${photos.length} saved` : activeStage === "work" ? `${items.length} items` : activeStage === "approval" ? completionSignature ? "Signed" : "Signature needed" : invoice ? "Draft ready" : "Not built"}</span>}
+          </div>
+        ) : null}
 
         {activeStage === "overview" ? (
-          <div className={styles.stageBody}>
-            <section className={styles.customerCard} aria-label="Customer contact information">
-              <span className={styles.customerAvatar}><CircleUserRound size={23} aria-hidden="true" /></span>
-              <div className={styles.customerIdentity}>
-                <small>Customer</small>
-                <strong>{customer?.name ?? "Unknown customer"}</strong>
-                <span>{customer ? `${formatPhone(customer.phone)}${customer.email ? ` · ${customer.email}` : ""}` : "No contact information on file"}</span>
-              </div>
-              {customer ? (
-                <div className={styles.customerActions} aria-label={`Contact ${customer.name}`}>
-                  <a href={`tel:${customer.phoneDigits || customer.phone}`}><Phone size={17} aria-hidden="true" /><span>Call</span></a>
-                  <a href={`sms:${customer.phoneDigits || customer.phone}`}><MessageSquare size={17} aria-hidden="true" /><span>Text</span></a>
-                  {customer.email ? <a href={`mailto:${customer.email}?subject=${encodeURIComponent(jobDescription || job.description)}`}><Mail size={17} aria-hidden="true" /><span>Email</span></a> : null}
-                  <a href={mapsHref(serviceAddress || job.serviceAddress)} target="_blank" rel="noreferrer"><MapPin size={17} aria-hidden="true" /><span>Map</span></a>
-                </div>
-              ) : null}
-            </section>
-
-            <div className={styles.editSection}>
-              <div className={styles.subhead}><div><h3>Job and dispatch</h3><p>Keep the customer-facing service details and assignment accurate.</p></div></div>
+          dispatchEditing && canManageConfirmations ? (
+            <div className={styles.stageBody}>
               <div className={styles.formGrid}>
                 <Field label="Service call"><textarea value={jobDescription} onChange={(event) => setJobDescription(event.target.value)} /></Field>
                 <Field label="Service address">
-                  <AddressAutocomplete value={serviceAddress} onChange={setServiceAddress} onSelect={(address) => setServiceAddress(address.formatted)} disabled={!canEditCustomerFacingFields} />
+                  <AddressAutocomplete value={serviceAddress} onChange={setServiceAddress} onSelect={(address) => setServiceAddress(address.formatted)} />
                 </Field>
               </div>
               <div className={styles.dispatchGrid}>
-                <Field label="Window starts">
-                  <input type="datetime-local" value={scheduledAt} onChange={(event) => {
-                    const nextStart = event.target.value;
-                    setScheduledAt(nextStart);
-                    setArrivalWindowEndAt(dateInputValue(defaultServiceWindowEndAt(localDateTimeIso(nextStart))));
-                    setConflictConfirmed(false);
-                  }} disabled={!canEditDispatch} />
+                <ArrivalWindowField value={arrivalWindowDraft} onChange={setArrivalWindowDraft} required />
+                <Field label="Assigned technician">
+                  <select value={assignedTechId} onChange={(event) => setAssignedTechId(event.target.value)}>
+                    <option value="">Unassigned</option>
+                    {activeTechs.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.displayName}</option>)}
+                  </select>
                 </Field>
-                <Field label="Window ends">
-                  <input type="datetime-local" value={arrivalWindowEndAt} onChange={(event) => { setArrivalWindowEndAt(event.target.value); setConflictConfirmed(false); }} disabled={!canEditDispatch} />
-                </Field>
-                {canScheduleJobs(currentUser.role) ? (
-                  <Field label="Assigned technician">
-                    <select value={assignedTechId} disabled={!canEditDispatch} onChange={(event) => { setAssignedTechId(event.target.value); setConflictConfirmed(false); }}>
-                      <option value="">Unassigned</option>
-                      {activeTechs.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.displayName}</option>)}
-                    </select>
-                  </Field>
-                ) : null}
               </div>
-              {job.arrivedAt && canEditSchedule ? <p className={styles.inlineNote}>The window and assignment are locked after arrival is recorded.</p> : null}
-              {canEditDispatch && scheduledAt && arrivalWindowEndAt && !validWindow ? <p className={styles.errorBanner} role="alert">The arrival window must end after it starts.</p> : null}
               {canEditDispatch && conflicts.length > 0 ? (
-                <div className={styles.conflict} role="alert"><strong>Technician schedule overlap</strong><span>{conflicts.length === 1 ? "Another assigned job overlaps this arrival window." : `${conflicts.length} assigned jobs overlap this arrival window.`}</span><label><input type="checkbox" checked={conflictConfirmed} onChange={(event) => setConflictConfirmed(event.target.checked)} />Save this overlap anyway</label></div>
+                <div className={styles.conflict} role="status"><strong>Overlapping customer arrival windows</strong><span>{conflicts.length === 1 ? "This technician has another customer window at the same time. You can still save after reviewing the assignment." : `This technician has ${conflicts.length} other customer windows at the same time. You can still save after reviewing the assignment.`}</span></div>
               ) : null}
 
-              <div className={styles.formGrid}>
-                <Field label="Job status">
-                  <div className="segmented-control">
-                    {(["scheduled", "in_progress", "complete", "cancelled"] as JobStatus[]).map((option) => (
-                      <button key={option} type="button" className={status === option ? "active" : ""} onClick={() => {
-                        setStatus(option);
-                        if (option === "complete") setActiveStage("approval");
-                      }} disabled={currentUser.role === "call_center" || (currentUser.role === "tech" && (option === "scheduled" || option === "cancelled")) || ((option === "in_progress" || option === "complete") && !job.arrivedAt) || (option === "scheduled" && Boolean(job.arrivedAt)) || (option === "complete" && currentUser.role !== "owner" && !completionSignature)}>{option.replace("_", " ")}</button>
-                    ))}
-                  </div>
-                </Field>
-                <Field label="Technician notes"><textarea value={notes} onChange={(event) => setNotes(event.target.value)} disabled={currentUser.role === "call_center"} /></Field>
-              </div>
+              {currentUser.role === "owner" ? (
+                <div className={styles.formGrid}>
+                  <Field label="Job status">
+                    <div className="segmented-control">
+                      {(["scheduled", "in_progress", "complete", "cancelled"] as JobStatus[]).map((option) => (
+                        <button key={option} type="button" className={status === option ? "active" : ""} onClick={() => {
+                          setStatus(option);
+                          if (option === "complete") setActiveStage("approval");
+                        }} disabled={((option === "in_progress" || option === "complete") && !job.arrivedAt) || (option === "scheduled" && Boolean(job.arrivedAt))}>{option.replace("_", " ")}</button>
+                      ))}
+                    </div>
+                  </Field>
+                  <Field label="Technician notes"><textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
+                </div>
+              ) : null}
               {saveError ? <p className={styles.errorBanner} role="alert">{saveError}</p> : null}
-              <div className={styles.secondaryActions}><Button variant="secondary" onClick={() => void saveInspect()} disabled={saveBusy || (canEditDispatch && !validWindow) || (canEditDispatch && conflicts.length > 0 && !conflictConfirmed)}><Save size={16} aria-hidden="true" />{saveBusy ? "Saving…" : saved ? "Saved" : "Save changes"}</Button></div>
+              <div className={styles.editorActions}>
+                <button type="button" className={styles.cancelAction} onClick={() => setDispatchEditing(false)}>Cancel</button>
+                <Button variant="secondary" onClick={() => void (async () => {
+                  const didSave = await saveInspect();
+                  if (didSave) setDispatchEditing(false);
+                })()} disabled={saveBusy || !validWindow}><Save size={16} aria-hidden="true" />{saveBusy ? "Saving…" : saved ? "Saved" : "Save dispatch"}</Button>
+              </div>
             </div>
-          </div>
+          ) : currentUser.role === "tech" ? (
+            <details className={styles.notesDisclosure}>
+              <summary><span><strong>Job notes</strong><small>{notes.trim() ? "View or update technician notes" : "Add a technician note"}</small></span><ChevronRight size={18} aria-hidden="true" /></summary>
+              <div className={styles.notesEditor}>
+                <Field label="Technician notes"><textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Diagnosis, access notes, equipment details…" /></Field>
+                {saveError ? <p className={styles.errorBanner} role="alert">{saveError}</p> : null}
+                <Button variant="secondary" onClick={() => void saveInspect()} disabled={saveBusy}><Save size={16} aria-hidden="true" />{saveBusy ? "Saving…" : saved ? "Saved" : "Save notes"}</Button>
+              </div>
+            </details>
+          ) : (
+            <div className={styles.readonlyNotes}><small>Job notes</small><p>{notes.trim() || "No technician notes have been added."}</p></div>
+          )
         ) : null}
 
         {activeStage === "photos" ? (
@@ -673,7 +731,7 @@ export default function JobDetailPage() {
 
       {!primaryHidden ? (
         <aside className={styles.stickyAction} aria-label="Next job action">
-          <div><small>Next action</small><strong>{primaryHelper(activeStage, { canRecordArrival, completionSignature: Boolean(completionSignature), invoice: Boolean(invoice), jobComplete: job.status === "complete" })}</strong></div>
+          <div><small>Next action</small><strong>{primaryHelper(activeStage, { canMarkEnRoute, canRecordArrival, completionSignature: Boolean(completionSignature), invoice: Boolean(invoice), jobComplete: job.status === "complete", jobCancelled: job.status === "cancelled" })}</strong></div>
           <button type="button" className={styles.primaryAction} onClick={() => void handlePrimaryAction()} disabled={primaryDisabled}>{activeStage === "overview" && currentUser.role === "call_center" ? <Save size={18} aria-hidden="true" /> : activeStage === "approval" && !completionSignature ? <PenLine size={18} aria-hidden="true" /> : null}{primaryLabel}<ChevronRight size={18} aria-hidden="true" /></button>
         </aside>
       ) : null}
@@ -725,9 +783,14 @@ function stageDescription(stage: JobStage): string {
 
 function primaryHelper(
   stage: JobStage,
-  state: { canRecordArrival: boolean; completionSignature: boolean; invoice: boolean; jobComplete: boolean }
+  state: { canMarkEnRoute: boolean; canRecordArrival: boolean; completionSignature: boolean; invoice: boolean; jobComplete: boolean; jobCancelled: boolean }
 ): string {
-  if (stage === "overview") return state.canRecordArrival ? "Record the real arrival time and begin work" : "Move to photo documentation";
+  if (stage === "overview") {
+    if (state.jobCancelled) return "Return to your service schedule";
+    if (state.jobComplete) return state.invoice ? "Open the saved invoice" : "Continue to the invoice handoff";
+    if (state.canMarkEnRoute) return "Mark the trip started before you leave";
+    return state.canRecordArrival ? "Record the real arrival time and begin work" : "Move to photo documentation";
+  }
   if (stage === "photos") return "Continue when the job proof is ready";
   if (stage === "work") return "Review the saved scope with the customer";
   if (stage === "approval") {
@@ -735,12 +798,6 @@ function primaryHelper(
     return state.jobComplete ? "The signed job is ready to invoice" : "Save the completed job to the audit record";
   }
   return state.invoice ? "Continue in the invoice workspace" : "Use the saved customer and work details";
-}
-
-function localDateTimeIso(value: string): string | undefined {
-  if (!value) return undefined;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
 }
 
 function mapsHref(address: string): string {

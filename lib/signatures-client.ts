@@ -1,4 +1,5 @@
 import { demoMode } from "@/lib/runtime";
+import { createId } from "@/lib/id";
 import { protectedJson } from "@/lib/protected-api-client";
 import type { InvoiceSignature, SignaturePurpose, SignatureSignerRole } from "@/lib/types";
 
@@ -87,7 +88,7 @@ async function saveDemoSignature(input: SaveSignatureInput) {
       : signature
   ));
   const signature: InvoiceSignature = {
-    id: crypto.randomUUID(),
+    id: createId(),
     invoiceId: input.invoiceId,
     jobId: input.jobId,
     purpose: input.purpose,

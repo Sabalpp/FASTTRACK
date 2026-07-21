@@ -3,9 +3,11 @@
 import Link from "next/link";
 import {
   ArrowRight,
+  CalendarDays,
   CalendarPlus,
   CircleAlert,
   FileText,
+  MapPin,
   Search,
   UserPlus,
   UserRound
@@ -16,7 +18,7 @@ import { OperationsChart } from "@/components/OperationsChart";
 import { canCreateCustomers, canScheduleJobs, canViewInvoice, canViewJob } from "@/lib/access";
 import { useAuth } from "@/lib/auth";
 import { roleLabels, useAppData } from "@/lib/data-store";
-import { formatDateTime } from "@/lib/date";
+import { formatDateTime, formatTime } from "@/lib/date";
 import {
   compareJobsForDispatch,
   formatServiceWindow,
@@ -66,6 +68,106 @@ export default function DashboardPage() {
   const inProgressJobs = activeJobs.filter((job) => job.status === "in_progress").length;
   const draftInvoices = visibleInvoices.filter((invoice) => invoice.status === "draft").length;
   const isCallCenter = currentUser.role === "call_center";
+
+  if (currentUser.role === "tech") {
+    const currentJob = activeJobs.find((job) => job.status === "in_progress") ?? activeJobs[0];
+    const upcomingJobs = activeJobs.filter((job) => job.id !== currentJob?.id);
+    const currentCustomer = currentJob
+      ? data.customers.find((candidate) => candidate.id === currentJob.customerId)
+      : undefined;
+
+    return (
+      <main className={`page-shell ${styles.page} ${styles.techPage}`}>
+        <header className={`${styles.hero} ${styles.techHero}`}>
+          <div className={styles.heroCopy}>
+            <p className={styles.kicker}>Technician workspace</p>
+            <h1>Today’s work</h1>
+            <p className={styles.techWelcome}>Stay focused on the job in front of you and what comes next.</p>
+          </div>
+          <Link href="/customers/new" className={styles.techCustomerAction}>
+            <UserPlus size={18} aria-hidden="true" />
+            New customer
+          </Link>
+        </header>
+
+        <section className={styles.techCurrentSection} aria-labelledby="current-job-heading">
+          <div className={styles.techSectionHeading}>
+            <div>
+              <p className={styles.sectionLabel}>Your route</p>
+              <h2 id="current-job-heading">Current job</h2>
+            </div>
+            <Link href="/jobs" className={styles.textLink}>Full schedule <ArrowRight size={16} aria-hidden="true" /></Link>
+          </div>
+
+          {currentJob ? (
+            <article className={styles.techCurrentCard}>
+              <div className={styles.techCurrentMain}>
+                <span className={`${styles.status} ${styles[`status_${currentJob.status}`]}`}>{jobStatusLabels[currentJob.status]}</span>
+                <h3>{currentCustomer?.name ?? "Unknown customer"}</h3>
+                <p>{currentJob.description}</p>
+              </div>
+              <div className={styles.techCurrentFacts}>
+                <span>
+                  <CalendarDays size={18} aria-hidden="true" />
+                  <span><small>Arrival window</small><strong>{formatServiceWindow(currentJob.scheduledAt, currentJob.arrivalWindowEndAt)}</strong></span>
+                </span>
+                <span>
+                  <MapPin size={18} aria-hidden="true" />
+                  <span><small>Service address</small><strong>{currentJob.serviceAddress}</strong></span>
+                </span>
+              </div>
+              <div className={styles.techCurrentActions}>
+                <Link href={`/jobs/${currentJob.id}`} className={styles.techOpenJob}>
+                  {currentJob.status === "in_progress" ? "Open current job" : "Open next job"}
+                  <ArrowRight size={18} aria-hidden="true" />
+                </Link>
+                <a href={mapsHref(currentJob.serviceAddress)} target="_blank" rel="noreferrer" className={styles.techDirections}>
+                  <MapPin size={17} aria-hidden="true" />
+                  Directions
+                </a>
+              </div>
+            </article>
+          ) : (
+            <div className={styles.techEmptyState}>
+              <span aria-hidden="true"><CalendarDays size={22} /></span>
+              <div><strong>No assigned work</strong><p>New assignments will appear here when dispatch schedules them.</p></div>
+            </div>
+          )}
+        </section>
+
+        <section className={styles.techUpcomingSection} aria-labelledby="up-next-heading">
+          <div className={styles.techSectionHeading}>
+            <div>
+              <p className={styles.sectionLabel}>Later</p>
+              <h2 id="up-next-heading">Up next</h2>
+            </div>
+          </div>
+          {upcomingJobs.length > 0 ? (
+            <div className={styles.techUpcomingList}>
+              {upcomingJobs.slice(0, 5).map((job) => {
+                const customer = data.customers.find((candidate) => candidate.id === job.customerId);
+                return (
+                  <Link key={job.id} href={`/jobs/${job.id}`} className={styles.techUpcomingRow}>
+                    <span className={styles.techUpcomingTime}>
+                      <CalendarDays size={17} aria-hidden="true" />
+                      <strong>{formatServiceWindow(job.scheduledAt, job.arrivalWindowEndAt)}</strong>
+                    </span>
+                    <span className={styles.techUpcomingMain}>
+                      <strong>{customer?.name ?? "Unknown customer"}</strong>
+                      <small>{job.description} · {job.serviceAddress}</small>
+                    </span>
+                    <ArrowRight size={18} aria-hidden="true" />
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className={styles.techUpcomingEmpty}>Nothing else is assigned after the current job.</div>
+          )}
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className={`page-shell ${styles.page}`}>
@@ -146,8 +248,8 @@ export default function DashboardPage() {
       <section className={styles.queuePanel} aria-labelledby="job-queue-heading">
         <div className={styles.sectionHeading}>
           <div>
-            <p className={styles.sectionLabel}>{currentUser.role === "tech" ? "Your route" : "Dispatch"}</p>
-            <h2 id="job-queue-heading">{currentUser.role === "tech" ? "Your job queue" : "Job queue"}</h2>
+            <p className={styles.sectionLabel}>Dispatch</p>
+            <h2 id="job-queue-heading">Job queue</h2>
             <p>Service windows, assigned workers, and recorded arrival details.</p>
           </div>
           <Link href="/jobs" className={styles.textLink}>All jobs <ArrowRight size={16} aria-hidden="true" /></Link>
@@ -158,7 +260,7 @@ export default function DashboardPage() {
             <span aria-hidden="true"><CalendarPlus size={22} /></span>
             <div>
               <strong>No open jobs</strong>
-              <p>{currentUser.role === "tech" ? "New assignments will appear here." : "Your active service queue is clear."}</p>
+              <p>Your active service queue is clear.</p>
             </div>
           </div>
         ) : (
@@ -275,10 +377,14 @@ function initials(name: string) {
     .join("") || "FT";
 }
 
+function mapsHref(address: string) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+}
+
 function arrivalDetails(job: Job, now: number) {
   const timing = getServiceWindowTiming(job, now);
   if (job.arrivedAt) {
-    const arrived = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(job.arrivedAt));
+    const arrived = formatTime(job.arrivedAt);
     return {
       label: `Arrived ${arrived}`,
       detail: timing.tone === "info" ? "Before window" : timing.tone === "good" ? "Within window" : undefined,

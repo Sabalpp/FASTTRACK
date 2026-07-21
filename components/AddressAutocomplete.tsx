@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useState } from "react";
+import { createId } from "@/lib/id";
 
 type AddressSelection = {
   formatted: string;
@@ -132,10 +133,7 @@ export function AddressAutocomplete({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const listboxId = useId();
-  const sessionToken = useMemo(
-    () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now())),
-    []
-  );
+  const sessionToken = useMemo(() => createId(), []);
 
   useEffect(() => {
     if (disabled) {

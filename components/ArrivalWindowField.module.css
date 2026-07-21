@@ -1,0 +1,139 @@
+.fieldset {
+  container-type: inline-size;
+  display: grid;
+  min-width: 0;
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  margin: 0 0 9px;
+  padding: 0;
+  color: #516071;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(9.5rem, 0.85fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #647184;
+  font-weight: 750;
+}
+
+.field > span {
+  font-size: 0.76rem;
+}
+
+.field input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 48px;
+  border: 1px solid #d4dde5;
+  border-radius: 10px;
+  background: #fff;
+  color: #1e2a36;
+  padding: 10px 12px;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.field input:focus {
+  border-color: #6b96a4;
+  outline: 3px solid rgba(21, 63, 75, 0.12);
+  box-shadow: none;
+}
+
+.summary {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #d4e2e5;
+  border-radius: 10px;
+  background: #f3f7f8;
+}
+
+.summaryLabel {
+  color: #687688;
+  font-size: 0.7rem;
+  font-weight: 780;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.summary strong {
+  overflow-wrap: anywhere;
+  color: #20323d;
+  font-size: 0.94rem;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.summary small,
+.emptySummary {
+  color: #6f7d8d;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.error {
+  margin: 8px 0 0;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: #fff1f1;
+  color: #963e3e;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.existingWindowNote {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 9px;
+  color: #687688;
+  font-size: 0.76rem;
+}
+
+.existingWindowNote button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  border: 1px solid #ced9df;
+  border-radius: 9px;
+  background: #fff;
+  color: #294553;
+  padding: 8px 11px;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.existingWindowNote button:focus-visible {
+  outline: 3px solid rgba(21, 63, 75, 0.18);
+  outline-offset: 2px;
+}
+
+@container (max-width: 30rem) {
+  .controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .existingWindowNote {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

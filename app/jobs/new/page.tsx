@@ -5,16 +5,14 @@ import { Suspense, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import { ArrivalWindowField } from "@/components/ArrivalWindowField";
 import { CustomerPicker } from "@/components/CustomerPicker";
 import { RoleGate } from "@/components/RoleGate";
 import { Button, Card, Field, PageHeader } from "@/components/ui";
-import { dateInputValue } from "@/lib/date";
+import { emptyArrivalWindowDraft, resolveArrivalWindow } from "@/lib/arrival-window";
 import { dispatchJobConfirmations } from "@/lib/appointment-confirmations-client";
 import {
-  defaultServiceWindowEndAt,
-  findTechnicianWindowConflicts,
-  formatServiceWindow,
-  isValidServiceWindow
+  findTechnicianWindowConflicts
 } from "@/lib/service-window";
 import type { Customer } from "@/lib/types";
 
@@ -38,19 +36,18 @@ function NewJobClient() {
   const techs = useMemo(() => data.allowedUsers.filter((user) => user.role === "tech" && user.active), [data.allowedUsers]);
   const [form, setForm] = useState({
     assignedTechId: "",
-    scheduledAt: "",
-    arrivalWindowEndAt: "",
     serviceAddress: preselectedCustomer ? `${preselectedCustomer.addressLine1}${preselectedCustomer.addressLine2 ? ` ${preselectedCustomer.addressLine2}` : ""}, ${preselectedCustomer.city}, ${preselectedCustomer.state} ${preselectedCustomer.zip}` : "",
     description: ""
   });
-  const [conflictConfirmed, setConflictConfirmed] = useState(false);
+  const [arrivalWindow, setArrivalWindow] = useState(emptyArrivalWindowDraft);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | undefined>();
   const [scheduleWithoutConfirmation, setScheduleWithoutConfirmation] = useState(false);
 
-  const scheduledAtIso = localDateTimeIso(form.scheduledAt);
-  const arrivalWindowEndAtIso = localDateTimeIso(form.arrivalWindowEndAt);
-  const validWindow = isValidServiceWindow(scheduledAtIso, arrivalWindowEndAtIso);
+  const arrivalWindowResolution = resolveArrivalWindow(arrivalWindow);
+  const scheduledAtIso = arrivalWindowResolution.status === "valid" ? arrivalWindowResolution.startAt : undefined;
+  const arrivalWindowEndAtIso = arrivalWindowResolution.status === "valid" ? arrivalWindowResolution.endAt : undefined;
+  const validWindow = arrivalWindowResolution.status === "valid";
   const confirmationChannels = selectedCustomer ? [
     selectedCustomer.emailNotificationsEnabled && selectedCustomer.email ? `Email to ${selectedCustomer.email}` : undefined,
     selectedCustomer.smsConsentStatus === "opted_in" && selectedCustomer.phoneDigits.length === 10 ? `Text to ${selectedCustomer.phone}` : undefined
@@ -66,18 +63,10 @@ function NewJobClient() {
 
   function update(key: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
-    if (key === "assignedTechId" || key === "arrivalWindowEndAt") setConflictConfirmed(false);
   }
 
-  function updateWindowStart(value: string) {
-    const startIso = localDateTimeIso(value);
-    const defaultEnd = defaultServiceWindowEndAt(startIso);
-    setForm((current) => ({
-      ...current,
-      scheduledAt: value,
-      arrivalWindowEndAt: dateInputValue(defaultEnd)
-    }));
-    setConflictConfirmed(false);
+  function updateArrivalWindow(value: typeof arrivalWindow) {
+    setArrivalWindow(value);
   }
 
   function pickCustomer(customer: Customer) {
@@ -92,7 +81,6 @@ function NewJobClient() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!selectedCustomer || !scheduledAtIso || !arrivalWindowEndAtIso || !validWindow) return;
-    if (conflicts.length > 0 && !conflictConfirmed) return;
     if (confirmationChannels.length === 0 && !scheduleWithoutConfirmation) return;
     setSubmitting(true);
     setSubmitError(undefined);
@@ -146,33 +134,12 @@ function NewJobClient() {
                   {techs.map((tech) => <option key={tech.id} value={tech.id}>{tech.displayName}</option>)}
                 </select>
               </Field>
-              <div className="date-time-grid arrival-window-grid">
-                <Field label="Window starts">
-                  <input required type="datetime-local" value={form.scheduledAt} onChange={(event) => updateWindowStart(event.target.value)} />
-                </Field>
-                <Field label="Window ends">
-                  <input required type="datetime-local" value={form.arrivalWindowEndAt} onChange={(event) => update("arrivalWindowEndAt", event.target.value)} />
-                </Field>
-              </div>
-              {form.scheduledAt && form.arrivalWindowEndAt ? (
-                validWindow ? (
-                  <div className="service-window-preview">
-                    <span>Customer arrival window</span>
-                    <strong>{formatServiceWindow(scheduledAtIso, arrivalWindowEndAtIso)}</strong>
-                    <small>The end defaults to three hours after the start. After this time, an unstarted assignment turns late.</small>
-                  </div>
-                ) : (
-                  <p className="field-error" role="alert">The window must end after it starts.</p>
-                )
-              ) : null}
+              <ArrivalWindowField value={arrivalWindow} onChange={updateArrivalWindow} required />
               {conflicts.length > 0 ? (
-                <div className="window-conflict" role="alert">
-                  <strong>Technician schedule overlap</strong>
-                  <span>{conflicts.length === 1 ? "This technician already has a job during this window." : `This technician has ${conflicts.length} jobs during this window.`}</span>
-                  <label>
-                    <input type="checkbox" checked={conflictConfirmed} onChange={(event) => setConflictConfirmed(event.target.checked)} />
-                    Schedule anyway
-                  </label>
+                <div className="window-conflict" role="status">
+                  <strong>Overlapping customer arrival windows</strong>
+                  <span>{conflicts.length === 1 ? "Another customer has an overlapping arrival promise for this technician." : `${conflicts.length} other customers have overlapping arrival promises for this technician.`}</span>
+                  <span>Review the route before scheduling. These windows do not represent planned service duration.</span>
                 </div>
               ) : null}
             </section>
@@ -222,17 +189,11 @@ function NewJobClient() {
             )}
           </div>
           {submitError ? <p className="field-error" role="alert">{submitError}</p> : null}
-          <Button type="submit" disabled={submitting || !selectedCustomer || !validWindow || (conflicts.length > 0 && !conflictConfirmed) || (confirmationChannels.length === 0 && !scheduleWithoutConfirmation)}>
+          <Button type="submit" disabled={submitting || !selectedCustomer || !validWindow || (confirmationChannels.length === 0 && !scheduleWithoutConfirmation)}>
             {submitting ? "Scheduling & notifying..." : confirmationChannels.length > 0 ? "Schedule & send confirmation" : "Schedule service"}
           </Button>
         </form>
       </Card>
     </main>
   );
-}
-
-function localDateTimeIso(value: string): string | undefined {
-  if (!value) return undefined;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
 }

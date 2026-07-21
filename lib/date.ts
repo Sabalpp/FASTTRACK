@@ -1,14 +1,26 @@
+import { ARRIVAL_WINDOW_TIME_ZONE } from "@/lib/arrival-window";
+
 export function formatDateTime(value: string | undefined): string {
   if (!value) return "Not scheduled";
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
-    timeStyle: "short"
+    timeStyle: "short",
+    timeZone: ARRIVAL_WINDOW_TIME_ZONE
   }).format(new Date(value));
 }
 
 export function formatDate(value: string | undefined): string {
   if (!value) return "—";
-  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(value));
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: ARRIVAL_WINDOW_TIME_ZONE }).format(new Date(value));
+}
+
+export function formatTime(value: string | undefined): string {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: ARRIVAL_WINDOW_TIME_ZONE
+  }).format(new Date(value));
 }
 
 export function dateInputValue(value: string | undefined): string {

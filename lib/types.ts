@@ -53,6 +53,7 @@ export type Job = {
   status: JobStatus;
   scheduledAt: string;
   arrivalWindowEndAt: string;
+  enRouteAt?: string;
   arrivedAt?: string;
   serviceAddress: string;
   description: string;

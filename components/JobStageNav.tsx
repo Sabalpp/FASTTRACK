@@ -1,6 +1,7 @@
 "use client";
 
 import { Camera, ClipboardList, FileCheck2, ReceiptText, Wrench } from "lucide-react";
+import type { CSSProperties } from "react";
 import styles from "./JobStageNav.module.css";
 
 export type JobStage = "overview" | "photos" | "work" | "approval" | "invoice";
@@ -30,17 +31,23 @@ export function JobStageNav({
   active,
   onChange,
   counts,
-  completion
+  completion,
+  visibleStages
 }: {
   active: JobStage;
   onChange: (stage: JobStage) => void;
   counts?: Partial<Record<JobStage, number>>;
   completion?: Partial<Record<JobStage, boolean>>;
+  visibleStages?: JobStage[];
 }) {
+  const stages = visibleStages
+    ? jobStages.filter((stage) => visibleStages.includes(stage.id))
+    : jobStages;
+
   return (
     <nav className={styles.nav} aria-label="Job workflow">
-      <div className={styles.scroller} role="tablist" aria-label="Job stages">
-        {jobStages.map((stage) => {
+      <div className={styles.scroller} role="tablist" aria-label="Job stages" style={{ "--stage-count": stages.length } as CSSProperties}>
+        {stages.map((stage) => {
           const Icon = stageIcons[stage.id];
           const selected = stage.id === active;
           const complete = completion?.[stage.id] === true;
@@ -64,7 +71,6 @@ export function JobStageNav({
               </span>
               <span className={styles.copy}>
                 <strong>{stage.shortLabel}</strong>
-                <small>{stage.description}</small>
               </span>
               {typeof count === "number" && count > 0 ? <span className={styles.count}>{count}</span> : null}
             </button>

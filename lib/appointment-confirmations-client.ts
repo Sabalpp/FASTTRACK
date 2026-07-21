@@ -1,6 +1,7 @@
 "use client";
 
 import { demoMode } from "@/lib/runtime";
+import { createId } from "@/lib/id";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { AppointmentNotificationSummary } from "@/lib/types";
 
@@ -30,7 +31,7 @@ export async function dispatchJobConfirmations(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       mode,
-      requestId: mode === "resend" ? crypto.randomUUID() : undefined
+      requestId: mode === "resend" ? createId() : undefined
     })
   });
 }

@@ -7,6 +7,7 @@ import { useOptionalAuth } from "@/lib/auth";
 import { demoState } from "@/lib/demo-data";
 import { buildInvoiceDraft, invoiceNumber, totalsForItems } from "@/lib/invoice";
 import { normalizePhone } from "@/lib/phone";
+import { createId } from "@/lib/id";
 import { demoMode } from "@/lib/runtime";
 import { defaultServiceWindowEndAt } from "@/lib/service-window";
 import { compactDemoStateForStorage, persistDemoState } from "@/lib/demo-storage";
@@ -73,6 +74,7 @@ type AppDataContextValue = AppState & {
   updateCustomer: (id: string, input: Partial<Customer>) => Promise<void>;
   createJob: (input: NewJobInput) => Promise<Job>;
   updateJob: (id: string, input: Partial<Job>) => Promise<void>;
+  markJobEnRoute: (id: string) => Promise<void>;
   markJobArrived: (id: string) => Promise<void>;
   addPhoto: (input: NewPhotoInput) => JobPhoto;
   addLineItem: (input: NewLineItemInput) => JobLineItem;
@@ -236,7 +238,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     async function createCustomer(input: NewCustomerInput) {
       const customer: Customer = {
         ...input,
-        id: crypto.randomUUID(),
+        id: createId(),
         phoneDigits: normalizePhone(input.phone),
         emailNotificationsEnabled: input.emailNotificationsEnabled ?? true,
         smsConsentStatus: input.smsConsentStatus ?? "unknown",
@@ -302,7 +304,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     async function createJob(input: NewJobInput) {
       const job: Job = {
         ...input,
-        id: crypto.randomUUID(),
+        id: createId(),
         status: input.status ?? "scheduled",
         createdAt: new Date().toISOString()
       };
@@ -374,6 +376,37 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       setLastError(undefined);
     }
 
+    async function markJobEnRoute(id: string) {
+      const existingJob = state.jobs.find((job) => job.id === id);
+      if (!existingJob || existingJob.enRouteAt || existingJob.arrivedAt || existingJob.status === "complete" || existingJob.status === "cancelled") return;
+
+      if (demoMode) {
+        const enRouteAt = new Date().toISOString();
+        setState((current) => ({
+          ...current,
+          jobs: current.jobs.map((job) => job.id === id ? { ...job, enRouteAt } : job)
+        }));
+        return;
+      }
+
+      if (!supabase) throw new Error("Supabase credentials are not configured.");
+      const requestWorkspaceKey = activeWorkspaceKeyRef.current;
+      const { data, error } = await supabase
+        .rpc("mark_job_en_route", { p_job_id: id })
+        .maybeSingle();
+      if (error) {
+        if (activeWorkspaceKeyRef.current === requestWorkspaceKey) setLastError(error.message);
+        throw error;
+      }
+      if (!data) throw new Error("This job could not be marked en route. Confirm that it is still assigned to you.");
+      if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) return;
+      const result = data as { recorded_en_route_at: string };
+      setState((current) => ({
+        ...current,
+        jobs: current.jobs.map((job) => job.id === id ? { ...job, enRouteAt: result.recorded_en_route_at } : job)
+      }));
+    }
+
     async function markJobArrived(id: string) {
       const existingJob = state.jobs.find((job) => job.id === id);
       if (!existingJob || existingJob.arrivedAt || existingJob.status === "complete" || existingJob.status === "cancelled") return;
@@ -409,7 +442,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
     function addPhoto(input: NewPhotoInput) {
       const requestWorkspaceKey = activeWorkspaceKeyRef.current;
-      const photoId = crypto.randomUUID();
+      const photoId = createId();
       const uploadedAt = new Date().toISOString();
       const storagePath = !demoMode && input.file ? `${input.jobId}/${photoId}${safeFileExtension(input.file.name)}` : input.storagePath;
       const previewPath = !demoMode && input.file ? URL.createObjectURL(input.file) : input.storagePath;
@@ -462,7 +495,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const existingCount = state.jobLineItems.filter((item) => item.jobId === input.jobId).length;
       const lineItem: JobLineItem = {
         ...input,
-        id: crypto.randomUUID(),
+        id: createId(),
         quantity: Number(input.quantity),
         unitPrice: Number(input.unitPrice),
         sortOrder: existingCount + 1
@@ -507,7 +540,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     function createPart(input: NewPartInput) {
       const part: Part = {
         ...input,
-        id: crypto.randomUUID(),
+        id: createId(),
         defaultPrice: Number(input.defaultPrice),
         active: input.active ?? true,
         createdAt: new Date().toISOString()
@@ -525,7 +558,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const existing = state.invoices.find((invoice) => invoice.jobId === jobId);
       const items = state.jobLineItems.filter((item) => item.jobId === jobId);
       const draft = buildInvoiceDraft({
-        id: crypto.randomUUID(),
+        id: createId(),
         jobId,
         createdBy,
         existing,
@@ -589,7 +622,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     function createAllowedUser(input: NewAllowedUserInput) {
       const allowedUser: AllowedUser = {
         ...input,
-        id: crypto.randomUUID(),
+        id: createId(),
         createdAt: new Date().toISOString()
       };
       setState((current) => ({ ...current, allowedUsers: [allowedUser, ...current.allowedUsers] }));
@@ -624,6 +657,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       updateCustomer,
       createJob,
       updateJob,
+      markJobEnRoute,
       markJobArrived,
       addPhoto,
       addLineItem,

@@ -83,6 +83,7 @@ export type JobRow = {
   status: Job["status"];
   scheduled_at: string;
   arrival_window_end_at?: string | null;
+  en_route_at?: string | null;
   arrived_at?: string | null;
   service_address: string;
   description: string;
@@ -339,6 +340,7 @@ export function jobFromRow(row: JobRow): Job {
     status: row.status,
     scheduledAt: row.scheduled_at,
     arrivalWindowEndAt: row.arrival_window_end_at ?? defaultServiceWindowEndAt(row.scheduled_at) ?? row.scheduled_at,
+    enRouteAt: row.en_route_at ?? undefined,
     arrivedAt: row.arrived_at ?? undefined,
     serviceAddress: row.service_address,
     description: row.description,

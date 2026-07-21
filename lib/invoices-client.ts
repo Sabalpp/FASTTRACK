@@ -1,4 +1,5 @@
 import { protectedFetch, protectedJson } from "@/lib/protected-api-client";
+import { createId } from "@/lib/id";
 import type { Invoice, InvoiceOptionLabel, InvoicePaymentStatus, Job, Tier } from "@/lib/types";
 
 export async function createProtectedInvoiceDraft(jobId: string) {
@@ -43,7 +44,7 @@ export async function saveProtectedInvoicePayment(invoiceId: string, input: {
 export async function markProtectedInvoiceSent(
   invoiceId: string,
   email: string,
-  requestId = crypto.randomUUID()
+  requestId = createId()
 ) {
   const result = await protectedJson<{ invoice: Invoice }>(`/api/invoices/${invoiceId}`, {
     method: "PATCH",

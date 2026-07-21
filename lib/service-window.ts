@@ -1,4 +1,5 @@
 import type { Job, JobStatus } from "@/lib/types";
+import { ARRIVAL_WINDOW_TIME_ZONE, formatArrivalWindowRange } from "@/lib/arrival-window";
 
 export const DEFAULT_SERVICE_WINDOW_HOURS = 3;
 export const DEFAULT_SERVICE_WINDOW_MS = DEFAULT_SERVICE_WINDOW_HOURS * 60 * 60 * 1000;
@@ -43,22 +44,7 @@ export function isValidServiceWindow(scheduledAt: string | undefined, arrivalWin
 export function formatServiceWindow(scheduledAt: string | undefined, arrivalWindowEndAt?: string): string {
   const range = getServiceWindowRange(scheduledAt, arrivalWindowEndAt);
   if (!range) return "Not scheduled";
-
-  const startLabel = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  }).format(range.start);
-  const sameDay = range.start.getFullYear() === range.end.getFullYear()
-    && range.start.getMonth() === range.end.getMonth()
-    && range.start.getDate() === range.end.getDate();
-  const endLabel = new Intl.DateTimeFormat("en-US", sameDay
-    ? { hour: "numeric", minute: "2-digit" }
-    : { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
-  ).format(range.end);
-
-  return `${startLabel} – ${endLabel}`;
+  return formatArrivalWindowRange(range.start.toISOString(), range.end.toISOString(), ARRIVAL_WINDOW_TIME_ZONE);
 }
 
 export function getServiceWindowTiming(job: WindowJob, now: Date | number = Date.now()): ServiceWindowTiming {

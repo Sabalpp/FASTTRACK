@@ -50,6 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const blockedAuth = !isDemoMode && authReady && !isAuthenticated && !isLogin;
   const loadingWorkspace = !isDemoMode && isAuthenticated && !workspaceLoaded && !loadError && !isLogin;
   const failedWorkspace = !isDemoMode && isAuthenticated && Boolean(loadError) && !isLogin;
+  const isRestrictedCustomerIntake = currentUser.role === "tech" && pathname === "/customers/new";
 
   useEffect(() => {
     if (blockedAuth) {
@@ -102,8 +103,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const roleLabel = currentUser.role === "call_center" ? "Call center" : roleLabels[currentUser.role];
 
   return (
-    <div className={isLogin ? "ft5-auth" : "ft5-app"}>
-      {!isLogin ? (
+    <div className={isLogin ? "ft5-auth" : isRestrictedCustomerIntake ? "ft5-app ft5-customer-intake" : "ft5-app"}>
+      {!isLogin && !isRestrictedCustomerIntake ? (
         <header className="app-header ft5-header">
           <Link className="ft5-brand" href="/dashboard" aria-label={`${branding.businessName} home`}>
             <span className="ft5-brand-mark" aria-hidden="true">
