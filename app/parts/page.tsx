@@ -13,7 +13,6 @@ export default function PartsPage() {
     <RoleGate allowed={["owner"]}>
       <main className="page-shell">
         <PageHeader
-          eyebrow="Owner only"
           title="Parts catalog"
           action={<ButtonLink href="/parts/new">Add part</ButtonLink>}
         />

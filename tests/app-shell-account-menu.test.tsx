@@ -77,6 +77,14 @@ describe("AppShell account menu", () => {
     expect(document.activeElement).toBe(trigger);
   });
 
+  it("keeps the signed-in identity in one canonical header location", () => {
+    render(<AppShell><main><h1>Operations</h1></main></AppShell>);
+
+    expect(screen.getAllByText("Jordan Owner", { exact: true })).toHaveLength(1);
+    expect(screen.queryByText("Owner workspace")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Operations" })).toBeTruthy();
+  });
+
   it("dismisses on Escape, outside input, viewport gestures, and navigation", () => {
     const view = render(<AppShell><main>Dashboard</main></AppShell>);
     const trigger = screen.getByLabelText("Open account menu");

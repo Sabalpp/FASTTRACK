@@ -4,11 +4,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
-import { canCreateCustomers, canScheduleJobs, canViewCustomer } from "@/lib/access";
+import { canCreateCustomers, canViewCustomer } from "@/lib/access";
 import { formatPhone } from "@/lib/phone";
-import { compareJobsForDispatch } from "@/lib/service-window";
+import { compareJobsForDispatch, formatServiceWindow } from "@/lib/service-window";
 import { ButtonLink, EmptyState, PageHeader } from "@/components/ui";
 import type { Customer } from "@/lib/types";
+import styles from "./customers.module.css";
 
 export default function CustomersPage() {
   const { currentUser } = useAuth();
@@ -18,11 +19,6 @@ export default function CustomersPage() {
   const visibleCustomers = useMemo(
     () => data.customers.filter((customer) => canViewCustomer(currentUser, customer, data.jobs)),
     [currentUser, data.customers, data.jobs]
-  );
-  const visibleCustomerIds = useMemo(() => new Set(visibleCustomers.map((customer) => customer.id)), [visibleCustomers]);
-  const visibleCustomerJobs = useMemo(
-    () => data.jobs.filter((job) => visibleCustomerIds.has(job.customerId)),
-    [data.jobs, visibleCustomerIds]
   );
 
   useEffect(() => {
@@ -44,21 +40,24 @@ export default function CustomersPage() {
   return (
     <main className="page-shell">
       <PageHeader
-        eyebrow="Records"
         title="Customers"
         action={
-          <div className="action-row">
-            {canCreateCustomers(currentUser.role) ? <ButtonLink href="/customers/new">Create customer</ButtonLink> : null}
-            {canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new" variant="secondary">Schedule service</ButtonLink> : null}
-          </div>
+          canCreateCustomers(currentUser.role) ? <ButtonLink href="/customers/new">Create customer</ButtonLink> : undefined
         }
       />
-      <section className="customer-workspace">
-        <div className="customer-list-panel">
+      <section className={styles.workspace}>
+        <div className={styles.listPanel}>
           <div className="operations-toolbar">
-            <input className="big-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, phone, street, zip" />
+            <label className={styles.searchLabel} htmlFor="customer-search">Find a customer</label>
+            <input
+              id="customer-search"
+              className="big-input"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search name, phone, address, or ZIP"
+            />
           </div>
-          <div className="record-list customer-record-list">
+          <div className={`record-list ${styles.recordList}`}>
             {results.length === 0 ? (
               <EmptyState
                 title={query.trim() ? "No matching customer" : "No customers yet"}
@@ -71,19 +70,28 @@ export default function CustomersPage() {
                 const nextJob = customerJobs
                   .filter((job) => job.status !== "complete" && job.status !== "cancelled")
                   .sort(compareJobsForDispatch)[0];
+                const address = [
+                  customer.addressLine1,
+                  customer.addressLine2,
+                  `${customer.city}, ${customer.state} ${customer.zip}`
+                ].filter(Boolean).join(" · ");
+                const jobFact = nextJob
+                  ? `Next visit ${formatServiceWindow(nextJob.scheduledAt, nextJob.arrivalWindowEndAt)}`
+                  : customerJobs.length > 0
+                    ? `${customerJobs.length} previous ${customerJobs.length === 1 ? "job" : "jobs"}`
+                    : "No jobs yet";
                 return (
-                  <Link key={customer.id} href={`/customers/${customer.id}`} className="record-row customer-row">
-                    <div className="record-main">
+                  <Link key={customer.id} href={`/customers/${customer.id}`} className={`record-row ${styles.customerRow}`}>
+                    <div className={`record-main ${styles.identity}`}>
                       <strong>{customer.name}</strong>
-                      <span>{customer.addressLine1}{customer.addressLine2 ? ` ${customer.addressLine2}` : ""}</span>
+                      <span>{address}</span>
                     </div>
-                    <div className="record-meta">
+                    <div className={`record-meta ${styles.contact}`}>
                       <span>{formatPhone(customer.phone)}</span>
                       <small>{customer.email ?? "No email"}</small>
                     </div>
-                    <div className="record-side">
-                      <span>{customerJobs.length} {customerJobs.length === 1 ? "job" : "jobs"}</span>
-                      <small>{nextJob ? nextJob.status.replace("_", " ") : `${customer.city}, ${customer.state} ${customer.zip}`}</small>
+                    <div className={`record-side ${styles.jobFact}`}>
+                      <span>{jobFact}</span>
                     </div>
                   </Link>
                 );
@@ -91,25 +99,6 @@ export default function CustomersPage() {
             )}
           </div>
         </div>
-        <aside className="customer-side-panel">
-          <div className="ops-stat-card">
-            <strong>{visibleCustomers.length}</strong>
-            <span>customers</span>
-          </div>
-          <div className="ops-stat-card">
-            <strong>{visibleCustomerJobs.length}</strong>
-            <span>linked jobs</span>
-          </div>
-          <div className="intake-guide">
-            <p className="eyebrow">Intake</p>
-            <h2>Customer first</h2>
-            <p className="muted">Use this screen to find or create the customer. Job scheduling should start from a known customer record so history, phone, address, and invoices stay connected.</p>
-            <div className="action-row">
-              {canCreateCustomers(currentUser.role) ? <ButtonLink href="/customers/new">New customer</ButtonLink> : null}
-              {canScheduleJobs(currentUser.role) ? <ButtonLink href="/jobs/new" variant="secondary">Schedule service</ButtonLink> : null}
-            </div>
-          </div>
-        </aside>
       </section>
     </main>
   );

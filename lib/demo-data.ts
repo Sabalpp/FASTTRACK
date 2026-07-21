@@ -21,7 +21,7 @@ export const demoState: AppState = {
       id: "11111111-1111-1111-1111-111111111111",
       email: "owner@fasttrack.test",
       role: "owner",
-      displayName: "Jordan Owner",
+      displayName: "Jordan Lee",
       active: true,
       createdAt: now
     },
@@ -29,7 +29,7 @@ export const demoState: AppState = {
       id: "22222222-2222-2222-2222-222222222222",
       email: "tech@fasttrack.test",
       role: "tech",
-      displayName: "Maya Tech",
+      displayName: "Maya Chen",
       active: true,
       createdAt: now
     },
@@ -37,7 +37,7 @@ export const demoState: AppState = {
       id: "33333333-3333-3333-3333-333333333333",
       email: "tech2@fasttrack.test",
       role: "tech",
-      displayName: "Carlos Tech",
+      displayName: "Carlos Rivera",
       active: true,
       createdAt: now
     },
@@ -45,7 +45,7 @@ export const demoState: AppState = {
       id: "44444444-4444-4444-4444-444444444444",
       email: "calls@fasttrack.test",
       role: "call_center",
-      displayName: "Priya Call Center",
+      displayName: "Priya Shah",
       active: true,
       createdAt: now
     }

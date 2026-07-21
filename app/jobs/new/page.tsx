@@ -8,13 +8,14 @@ import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { ArrivalWindowField } from "@/components/ArrivalWindowField";
 import { CustomerPicker } from "@/components/CustomerPicker";
 import { RoleGate } from "@/components/RoleGate";
-import { Button, Card, Field, PageHeader } from "@/components/ui";
+import { Button, Field } from "@/components/ui";
 import { emptyArrivalWindowDraft, resolveArrivalWindow } from "@/lib/arrival-window";
 import { dispatchJobConfirmations } from "@/lib/appointment-confirmations-client";
 import {
   findTechnicianWindowConflicts
 } from "@/lib/service-window";
 import type { Customer } from "@/lib/types";
+import styles from "./new-job.module.css";
 
 export default function NewJobPage() {
   return (
@@ -110,46 +111,46 @@ function NewJobClient() {
   }
 
   return (
-    <main className="page-shell">
-      <PageHeader
-        eyebrow="Dispatch"
-        title="Schedule service"
-        description="Confirm the customer, set a clear arrival window, then assign the technician."
-      />
-      <Card className="schedule-call-card">
-        <form className="stack" onSubmit={submit}>
-          <div className="service-call-layout">
-            <section className="service-call-panel customer-search-panel">
-              <p className="eyebrow">Customer</p>
-              <h2>Find caller</h2>
-              <CustomerPicker selectedCustomer={selectedCustomer} onPick={pickCustomer} />
-            </section>
+    <main className={`page-shell ${styles.page}`}>
+      <header className={styles.header}>
+        <h1>Schedule service</h1>
+      </header>
 
-            <section className="service-call-panel dispatch-panel">
-              <p className="eyebrow">Dispatch</p>
-              <h2>Schedule</h2>
-              <Field label="Assigned tech">
-                <select value={form.assignedTechId} onChange={(event) => update("assignedTechId", event.target.value)} disabled={currentUser.role === "tech"}>
-                  <option value="">Unassigned</option>
-                  {techs.map((tech) => <option key={tech.id} value={tech.id}>{tech.displayName}</option>)}
-                </select>
-              </Field>
-              <ArrivalWindowField value={arrivalWindow} onChange={updateArrivalWindow} required />
-              {conflicts.length > 0 ? (
-                <div className="window-conflict" role="status">
-                  <strong>Overlapping customer arrival windows</strong>
-                  <span>{conflicts.length === 1 ? "Another customer has an overlapping arrival promise for this technician." : `${conflicts.length} other customers have overlapping arrival promises for this technician.`}</span>
-                  <span>Review the route before scheduling. These windows do not represent planned service duration.</span>
-                </div>
-              ) : null}
-            </section>
+      <form className={styles.form} onSubmit={submit}>
+        <section className={styles.section} aria-labelledby="customer-heading">
+          <div className={styles.sectionHeading}>
+            <h2 id="customer-heading">Customer</h2>
           </div>
+          <CustomerPicker selectedCustomer={selectedCustomer} onPick={pickCustomer} />
+        </section>
 
-          <div className="service-details-panel">
-            <div>
-              <p className="eyebrow">Call details</p>
-              <h2>What is the issue?</h2>
+        <section className={styles.section} aria-labelledby="window-heading">
+          <div className={styles.sectionHeading}>
+            <h2 id="window-heading">Arrival window</h2>
+          </div>
+          <div className={styles.windowLayout}>
+            <Field label="Technician">
+              <select value={form.assignedTechId} onChange={(event) => update("assignedTechId", event.target.value)} disabled={currentUser.role === "tech"}>
+                <option value="">Unassigned</option>
+                {techs.map((tech) => <option key={tech.id} value={tech.id}>{tech.displayName}</option>)}
+              </select>
+            </Field>
+            <ArrivalWindowField value={arrivalWindow} onChange={updateArrivalWindow} required hideLegend />
+          </div>
+          {conflicts.length > 0 ? (
+            <div className={styles.windowConflict} role="status">
+              <strong>Overlapping customer arrival windows</strong>
+              <span>{conflicts.length === 1 ? "Another customer has an overlapping arrival promise for this technician." : `${conflicts.length} other customers have overlapping arrival promises for this technician.`}</span>
+              <span>Review the route before scheduling. These windows do not represent planned service duration.</span>
             </div>
+          ) : null}
+        </section>
+
+        <section className={styles.section} aria-labelledby="details-heading">
+          <div className={styles.sectionHeading}>
+            <h2 id="details-heading">Job details</h2>
+          </div>
+          <div className={styles.detailFields}>
             <Field label="Service address">
               <AddressAutocomplete
                 required
@@ -162,38 +163,39 @@ function NewJobClient() {
               <textarea required value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="No cooling upstairs, water heater not heating..." />
             </Field>
           </div>
-          <div className="notification-review-panel">
-            <div>
-              <p className="eyebrow">Customer confirmation</p>
-              <h2>{confirmationChannels.length > 0 ? "Sends automatically after scheduling" : "No eligible delivery channel"}</h2>
-              <p className="muted">
-                The confirmation uses the exact arrival window and explains that arrival may occur at any time during that window.
-              </p>
-            </div>
-            {confirmationChannels.length > 0 ? (
-              <div className="notification-channel-preview">
-                {confirmationChannels.map((channel) => <span key={channel}>{channel}</span>)}
-              </div>
-            ) : (
-              <label className="preference-check warning-check">
-                <input
-                  type="checkbox"
-                  checked={scheduleWithoutConfirmation}
-                  onChange={(event) => setScheduleWithoutConfirmation(event.target.checked)}
-                />
-                <span>
-                  <strong>Schedule without confirmation</strong>
-                  <small>Add an email or record SMS consent on the customer profile to enable automatic updates.</small>
-                </span>
-              </label>
-            )}
+        </section>
+
+        <section className={`${styles.section} ${styles.confirmation}`} aria-labelledby="confirmation-heading" data-warning={confirmationChannels.length === 0 || undefined}>
+          <div className={styles.sectionHeading}>
+            <h2 id="confirmation-heading">Confirmation</h2>
           </div>
-          {submitError ? <p className="field-error" role="alert">{submitError}</p> : null}
+          {confirmationChannels.length > 0 ? (
+            <div className={styles.confirmationReady}>
+              <strong>Send automatically after scheduling</strong>
+              <span>{confirmationChannels.join(" · ")}</span>
+            </div>
+          ) : (
+            <label className={styles.warningCheck}>
+              <input
+                type="checkbox"
+                checked={scheduleWithoutConfirmation}
+                onChange={(event) => setScheduleWithoutConfirmation(event.target.checked)}
+              />
+              <span>
+                <strong>Schedule without confirmation</strong>
+                <small>Add an email or record SMS consent on the customer profile to enable automatic updates.</small>
+              </span>
+            </label>
+          )}
+        </section>
+
+        <div className={styles.actions}>
+          {submitError ? <p className={styles.submitError} role="alert">{submitError}</p> : null}
           <Button type="submit" disabled={submitting || !selectedCustomer || !validWindow || (confirmationChannels.length === 0 && !scheduleWithoutConfirmation)}>
             {submitting ? "Scheduling & notifying..." : confirmationChannels.length > 0 ? "Schedule & send confirmation" : "Schedule service"}
           </Button>
-        </form>
-      </Card>
+        </div>
+      </form>
     </main>
   );
 }

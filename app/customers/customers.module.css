@@ -1,0 +1,137 @@
+.workspace {
+  width: 100%;
+}
+
+.listPanel {
+  min-width: 0;
+}
+
+.searchLabel {
+  display: block;
+  margin: 0 0 7px 2px;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.recordList {
+  gap: 8px;
+}
+
+.customerRow {
+  grid-template-columns: minmax(0, 1.45fr) minmax(180px, 0.72fr) minmax(190px, 0.7fr);
+}
+
+.identity,
+.contact,
+.jobFact {
+  min-width: 0;
+}
+
+.jobFact {
+  justify-self: end;
+  max-width: 230px;
+  text-align: right;
+}
+
+.jobFact span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.profileCard {
+  display: grid;
+  gap: 14px;
+}
+
+.profileCard :global(.section-head) {
+  margin-bottom: 0;
+}
+
+.readOnlySummary {
+  display: grid;
+  gap: 12px;
+}
+
+.readOnlySummary :global(.contact-action-grid) {
+  margin: 0;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.summaryItem {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.summaryItem + .summaryItem {
+  border-left: 1px solid var(--line);
+}
+
+.summaryItem span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.summaryItem strong,
+.summaryItem small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summaryItem strong {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.summaryItem small {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.savedNotice {
+  margin: 0;
+  color: var(--good);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+@media (max-width: 820px) {
+  .customerRow {
+    grid-template-columns: minmax(0, 1fr) minmax(160px, 0.7fr);
+  }
+
+  .jobFact {
+    grid-column: 1 / -1;
+    justify-self: start;
+    max-width: none;
+    text-align: left;
+  }
+}
+
+@media (max-width: 560px) {
+  .customerRow,
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .summaryItem + .summaryItem {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+}

@@ -35,42 +35,11 @@
   line-height: 1.04;
 }
 
-.identityLine {
+.actionGroup {
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin-top: 14px;
-  color: #263646;
-}
-
-.identityLine > span:last-child {
-  display: grid;
-  gap: 1px;
-}
-
-.identityLine strong {
-  font-size: 0.88rem;
-  font-weight: 690;
-  line-height: 1.2;
-}
-
-.identityLine small {
-  color: #697787;
-  font-size: 0.76rem;
-}
-
-.avatar {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid #d8e0e8;
-  border-radius: 50%;
-  background: #f2f5f7;
-  color: #294050;
-  font-size: 0.72rem;
-  font-weight: 760;
-  letter-spacing: 0.02em;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .primaryAction,
@@ -165,7 +134,7 @@
 .workloadMetrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  margin: 18px 0 10px;
+  margin: 16px 0 0;
   border: 1px solid #e5e9ed;
   border-radius: 10px;
   background: #f9fafb;
@@ -206,14 +175,9 @@
   color: #9c3f22;
 }
 
-.chartWrap {
-  min-width: 0;
-  overflow: hidden;
-}
-
 .lookupPanel {
   display: grid;
-  grid-template-columns: auto minmax(160px, 0.8fr) minmax(260px, 1.4fr) auto;
+  grid-template-columns: auto minmax(160px, 0.8fr) minmax(260px, 1.4fr);
   align-items: center;
   gap: 14px;
   padding: 16px 18px;
@@ -249,6 +213,8 @@
 .secondaryAction:focus-visible {
   border-color: #aab7c1;
   background: #f7f9fa;
+  box-shadow: 0 5px 14px rgba(20, 36, 49, 0.08);
+  transform: translateY(-1px);
 }
 
 .jobTable,
@@ -262,7 +228,7 @@
 .tableHeader,
 .jobRow {
   display: grid;
-  grid-template-columns: minmax(170px, 1.25fr) minmax(135px, 0.8fr) minmax(190px, 1.15fr) minmax(135px, 0.78fr) minmax(112px, 0.55fr);
+  grid-template-columns: minmax(180px, 1.1fr) minmax(240px, 1.35fr) minmax(150px, 0.8fr) minmax(180px, 0.9fr);
   gap: 14px;
   align-items: center;
 }
@@ -300,9 +266,7 @@
 .customerCell,
 .windowCell,
 .arrivalCell,
-.workerCell > span:last-child,
-.invoiceMain,
-.invoiceDelivery {
+.invoiceMain {
   display: grid;
   gap: 3px;
   min-width: 0;
@@ -312,8 +276,7 @@
 .windowCell strong,
 .arrivalCell strong,
 .workerCell strong,
-.invoiceMain strong,
-.invoiceDelivery strong {
+.invoiceMain strong {
   overflow: hidden;
   color: #21313e;
   font-size: 0.82rem;
@@ -327,8 +290,7 @@
 .windowCell small,
 .arrivalCell small,
 .workerCell small,
-.invoiceMain small,
-.invoiceDelivery small {
+.invoiceMain small {
   overflow: hidden;
   color: #74828f;
   font-size: 0.72rem;
@@ -342,6 +304,13 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.workerCell > strong {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .workerIcon {
@@ -359,13 +328,9 @@
   font-weight: 650;
 }
 
-.statusCell {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 7px;
-  min-width: 0;
-  color: #8a969f;
+.arrivalCell .status {
+  width: max-content;
+  margin-top: 4px;
 }
 
 .status {
@@ -444,7 +409,8 @@
 
 .invoiceRow {
   display: grid;
-  grid-template-columns: 38px minmax(140px, 0.8fr) minmax(210px, 1.15fr) 90px minmax(145px, 0.75fr) 20px;
+  grid-template-areas: "icon main blocker status date arrow";
+  grid-template-columns: 38px minmax(180px, 1fr) minmax(100px, auto) 90px minmax(145px, 0.75fr) 20px;
   gap: 12px;
   align-items: center;
   min-height: 64px;
@@ -455,24 +421,46 @@
   transition: background 140ms ease, box-shadow 140ms ease;
 }
 
+.invoiceBlocker {
+  grid-area: blocker;
+  width: max-content;
+  border-radius: 999px;
+  background: #fbf1ec;
+  color: #9a4426;
+  padding: 6px 9px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
 .invoiceRow:first-child {
   border-top: 0;
 }
 
 .invoiceIcon {
+  grid-area: icon;
   width: 34px;
   height: 34px;
   border-radius: 8px;
 }
 
 .invoiceDate {
+  grid-area: date;
   color: #6f7d89;
   font-size: 0.72rem;
   text-align: right;
 }
 
 .rowArrow {
+  grid-area: arrow;
   color: #93a0a9;
+}
+
+.invoiceMain {
+  grid-area: main;
+}
+
+.invoiceRow > .status {
+  grid-area: status;
 }
 
 /* Technician home ----------------------------------------------------------- */
@@ -868,17 +856,9 @@
     white-space: normal;
   }
 
-  .statusCell {
-    position: absolute;
-    justify-self: end;
-  }
-
-  .statusCell > svg {
-    display: none;
-  }
-
   .invoiceRow {
-    grid-template-columns: 38px minmax(120px, 0.85fr) minmax(180px, 1fr) 86px 20px;
+    grid-template-areas: "icon main blocker status arrow";
+    grid-template-columns: 38px minmax(140px, 1fr) minmax(100px, auto) 86px 20px;
   }
 
   .invoiceDate {
@@ -886,7 +866,7 @@
   }
 
   .lookupPanel {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .lookupPanel > :nth-child(3) {
@@ -902,7 +882,14 @@
     flex-direction: column;
   }
 
-  .primaryAction {
+  .actionGroup {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .primaryAction,
+  .secondaryAction {
     width: 100%;
   }
 
@@ -973,6 +960,9 @@
   }
 
   .invoiceRow {
+    grid-template-areas:
+      "icon main status"
+      "icon blocker blocker";
     grid-template-columns: 36px minmax(0, 1fr) auto;
     gap: 8px 10px;
     border: 1px solid #e3e8ec;
@@ -984,13 +974,12 @@
     border-top: 1px solid #e3e8ec;
   }
 
-  .invoiceDelivery {
-    grid-column: 2 / -1;
+  .invoiceRow .status {
+    grid-area: status;
   }
 
-  .invoiceRow .status {
-    grid-column: 3;
-    grid-row: 1;
+  .invoiceDate {
+    display: none;
   }
 
   .rowArrow {
@@ -1001,8 +990,7 @@
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .lookupPanel > :nth-child(3),
-  .lookupPanel .secondaryAction {
+  .lookupPanel > :nth-child(3) {
     grid-column: 1 / -1;
   }
 }

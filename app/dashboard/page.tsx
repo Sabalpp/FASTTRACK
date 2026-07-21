@@ -14,10 +14,9 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 import { GlobalSearch } from "@/components/GlobalSearch";
-import { OperationsChart } from "@/components/OperationsChart";
 import { canCreateCustomers, canScheduleJobs, canViewInvoice, canViewJob } from "@/lib/access";
 import { useAuth } from "@/lib/auth";
-import { roleLabels, useAppData } from "@/lib/data-store";
+import { useAppData } from "@/lib/data-store";
 import { formatDateTime, formatTime } from "@/lib/date";
 import {
   compareJobsForDispatch,
@@ -173,38 +172,29 @@ export default function DashboardPage() {
     <main className={`page-shell ${styles.page}`}>
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
-          <p className={styles.kicker}>{dashboardKicker(currentUser.role)}</p>
           <h1>{dashboardTitle(currentUser.role)}</h1>
-          <div className={styles.identityLine}>
-            <span className={styles.avatar} aria-hidden="true">{initials(currentUser.displayName)}</span>
-            <span>
-              <strong>{currentUser.displayName}</strong>
-              <small>{roleLabels[currentUser.role]}</small>
-            </span>
-          </div>
         </div>
 
-        {canScheduleJobs(currentUser.role) ? (
-          <Link href="/jobs/new" className={styles.primaryAction}>
-            <CalendarPlus size={19} aria-hidden="true" />
-            Schedule service
-          </Link>
-        ) : canCreateCustomers(currentUser.role) ? (
-          <Link href="/customers/new" className={styles.primaryAction}>
-            <UserPlus size={19} aria-hidden="true" />
-            New customer
-          </Link>
-        ) : null}
+        <div className={styles.actionGroup} aria-label="Quick actions">
+          {canCreateCustomers(currentUser.role) ? (
+            <Link href="/customers/new" className={styles.primaryAction}>
+              <UserPlus size={19} aria-hidden="true" />
+              Create customer
+            </Link>
+          ) : null}
+          {canScheduleJobs(currentUser.role) ? (
+            <Link href="/jobs/new" className={styles.secondaryAction}>
+              <CalendarPlus size={19} aria-hidden="true" />
+              Schedule service
+            </Link>
+          ) : null}
+        </div>
       </header>
 
       <section className={styles.workloadPanel} aria-labelledby="workload-heading">
         <div className={styles.sectionHeading}>
-          <div>
-            <p className={styles.sectionLabel}>Live operations</p>
-            <h2 id="workload-heading">Workload</h2>
-            <p>Scheduled, active, and completed service calls by day.</p>
-          </div>
-          <Link href="/jobs" className={styles.textLink}>View all jobs <ArrowRight size={16} aria-hidden="true" /></Link>
+          <h2 id="workload-heading">Workload</h2>
+          <Link href="/jobs" className={styles.textLink}>View schedule <ArrowRight size={16} aria-hidden="true" /></Link>
         </div>
 
         <div className={styles.workloadMetrics} aria-label="Current workload summary">
@@ -228,9 +218,6 @@ export default function DashboardPage() {
           ) : null}
         </div>
 
-        <div className={styles.chartWrap}>
-          <OperationsChart jobs={visibleJobs} />
-        </div>
       </section>
 
       {isCallCenter ? (
@@ -241,18 +228,13 @@ export default function DashboardPage() {
             <p>Search contact details before scheduling or updating a service call.</p>
           </div>
           <GlobalSearch />
-          <Link href="/customers/new" className={styles.secondaryAction}>Create customer</Link>
         </section>
       ) : null}
 
       <section className={styles.queuePanel} aria-labelledby="job-queue-heading">
         <div className={styles.sectionHeading}>
-          <div>
-            <p className={styles.sectionLabel}>Dispatch</p>
-            <h2 id="job-queue-heading">Job queue</h2>
-            <p>Service windows, assigned workers, and recorded arrival details.</p>
-          </div>
-          <Link href="/jobs" className={styles.textLink}>All jobs <ArrowRight size={16} aria-hidden="true" /></Link>
+          <h2 id="job-queue-heading">Open jobs</h2>
+          <Link href="/jobs" className={styles.textLink}>View all <ArrowRight size={16} aria-hidden="true" /></Link>
         </div>
 
         {activeJobs.length === 0 ? (
@@ -267,12 +249,11 @@ export default function DashboardPage() {
           <div className={styles.jobTable} role="table" aria-label="Open job queue">
             <div className={styles.tableHeader} role="row">
               <span role="columnheader">Customer</span>
-              <span role="columnheader">Worker</span>
-              <span role="columnheader">Service window</span>
-              <span role="columnheader">Arrival</span>
-              <span role="columnheader">Status</span>
+              <span role="columnheader">Visit</span>
+              <span role="columnheader">Technician</span>
+              <span role="columnheader">State</span>
             </div>
-            {activeJobs.slice(0, 7).map((job) => {
+            {activeJobs.slice(0, 5).map((job) => {
               const customer = data.customers.find((candidate) => candidate.id === job.customerId);
               const tech = data.allowedUsers.find((candidate) => candidate.id === job.assignedTechId);
               const arrival = arrivalDetails(job, now);
@@ -283,24 +264,18 @@ export default function DashboardPage() {
                     <strong>{customer?.name ?? "Unknown customer"}</strong>
                     <small>{job.description}</small>
                   </span>
-                  <span className={styles.workerCell} role="cell" data-label="Worker">
-                    <span className={styles.workerIcon} aria-hidden="true"><UserRound size={16} /></span>
-                    <span>
-                      <strong>{tech?.displayName ?? "Unassigned"}</strong>
-                      <small>{tech ? roleLabels[tech.role] : "Technician"}</small>
-                    </span>
-                  </span>
-                  <span className={styles.windowCell} role="cell" data-label="Service window">
+                  <span className={styles.windowCell} role="cell" data-label="Visit">
                     <strong>{formatServiceWindow(job.scheduledAt, job.arrivalWindowEndAt)}</strong>
                     <small>{job.serviceAddress}</small>
                   </span>
-                  <span className={styles.arrivalCell} role="cell" data-label="Arrival">
+                  <span className={styles.workerCell} role="cell" data-label="Technician">
+                    <span className={styles.workerIcon} aria-hidden="true"><UserRound size={16} /></span>
+                    <strong>{tech?.displayName ?? "Unassigned"}</strong>
+                  </span>
+                  <span className={styles.arrivalCell} role="cell" data-label="State">
                     <strong>{arrival.label}</strong>
                     {arrival.exception ? <small className={styles.exception}><CircleAlert size={13} aria-hidden="true" /> {arrival.exception}</small> : <small>{arrival.detail}</small>}
-                  </span>
-                  <span className={styles.statusCell} role="cell" data-label="Status">
                     <span className={`${styles.status} ${styles[`status_${job.status}`]}`}>{jobStatusLabels[job.status]}</span>
-                    <ArrowRight size={17} aria-hidden="true" />
                   </span>
                 </Link>
               );
@@ -309,25 +284,15 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {!isCallCenter ? (
+      {!isCallCenter && invoiceTasks.length > 0 ? (
         <section className={styles.queuePanel} aria-labelledby="invoice-tasks-heading">
           <div className={styles.sectionHeading}>
-            <div>
-              <p className={styles.sectionLabel}>Billing</p>
-              <h2 id="invoice-tasks-heading">Invoice tasks</h2>
-              <p>Drafts and sent invoices that still need attention.</p>
-            </div>
-            <Link href="/invoices" className={styles.textLink}>All invoices <ArrowRight size={16} aria-hidden="true" /></Link>
+            <h2 id="invoice-tasks-heading">Invoice tasks</h2>
+            <Link href="/invoices" className={styles.textLink}>View invoices <ArrowRight size={16} aria-hidden="true" /></Link>
           </div>
 
-          {invoiceTasks.length === 0 ? (
-            <div className={styles.emptyState}>
-              <span aria-hidden="true"><FileText size={22} /></span>
-              <div><strong>No invoice tasks</strong><p>Nothing needs billing attention right now.</p></div>
-            </div>
-          ) : (
-            <div className={styles.invoiceList} aria-label="Invoice tasks">
-              {invoiceTasks.slice(0, 5).map((invoice) => {
+          <div className={styles.invoiceList} aria-label="Invoice tasks">
+              {invoiceTasks.slice(0, 3).map((invoice) => {
                 const job = data.jobs.find((candidate) => candidate.id === invoice.jobId);
                 const customer = data.customers.find((candidate) => candidate.id === job?.customerId);
                 const customerEmail = invoice.sentToEmail ?? customer?.email;
@@ -338,43 +303,24 @@ export default function DashboardPage() {
                       <strong>{invoice.invoiceNumber}</strong>
                       <small>{customer?.name ?? "Unknown customer"}</small>
                     </span>
-                    <span className={styles.invoiceDelivery}>
-                      <strong>{customerEmail ? "Customer email" : "Email needed"}</strong>
-                      <small>{customerEmail ?? "Add an email before sending"}</small>
-                    </span>
+                    {!customerEmail ? <span className={styles.invoiceBlocker}>Email needed</span> : null}
                     <span className={`${styles.status} ${styles[`invoice_${invoice.status}`]}`}>{invoiceStatusLabels[invoice.status]}</span>
                     <span className={styles.invoiceDate}>{formatDateTime(invoice.updatedAt || invoice.createdAt)}</span>
                     <ArrowRight className={styles.rowArrow} size={17} aria-hidden="true" />
                   </Link>
                 );
               })}
-            </div>
-          )}
+          </div>
         </section>
       ) : null}
     </main>
   );
 }
 
-function dashboardKicker(role: "owner" | "tech" | "call_center") {
-  if (role === "tech") return "Technician workspace";
-  if (role === "call_center") return "Call center workspace";
-  return "Owner workspace";
-}
-
 function dashboardTitle(role: "owner" | "tech" | "call_center") {
   if (role === "tech") return "Today’s work";
   if (role === "call_center") return "Service desk";
-  return "Operations overview";
-}
-
-function initials(name: string) {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || "FT";
+  return "Operations";
 }
 
 function mapsHref(address: string) {

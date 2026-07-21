@@ -3,7 +3,7 @@
 import { Check } from "lucide-react";
 import { tierLabels, tierOptions } from "@/lib/data-store";
 import { money } from "@/lib/money";
-import type { InvoicePaymentStatus, Tier } from "@/lib/types";
+import type { Invoice, InvoicePaymentStatus, Tier } from "@/lib/types";
 import styles from "./InvoiceWorkspace.module.css";
 
 export type InvoiceWorkspaceActionId =
@@ -24,6 +24,31 @@ export type InvoiceWorkspaceAction = {
 
 export function preferredInvoiceDeliveryEmail(sentToEmail?: string, customerEmail?: string) {
   return sentToEmail ?? customerEmail ?? "";
+}
+
+export function invoiceWorkspaceStatus(invoice: Pick<Invoice, "approvalStatus" | "paymentStatus" | "pdfStoragePath" | "sentAt" | "status">) {
+  if (invoice.paymentStatus === "paid") return { label: "Paid", tone: "good" } as const;
+  if (invoice.paymentStatus === "partially_paid") return { label: "Partially paid", tone: "warn" } as const;
+  if (invoice.paymentStatus === "refunded") return { label: "Refunded", tone: "neutral" } as const;
+  if (invoice.paymentStatus === "void" || invoice.status === "cancelled") return { label: "Void", tone: "neutral" } as const;
+  if (invoice.sentAt || invoice.status === "sent") return { label: "Sent · payment due", tone: "warn" } as const;
+  if (invoice.pdfStoragePath) return { label: "PDF ready", tone: "warn" } as const;
+  if (invoice.approvalStatus === "signed") return { label: "Approved", tone: "warn" } as const;
+  return { label: "Draft", tone: "warn" } as const;
+}
+
+export function invoiceReadinessBlockers(input: {
+  hasWorkAuthorization: boolean;
+  tierConflict: boolean;
+  hasCompletionRecord: boolean;
+  reviewDirty: boolean;
+}) {
+  return [
+    !input.hasWorkAuthorization ? "Customer work authorization is missing." : undefined,
+    input.hasWorkAuthorization && input.tierConflict ? "The saved invoice scope conflicts with the customer authorization." : undefined,
+    !input.hasCompletionRecord ? "Completion acknowledgment is missing." : undefined,
+    input.reviewDirty ? "Invoice label or notes have unsaved changes." : undefined
+  ].filter((blocker): blocker is string => Boolean(blocker));
 }
 
 export function resolveInvoiceWorkspaceAction(input: {

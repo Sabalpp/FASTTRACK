@@ -17,6 +17,7 @@ export function ArrivalWindowField({
   onChange,
   editable = true,
   required = false,
+  hideLegend = false,
   minDate,
   timeZone = ARRIVAL_WINDOW_TIME_ZONE
 }: {
@@ -24,6 +25,7 @@ export function ArrivalWindowField({
   onChange?: (value: ArrivalWindowDraft) => void;
   editable?: boolean;
   required?: boolean;
+  hideLegend?: boolean;
   minDate?: string;
   timeZone?: string;
 }) {
@@ -41,8 +43,8 @@ export function ArrivalWindowField({
   }
 
   return (
-    <fieldset className={styles.fieldset} data-time-zone={timeZone}>
-      <legend className={styles.legend}>Arrival window</legend>
+    <fieldset className={styles.fieldset} data-time-zone={timeZone} data-compact={hideLegend || undefined}>
+      <legend className={`${styles.legend} ${hideLegend ? styles.legendHidden : ""}`}>Arrival window</legend>
       {editable ? (
         <div className={styles.controls}>
           <label className={styles.field} htmlFor={dateId}>

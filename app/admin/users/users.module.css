@@ -12,7 +12,6 @@
   padding: 6px 2px 2px;
 }
 
-.kicker,
 .sectionLabel {
   margin: 0 0 5px;
   color: #a5411d;
@@ -39,30 +38,6 @@
   line-height: 1.52;
 }
 
-.ownerIdentity {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-top: 14px;
-}
-
-.ownerIdentity > span:last-child {
-  display: grid;
-  gap: 1px;
-}
-
-.ownerIdentity strong {
-  color: #263646;
-  font-size: 0.86rem;
-  font-weight: 690;
-}
-
-.ownerIdentity small {
-  color: #72808c;
-  font-size: 0.74rem;
-}
-
-.ownerAvatar,
 .personAvatar,
 .addPanelHeading > span {
   display: grid;
@@ -70,14 +45,6 @@
   border: 1px solid #d8e0e8;
   background: #f2f5f7;
   color: #294050;
-}
-
-.ownerAvatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  font-size: 0.72rem;
-  font-weight: 760;
 }
 
 .primaryAction,

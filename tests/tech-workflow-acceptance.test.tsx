@@ -42,10 +42,6 @@ vi.mock("@/lib/runtime", () => ({
   demoMode: true
 }));
 
-vi.mock("@/components/OperationsChart", () => ({
-  OperationsChart: () => <div data-testid="operations-chart">Operations chart</div>
-}));
-
 vi.mock("@/components/AddressAutocomplete", () => ({
   AddressAutocomplete: ({ value, disabled }: { value: string; disabled?: boolean }) => (
     <input aria-label="Service address" value={value} disabled={disabled} readOnly />
@@ -111,8 +107,21 @@ describe("technician workflow acceptance", () => {
 
     expect(screen.queryByRole("heading", { name: "Workload" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Invoice tasks" })).toBeNull();
-    expect(screen.queryByTestId("operations-chart")).toBeNull();
+    expect(document.querySelector("canvas")).toBeNull();
     expect(screen.queryByText("Assigned worker", { exact: true })).toBeNull();
+  });
+
+  it("gives the owner one identity-free operations heading and both intake actions", () => {
+    harness.currentUser = ownerUser();
+
+    render(<DashboardPage />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Operations" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Create customer" }).getAttribute("href")).toBe("/customers/new");
+    expect(screen.getByRole("link", { name: "Schedule service" }).getAttribute("href")).toBe("/jobs/new");
+    expect(screen.queryByText("Owner workspace")).toBeNull();
+    expect(screen.queryByText(ownerUser().displayName)).toBeNull();
+    expect(document.querySelector("canvas")).toBeNull();
   });
 
   it("shows a scheduled job as a read-only field brief with one obvious en-route action", async () => {
@@ -217,6 +226,12 @@ describe("technician workflow acceptance", () => {
 function techUser(): AllowedUser {
   const user = demoState.allowedUsers.find((candidate) => candidate.role === "tech");
   if (!user) throw new Error("Demo technician is required for workflow tests.");
+  return user;
+}
+
+function ownerUser(): AllowedUser {
+  const user = demoState.allowedUsers.find((candidate) => candidate.role === "owner");
+  if (!user) throw new Error("Demo owner is required for workflow tests.");
   return user;
 }
 

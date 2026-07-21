@@ -87,8 +87,8 @@ describe("arrival-window acceptance", () => {
 
     expect(css).toMatch(/\.fieldset\s*\{[^}]*container-type:\s*inline-size/s);
     expect(css).toMatch(/\.controls\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.15fr\)\s+minmax\(9\.5rem,\s*0\.85fr\)/s);
-    expect(css).toMatch(/@container\s*\(max-width:\s*30rem\)[\s\S]*?\.controls\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
-    expect(css).toMatch(/\.field input\s*\{[^}]*min-width:\s*0[^}]*max-width:\s*100%/s);
+    expect(css).toMatch(/@container\s*\(max-width:\s*42rem\)[\s\S]*?\.controls\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
+    expect(css).toMatch(/\.field input\s*\{[^}]*box-sizing:\s*border-box[^}]*min-width:\s*0[^}]*max-width:\s*100%/s);
     expect(css).toMatch(/\.field input\s*\{[^}]*min-height:\s*4[48]px[^}]*font-size:\s*16px/s);
   });
 

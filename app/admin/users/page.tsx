@@ -63,13 +63,8 @@ export default function AdminUsersPage() {
       <main className={`page-shell ${styles.page}`}>
         <header className={styles.hero}>
           <div>
-            <p className={styles.kicker}>Owner workspace</p>
             <h1>Team access</h1>
             <p className={styles.description}>Control which Google accounts can open Fast Track and what each person is allowed to do.</p>
-            <div className={styles.ownerIdentity}>
-              <span className={styles.ownerAvatar} aria-hidden="true">{initials(currentUser.displayName)}</span>
-              <span><strong>{currentUser.displayName}</strong><small>Signed in · Owner</small></span>
-            </div>
           </div>
           <button
             type="button"
@@ -224,13 +219,4 @@ export default function AdminUsersPage() {
 
 function isCurrentUser(user: { id: string; email: string }, currentEmail: string) {
   return user.email.toLowerCase() === currentEmail.toLowerCase();
-}
-
-function initials(name: string) {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || "FT";
 }

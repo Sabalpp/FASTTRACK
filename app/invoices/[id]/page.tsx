@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   ArrowLeft,
-  Check,
   CheckCircle2,
   ChevronDown,
   CircleDollarSign,
@@ -14,11 +13,8 @@ import {
   FileText,
   LoaderCircle,
   Mail,
-  MapPin,
   PenLine,
   RotateCw,
-  ShieldCheck,
-  UserRound
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { InvoicePreview } from "@/components/InvoicePreview";
@@ -28,7 +24,7 @@ import { Button, Card, EmptyState } from "@/components/ui";
 import { canSendInvoices, canViewInvoice } from "@/lib/access";
 import { useAuth } from "@/lib/auth";
 import { tierLabels, useAppData } from "@/lib/data-store";
-import { formatDate, formatDateTime } from "@/lib/date";
+import { formatDateTime } from "@/lib/date";
 import { balanceDue, invoiceOptionLabels, selectedTotal } from "@/lib/invoice";
 import {
   loadProtectedInvoice,
@@ -49,7 +45,8 @@ import type {
   Tier
 } from "@/lib/types";
 import {
-  InvoiceScopeEditor,
+  invoiceReadinessBlockers,
+  invoiceWorkspaceStatus,
   preferredInvoiceDeliveryEmail,
   resolveInvoiceWorkspaceAction,
   type InvoiceWorkspaceActionId
@@ -239,12 +236,6 @@ export default function InvoiceDetailPage() {
     better: invoice.totalBetter,
     best: invoice.totalBest
   };
-  const itemCountByTier = {
-    standard: items.filter((item) => item.tier === "standard").length,
-    good: items.filter((item) => item.tier === "good").length,
-    better: items.filter((item) => item.tier === "better").length,
-    best: items.filter((item) => item.tier === "best").length
-  };
   const authorizedTier = workAuthorization?.selectedTier;
   const completionOverridden = Boolean(job.completionSignatureOverrideAt && job.completionSignatureOverrideBy && job.completionSignatureOverrideReason?.trim());
   const fieldSignaturesReady = Boolean(workAuthorization && (workCompletion || completionOverridden));
@@ -267,6 +258,13 @@ export default function InvoiceDetailPage() {
     paymentStatus: invoice.paymentStatus,
     paymentEditorOpen
   });
+  const readinessBlockers = invoiceReadinessBlockers({
+    hasWorkAuthorization: Boolean(workAuthorization),
+    tierConflict,
+    hasCompletionRecord: Boolean(workCompletion || completionOverridden),
+    reviewDirty
+  });
+  const workspaceStatus = invoiceWorkspaceStatus(invoice);
 
   async function saveReview() {
     if (!authorizedTier) return;
@@ -453,16 +451,12 @@ export default function InvoiceDetailPage() {
         </Link>
         <div className={styles.headerMain}>
           <div className={styles.headerTitle}>
-            <p>Invoice workspace</p>
             <h1>{invoice.invoiceNumber}</h1>
             <p>{customer.name} · {job.description}</p>
           </div>
           <div className={styles.headerStatus} aria-label="Invoice status">
-            <span className={styles.statusPill} data-tone={invoice.status === "paid" || invoice.status === "sent" ? "good" : "warn"}>
-              {humanizeState(invoice.status)}
-            </span>
-            <span className={styles.statusPill} data-tone={invoice.paymentStatus === "paid" ? "good" : invoice.paymentStatus === "unpaid" ? "warn" : undefined}>
-              {humanizeState(invoice.paymentStatus)}
+            <span className={styles.statusPill} data-tone={workspaceStatus.tone}>
+              {workspaceStatus.label}
             </span>
           </div>
         </div>
@@ -479,7 +473,6 @@ export default function InvoiceDetailPage() {
           <div className={styles.documentToolbar}>
             <div className={styles.documentToolbarTitle}>
               <strong>Customer document</strong>
-              <span>Preview, create, view, or download. Email is a separate action.</span>
             </div>
             <div className={styles.documentTabs} role="tablist" aria-label="Document views">
               <button
@@ -562,15 +555,7 @@ export default function InvoiceDetailPage() {
 
         <aside className={styles.actionRail} aria-label="Invoice actions and status">
           <div className={styles.actionRailInner}>
-            <section className={styles.railCard} aria-labelledby="invoice-summary-heading">
-              <div className={styles.railHeading}>
-                <div>
-                  <p>Invoice summary</p>
-                  <h2 id="invoice-summary-heading">{invoiceOptionLabels[optionLabel]}</h2>
-                </div>
-                <ShieldCheck size={22} aria-hidden="true" />
-              </div>
-
+            <section className={styles.railCard} aria-label="Invoice totals and blockers">
               <div className={styles.moneySummary}>
                 <div className={styles.moneyMetric}>
                   <span>Invoice total</span>
@@ -581,26 +566,17 @@ export default function InvoiceDetailPage() {
                   <strong>{selectedTier ? money(displayBalance) : "—"}</strong>
                 </div>
               </div>
-
-              <div className={styles.identitySummary}>
-                <div className={styles.identityRow}>
-                  <UserRound size={18} aria-hidden="true" />
-                  <div><strong>{customer.name}</strong><span>{customer.email || "No customer email on file"} · {customer.phone}</span></div>
+              {readinessBlockers.length ? (
+                <div className={styles.blockerPanel} role="status">
+                  <strong>{readinessBlockers.length === 1 ? "1 item needs attention" : `${readinessBlockers.length} items need attention`}</strong>
+                  <ul>{readinessBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>
                 </div>
-                <div className={styles.identityRow}>
-                  <MapPin size={18} aria-hidden="true" />
-                  <div><strong>{job.serviceAddress}</strong><span>Service date {formatDate(job.completedAt ?? job.arrivedAt ?? job.scheduledAt)}</span></div>
+              ) : (
+                <div className={styles.quietState}>
+                  <CheckCircle2 size={17} aria-hidden="true" />
+                  Required field records are complete.
                 </div>
-              </div>
-
-              <div className={styles.progressList} aria-label="Invoice readiness">
-                <ProgressRow label="Authorized scope" state={tierConflict ? "Conflict" : selectedSaved ? tierLabels[authorizedTier!] : "Missing"} complete={selectedSaved && !tierConflict} />
-                <ProgressRow label="Work authorization" state={workAuthorization ? "Signed in field" : "Missing"} complete={Boolean(workAuthorization)} />
-                <ProgressRow label="Completion record" state={workCompletion ? "Signed in field" : completionOverridden ? "Owner override" : "Missing"} complete={Boolean(workCompletion || completionOverridden)} />
-                <ProgressRow label="Final PDF" state={generated ? `Version ${invoice.pdfVersion}` : "Not generated"} complete={generated} />
-                <ProgressRow label="Invoice email" state={invoice.sentAt ? "Provider accepted" : "Not sent"} complete={deliveryRecorded} />
-                <ProgressRow label="Payment" state={humanizeState(invoice.paymentStatus)} complete={invoice.paymentStatus === "paid"} />
-              </div>
+              )}
             </section>
 
             <section className={styles.contextCard} aria-labelledby="next-invoice-action">
@@ -611,13 +587,6 @@ export default function InvoiceDetailPage() {
                   <p>{primaryAction.helper}</p>
                 </div>
               </div>
-
-              {selectedTier ? (
-                <div className={styles.chosenScope}>
-                  <div><span>Chosen scope</span><strong>{invoiceOptionLabels[optionLabel]}</strong></div>
-                  <strong>{money(displayTotal)}</strong>
-                </div>
-              ) : null}
 
               {primaryAction.id === "record_sent" ? (
                 <div className={styles.deliveryEditor}>
@@ -675,31 +644,20 @@ export default function InvoiceDetailPage() {
                     {primaryLabel}
                   </button>
                 )}
-                <span className={styles.primaryHint}>
-                  {primaryAction.id === "record_sent" && !customerEmailValid
-                    ? "A valid customer email is required to send the PDF."
-                    : "The primary action changes as this invoice advances."}
-                </span>
+                {primaryAction.id === "record_sent" && !customerEmailValid ? (
+                  <span className={styles.primaryHint}>A valid customer email is required to send the PDF.</span>
+                ) : null}
               </div>
             </section>
 
             <div className={styles.utilityStack}>
-              <details className={styles.utilityDetails} open={!selectedSaved || undefined}>
+              <details className={styles.utilityDetails} open={(!selectedSaved || reviewDirty) || undefined}>
                 <summary className={styles.utilitySummary}>
                   <FileText size={18} aria-hidden="true" />
-                  Invoice details
+                  Invoice notes
                   <ChevronDown size={17} aria-hidden="true" />
                 </summary>
                 <div className={styles.utilityContent}>
-                  <InvoiceScopeEditor
-                    locked
-                    canEdit={false}
-                    selectedTier={authorizedTier}
-                    totalByTier={totalByTier}
-                    itemCountByTier={itemCountByTier}
-                    neutralLabel={authorizedTier ? `${tierLabels[authorizedTier]} authorized work` : "Authorization missing"}
-                    onSelect={() => undefined}
-                  />
                   {tierConflict ? <p className={styles.errorNote}>This draft does not match the signed field authorization. Refresh the invoice before continuing.</p> : null}
                   <label className={styles.field}>
                     <span>Invoice service label</span>
@@ -727,7 +685,6 @@ export default function InvoiceDetailPage() {
                   <ChevronDown size={17} aria-hidden="true" />
                 </summary>
                 <div className={styles.utilityContent}>
-                  <p className={styles.truthNote}>These signatures were collected during the field workflow. The invoice does not ask the customer to sign a third time.</p>
                   <div className="invoice-signature-grid">
                     <FieldSignatureCard
                       title="Authorization of repair"
@@ -868,16 +825,6 @@ function FieldSignatureCard({
         <span className={styles.fieldSignatureMeta}>{error ?? rejectedSignature?.rejectionReason ?? "Finish this checkpoint from the job."}</span>
       )}
     </section>
-  );
-}
-
-function ProgressRow({ label, state, complete }: { label: string; state: string; complete: boolean }) {
-  return (
-    <div className={styles.progressRow} data-complete={complete}>
-      <span className={styles.progressIcon} aria-hidden="true">{complete ? <Check size={14} /> : <Clock3 size={13} />}</span>
-      <span className={styles.progressLabel}>{label}</span>
-      <span className={styles.progressState}>{state}</span>
-    </div>
   );
 }
 

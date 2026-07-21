@@ -2,6 +2,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
   InvoiceScopeEditor,
+  invoiceReadinessBlockers,
+  invoiceWorkspaceStatus,
   preferredInvoiceDeliveryEmail,
   resolveInvoiceWorkspaceAction
 } from "@/app/invoices/[id]/InvoiceWorkspaceParts";
@@ -101,5 +103,37 @@ describe("Phase 5 invoice workspace", () => {
     expect(preferredInvoiceDeliveryEmail(undefined, "customer@example.com")).toBe("customer@example.com");
     expect(preferredInvoiceDeliveryEmail("billing@example.com", "customer@example.com")).toBe("billing@example.com");
     expect(preferredInvoiceDeliveryEmail(undefined, undefined)).toBe("");
+  });
+
+  it("reduces invoice state to one status and shows only real readiness blockers", () => {
+    const baseInvoice = {
+      approvalStatus: "signed" as const,
+      paymentStatus: "unpaid" as const,
+      status: "draft" as const,
+      pdfStoragePath: undefined,
+      sentAt: undefined
+    };
+
+    expect(invoiceWorkspaceStatus(baseInvoice).label).toBe("Approved");
+    expect(invoiceWorkspaceStatus({ ...baseInvoice, pdfStoragePath: "invoice.pdf" }).label).toBe("PDF ready");
+    expect(invoiceWorkspaceStatus({ ...baseInvoice, status: "sent", sentAt: "2026-07-21T12:00:00.000Z" }).label).toBe("Sent · payment due");
+    expect(invoiceWorkspaceStatus({ ...baseInvoice, paymentStatus: "paid", status: "paid" }).label).toBe("Paid");
+
+    expect(invoiceReadinessBlockers({
+      hasWorkAuthorization: true,
+      tierConflict: false,
+      hasCompletionRecord: true,
+      reviewDirty: false
+    })).toEqual([]);
+    expect(invoiceReadinessBlockers({
+      hasWorkAuthorization: false,
+      tierConflict: false,
+      hasCompletionRecord: false,
+      reviewDirty: true
+    })).toEqual([
+      "Customer work authorization is missing.",
+      "Completion acknowledgment is missing.",
+      "Invoice label or notes have unsaved changes."
+    ]);
   });
 });

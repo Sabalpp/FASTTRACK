@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Building2,
   CalendarDays,
   ChevronDown,
   CircleUserRound,
@@ -195,12 +194,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </summary>
               <div className="ft5-account-popover">
                 <div className="ft5-account-context">
-                  <Building2 size={17} aria-hidden="true" />
-                  <span><strong>{branding.businessName}</strong><small>{currentUser.email}</small></span>
+                  <span><small>{currentUser.email}</small></span>
                 </div>
                 {isDemoMode ? (
                   <div className="ft5-demo-role">
-                    <span>Preview role</span>
+                    <span>Demo view</span>
                     <RoleSwitcher onRoleChange={() => closeAccountMenu(true)} />
                   </div>
                 ) : null}

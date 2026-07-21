@@ -1,20 +1,15 @@
 "use client";
 
 import {
-  ArrowRight,
   CalendarDays,
   CalendarPlus,
-  CircleAlert,
-  Clock3,
-  MapPin,
-  Search,
-  UserRound
+  Search
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { canScheduleJobs, canViewJob } from "@/lib/access";
 import { useAuth } from "@/lib/auth";
-import { roleLabels, useAppData } from "@/lib/data-store";
+import { useAppData } from "@/lib/data-store";
 import { compareJobsForDispatch, formatServiceWindow, getServiceWindowTiming } from "@/lib/service-window";
 import type { Job } from "@/lib/types";
 import { useCurrentTime } from "@/lib/use-current-time";
@@ -60,13 +55,7 @@ export default function JobsPage() {
   return (
     <main className={`page-shell ${styles.page}`}>
       <header className={styles.hero}>
-        <div>
-          <p className={styles.kicker}>{currentUser.role === "tech" ? "Your route" : "Dispatch"}</p>
-          <h1>{currentUser.role === "tech" ? "Assigned work" : "Service schedule"}</h1>
-          <p>{currentUser.role === "tech"
-            ? "Your customer windows and active service jobs."
-            : "Customer windows, assigned technicians, and arrival records in one place."}</p>
-        </div>
+        <h1>{currentUser.role === "tech" ? "Assigned work" : "Service schedule"}</h1>
         {canScheduleJobs(currentUser.role) ? (
           <Link href="/jobs/new" className={styles.primaryAction}>
             <CalendarPlus size={18} aria-hidden="true" />Schedule service
@@ -74,20 +63,18 @@ export default function JobsPage() {
         ) : null}
       </header>
 
-      <section className={styles.summary} aria-label="Schedule summary">
-        <div><span className={styles.summaryIcon}><CalendarDays size={18} /></span><span><strong>{openCount}</strong><small>Open jobs</small></span></div>
-        <div><span className={styles.summaryIcon}><Clock3 size={18} /></span><span><strong>{inProgressCount}</strong><small>In progress</small></span></div>
-        <div data-attention={exceptionCount > 0 || undefined}><span className={styles.summaryIcon}><CircleAlert size={18} /></span><span><strong>{exceptionCount}</strong><small>Arrival exceptions</small></span></div>
-      </section>
-
-      <section className={styles.workspace} aria-labelledby="schedule-list-title">
-        <div className={styles.workspaceHeader}>
-          <div><h2 id="schedule-list-title">Jobs</h2><p>{filteredJobs.length} shown</p></div>
+      <section className={styles.workspace} aria-label="Service jobs">
+        <div className={styles.toolbar}>
+          <div className={styles.counts} aria-label="Schedule summary">
+            <span><strong>{openCount}</strong> open</span>
+            <span><strong>{inProgressCount}</strong> in progress</span>
+            <span data-attention={exceptionCount > 0 || undefined}><strong>{exceptionCount}</strong> arrival {exceptionCount === 1 ? "exception" : "exceptions"}</span>
+          </div>
           <div className={styles.filters}>
             <label className={styles.searchField}>
               <Search size={17} aria-hidden="true" />
               <span className={styles.srOnly}>Search jobs</span>
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Customer, address, worker" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search schedule" />
             </label>
             <div className={styles.tabs} aria-label="Filter jobs">
               {(["open", "completed", "all"] as const).map((value) => (
@@ -113,29 +100,22 @@ export default function JobsPage() {
               const arrival = arrivalFact(job, now);
               return (
                 <Link key={job.id} href={`/jobs/${job.id}`} className={styles.jobCard}>
+                  <span className={styles.window} aria-label="Customer arrival window">
+                    <strong>{formatServiceWindow(job.scheduledAt, job.arrivalWindowEndAt)}</strong>
+                  </span>
                   <span className={styles.customer}>
                     <strong>{customer?.name ?? "Unknown customer"}</strong>
                     <small>{job.description}</small>
+                    <small className={styles.address}>{job.serviceAddress}</small>
                   </span>
-                  <span className={styles.fact}>
-                    <CalendarDays size={17} aria-hidden="true" />
-                    <span><small>Customer window</small><strong>{formatServiceWindow(job.scheduledAt, job.arrivalWindowEndAt)}</strong></span>
+                  <span className={styles.technician} aria-label="Technician">
+                    <strong>{tech?.displayName ?? "Unassigned"}</strong>
                   </span>
-                  <span className={styles.fact}>
-                    <UserRound size={17} aria-hidden="true" />
-                    <span><small>Assigned worker</small><strong>{tech?.displayName ?? "Unassigned"}</strong><em>{tech ? roleLabels[tech.role] : "Needs assignment"}</em></span>
-                  </span>
-                  <span className={styles.fact}>
-                    <MapPin size={17} aria-hidden="true" />
-                    <span><small>Service address</small><strong>{job.serviceAddress}</strong></span>
-                  </span>
-                  <span className={styles.arrival} data-exception={arrival.exception || undefined}>
-                    <small>Arrival</small>
+                  <span className={styles.jobState} data-exception={arrival.exception || undefined}>
+                    <span className={styles.status} data-status={job.status}>{job.status.replace("_", " ")}</span>
                     <strong>{arrival.label}</strong>
-                    {arrival.detail ? <em>{arrival.detail}</em> : null}
+                    {arrival.detail ? <small>{arrival.detail}</small> : null}
                   </span>
-                  <span className={styles.status} data-status={job.status}>{job.status.replace("_", " ")}</span>
-                  <ArrowRight className={styles.arrow} size={18} aria-hidden="true" />
                 </Link>
               );
             })}

@@ -37,7 +37,7 @@ export default function NewPartPage() {
   return (
     <RoleGate allowed={["owner"]}>
       <main className="page-shell">
-        <PageHeader eyebrow="Owner only" title="Add part" />
+        <PageHeader title="Add part" />
         <Card>
           <form className="stack" onSubmit={submit}>
             <TwoColumn>

@@ -3492,39 +3492,6 @@ label {
   font-size: 0.88rem;
 }
 
-.operations-chart {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(270px, 340px);
-  gap: 14px;
-  align-items: stretch;
-  margin-top: 14px;
-}
-
-.chart-frame {
-  min-width: 0;
-}
-
-.chart-skeleton {
-  width: 100%;
-  height: 100%;
-  border-radius: 8px;
-  background:
-    linear-gradient(#edf1f4 1px, transparent 1px) 0 20% / 100% 46px,
-    linear-gradient(90deg, rgba(38, 56, 70, 0.18), rgba(23, 114, 69, 0.18));
-}
-
-.status-stack {
-  display: grid;
-  align-content: start;
-  gap: 12px;
-}
-
-.operations-side-panel {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-}
-
 .quick-action-grid-compact {
   grid-template-columns: 1fr;
   gap: 8px;
@@ -3693,10 +3660,7 @@ label {
   .dashboard-page,
   .page-shell,
   .dashboard-overview-grid,
-  .ops-chart-card,
-  .operations-chart,
-  .operations-side-panel,
-  .chart-frame {
+  .ops-chart-card {
     min-width: 0;
     max-width: 100%;
     overflow-x: hidden;
@@ -3706,33 +3670,6 @@ label {
   .showcase-page {
     width: 100vw;
     max-width: 100vw;
-  }
-
-  .chart-frame {
-    max-width: 100%;
-  }
-
-  .operations-chart {
-    grid-template-columns: 1fr;
-  }
-
-  .chart-frame {
-    height: auto;
-  }
-
-  .status-stack {
-    grid-template-columns: 1fr;
-    border-top: 1px solid #edf1f4;
-    gap: 10px;
-    padding-top: 12px;
-  }
-
-  .status-summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .status-summary div {
-    grid-template-columns: 1fr;
   }
 
   .quick-action-grid-compact {
@@ -4579,167 +4516,6 @@ label {
 }
 
 /* Production workflow fixes -------------------------------------------------- */
-.workload-chart {
-  display: grid;
-  grid-template-rows: auto minmax(230px, 1fr) auto;
-  gap: 12px;
-  min-height: 288px;
-}
-
-.workload-chart-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-}
-
-.workload-chart-head > div:first-child {
-  display: grid;
-  gap: 2px;
-}
-
-.workload-chart-head > div:first-child strong {
-  color: var(--ink);
-  font-size: 0.94rem;
-  font-weight: 900;
-}
-
-.workload-chart-head > div:first-child span,
-.workload-total span {
-  color: var(--muted);
-  font-size: 0.74rem;
-  font-weight: 850;
-}
-
-.workload-total {
-  display: grid;
-  min-width: 68px;
-  min-height: 46px;
-  align-content: center;
-  justify-items: center;
-  border: 1px solid #dce3ea;
-  border-radius: 8px;
-  background: #f8fafc;
-}
-
-.workload-total strong {
-  color: var(--ink);
-  font-size: 1.15rem;
-  line-height: 1;
-}
-
-.workload-canvas-wrap {
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid #e5ebf1;
-  border-radius: 8px;
-  background:
-    linear-gradient(180deg, rgba(248, 250, 252, 0.88), #fff 44%),
-    #fff;
-  padding: 14px 12px 8px 2px;
-}
-
-.workload-chart canvas {
-  width: 100% !important;
-  height: 250px !important;
-}
-
-.workload-legend {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 850;
-}
-
-.workload-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.legend-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: #263846;
-}
-
-.legend-dot-complete {
-  background: #177245;
-}
-
-.status-summary {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 7px;
-}
-
-.status-summary div {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px;
-  min-height: 42px;
-  align-content: center;
-  align-items: center;
-  border: 1px solid #dce3ea;
-  border-radius: 8px;
-  background: #f8fafc;
-  padding: 8px 10px;
-}
-
-.status-summary span {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 900;
-}
-
-.status-summary strong {
-  color: var(--ink);
-  font-size: 1.1rem;
-  line-height: 1;
-}
-
-.status-list {
-  display: grid;
-  gap: 6px;
-}
-
-.status-meter {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-  min-height: 28px;
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 850;
-}
-
-.status-meter strong {
-  color: var(--ink);
-  font-size: 0.94rem;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: #263846;
-}
-
-.status-meter-in_progress .status-dot {
-  background: #c8571b;
-}
-
-.status-meter-complete .status-dot {
-  background: #177245;
-}
-
-.status-meter-cancelled .status-dot {
-  background: #b42318;
-}
 
 .invoice-pipeline-card,
 .next-work-card {
@@ -5056,26 +4832,6 @@ label {
 }
 
 @media (max-width: 760px) {
-  .workload-chart {
-    grid-template-rows: auto minmax(204px, 1fr);
-    min-height: 268px;
-  }
-
-  .workload-chart canvas {
-    height: 204px !important;
-  }
-
-  .workload-chart-head {
-    grid-template-columns: 1fr;
-  }
-
-  .workload-total {
-    grid-template-columns: minmax(0, 1fr) auto;
-    justify-items: stretch;
-    min-height: 40px;
-    padding: 0 12px;
-  }
-
   .invoice-send-grid {
     grid-template-columns: 1fr;
   }
@@ -5439,33 +5195,6 @@ h2 {
   font-size: 1.45rem;
 }
 
-.dashboard-bento-main .operations-chart {
-  grid-template-columns: minmax(0, 1fr) minmax(250px, 310px);
-  align-items: start;
-}
-
-.dashboard-bento-main .workload-chart {
-  grid-template-rows: auto auto;
-  min-height: 0;
-}
-
-.dashboard-bento-main .workload-canvas-wrap {
-  height: 248px;
-}
-
-.dashboard-bento-main .workload-chart canvas {
-  height: 232px !important;
-}
-
-.dashboard-bento-main .status-summary {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.dashboard-bento-main .status-summary div {
-  grid-template-columns: 1fr;
-  min-height: 54px;
-}
-
 .dashboard-bento-main .invoice-pipeline-card,
 .dashboard-bento-main .next-work-card {
   padding: 10px;
@@ -5812,10 +5541,6 @@ h2 {
     grid-column: 1;
   }
 
-  .dashboard-bento-main .operations-chart {
-    grid-template-columns: 1fr;
-  }
-
   .quick-action-grid-compact {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -5941,21 +5666,6 @@ h2 {
   }
 }
 
-@media (max-width: 900px) {
-  .operations-chart {
-    grid-template-columns: 1fr;
-  }
-
-  .operations-side-panel {
-    border-top: 1px solid #edf1f4;
-    padding-top: 12px;
-  }
-
-  .status-summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 760px) {
   .app-header {
     overflow: hidden;
@@ -5985,10 +5695,6 @@ h2 {
 
   .main-nav a span {
     display: inline;
-  }
-
-  .workload-canvas-wrap {
-    padding: 10px 8px 6px 0;
   }
 
   .dashboard-action-panel {

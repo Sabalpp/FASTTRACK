@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, CircleDollarSign, FileCheck2, FileText, Search } from "lucide-react";
+import { AlertCircle, ArrowRight, CircleDollarSign, FileCheck2, FileText, Search } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { canViewInvoice } from "@/lib/access";
@@ -56,7 +56,7 @@ export default function InvoicesPage() {
   return (
     <main className={`page-shell ${styles.page}`}>
       <header className={styles.hero}>
-        <div><p className={styles.kicker}>Billing</p><h1>Invoices</h1><p>Review drafts, customer delivery records, and balances from one workspace.</p></div>
+        <h1>Invoices</h1>
       </header>
 
       <section className={styles.summary} aria-label="Invoice summary">
@@ -65,9 +65,9 @@ export default function InvoicesPage() {
         <div><span><FileCheck2 size={18} /></span><span><strong>{paidCount}</strong><small>Paid invoices</small></span></div>
       </section>
 
-      <section className={styles.workspace} aria-labelledby="invoice-list-title">
+      <section className={styles.workspace} aria-label="Invoice list">
         <div className={styles.workspaceHeader}>
-          <div><h2 id="invoice-list-title">Invoice list</h2><p>{filteredInvoices.length} shown</p></div>
+          <span className={styles.resultCount}>{filteredInvoices.length} invoice{filteredInvoices.length === 1 ? "" : "s"}</span>
           <div className={styles.filters}>
             <label className={styles.searchField}>
               <Search size={17} aria-hidden="true" /><span className={styles.srOnly}>Search invoices</span>
@@ -88,19 +88,22 @@ export default function InvoicesPage() {
         ) : (
           <div className={styles.list} role="table" aria-label="Invoices">
             <div className={styles.tableHeader} role="row">
-              <span role="columnheader">Invoice</span><span role="columnheader">Customer</span><span role="columnheader">Delivery</span><span role="columnheader">Balance</span><span role="columnheader">Status</span><span role="columnheader">Updated</span><span />
+              <span role="columnheader">Customer and invoice</span><span role="columnheader">Balance</span><span role="columnheader">Next step</span><span role="columnheader">Updated</span><span />
             </div>
             {filteredInvoices.map((invoice) => {
               const job = data.jobs.find((candidate) => candidate.id === invoice.jobId);
               const customer = data.customers.find((candidate) => candidate.id === job?.customerId);
               const total = invoice.selectedTier ? selectedTotal(invoice) : undefined;
+              const deliveryIssue = Boolean(invoice.pdfStoragePath && !invoice.sentAt && !customer?.email);
               return (
                 <Link key={invoice.id} href={`/invoices/${invoice.id}`} className={styles.row} role="row">
-                  <span className={styles.invoiceCell} role="cell" data-label="Invoice"><strong>{invoice.invoiceNumber}</strong><small>{invoiceOptionLabels[invoice.optionLabel]}</small></span>
-                  <span className={styles.customerCell} role="cell" data-label="Customer"><strong>{customer?.name ?? "Unknown customer"}</strong><small>{job?.description ?? "Service invoice"}</small></span>
-                  <span className={styles.deliveryCell} role="cell" data-label="Delivery"><strong>{invoice.sentAt ? `Recorded ${formatDateTime(invoice.sentAt)}` : customer?.email ? "Ready for delivery" : "Email required"}</strong><small>{invoice.sentToEmail ?? customer?.email ?? "Add customer email"}</small></span>
+                  <span className={styles.invoiceCell} role="cell" data-label="Customer and invoice">
+                    <strong>{customer?.name ?? "Unknown customer"}</strong>
+                    <small>{invoice.invoiceNumber} · {invoiceOptionLabels[invoice.optionLabel]}</small>
+                    {deliveryIssue ? <span className={styles.deliveryIssue}><AlertCircle size={13} aria-hidden="true" /> Customer email required</span> : null}
+                  </span>
                   <span className={styles.moneyCell} role="cell" data-label="Balance"><strong>{total === undefined ? "—" : money(Math.max(0, total - invoice.amountPaid))}</strong><small>{total === undefined ? "Select approved work" : `${money(total)} total`}</small></span>
-                  <span role="cell" data-label="Status"><span className={styles.status} data-status={displayStatus(invoice)}>{displayStatus(invoice)}</span></span>
+                  <span role="cell" data-label="Next step"><span className={styles.status} data-status={displayStatus(invoice)}>{invoiceNextStep(invoice)}</span></span>
                   <span className={styles.dateCell} role="cell" data-label="Updated">{formatDateTime(invoice.updatedAt || invoice.createdAt)}</span>
                   <ArrowRight className={styles.arrow} size={17} aria-hidden="true" />
                 </Link>
@@ -124,4 +127,13 @@ function displayStatus(invoice: Invoice) {
   if (invoice.status === "sent") return "Unpaid";
   if (invoice.approvalStatus === "signed") return "Approved";
   return "Draft";
+}
+
+function invoiceNextStep(invoice: Invoice) {
+  if (invoice.paymentStatus === "paid") return "Paid";
+  if (invoice.paymentStatus === "partially_paid") return "Record balance";
+  if (invoice.sentAt) return "Record payment";
+  if (invoice.pdfStoragePath) return "Email invoice";
+  if (invoice.approvalStatus === "signed") return "Generate PDF";
+  return "Review draft";
 }

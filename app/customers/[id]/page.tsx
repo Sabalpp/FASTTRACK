@@ -14,6 +14,8 @@ import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { ContactActions } from "@/components/ContactActions";
 import { ServiceWindowBadge } from "@/components/ServiceWindowBadge";
 import { Button, ButtonLink, Card, EmptyState, Field, PageHeader, StatusPill, TwoColumn } from "@/components/ui";
+import type { Customer } from "@/lib/types";
+import styles from "../customers.module.css";
 
 export default function CustomerDetailPage() {
   const params = useParams<{ id: string }>();
@@ -21,6 +23,7 @@ export default function CustomerDetailPage() {
   const { currentUser } = useAuth();
   const now = useCurrentTime();
   const customer = data.customers.find((candidate) => candidate.id === params.id);
+  const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | undefined>();
@@ -75,9 +78,34 @@ export default function CustomerDetailPage() {
   const editable = canEditCustomers(currentUser.role);
   const customerId = customer.id;
   const phoneChanged = normalizePhone(draft.phone) !== customer.phoneDigits;
+  const serviceAddress = [
+    customer.addressLine1,
+    customer.addressLine2,
+    `${customer.city}, ${customer.state} ${customer.zip}`
+  ].filter(Boolean).join(", ");
 
   function updateDraft<Key extends keyof typeof draft>(key: Key, value: (typeof draft)[Key]) {
     setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function cancelEditing(source: Customer) {
+    setDraft({
+      name: source.name,
+      phone: source.phone,
+      email: source.email ?? "",
+      emailNotificationsEnabled: source.emailNotificationsEnabled,
+      smsConsentStatus: source.smsConsentStatus,
+      smsConsentAt: source.smsConsentAt ?? "",
+      smsConsentSource: source.smsConsentSource ?? "",
+      addressLine1: source.addressLine1,
+      addressLine2: source.addressLine2 ?? "",
+      city: source.city,
+      state: source.state,
+      zip: source.zip,
+      notes: source.notes
+    });
+    setSaveError(undefined);
+    setEditing(false);
   }
 
   async function saveCustomer() {
@@ -96,6 +124,7 @@ export default function CustomerDetailPage() {
         smsConsentSource: draft.smsConsentSource || null
       });
       setSaved(true);
+      setEditing(false);
       window.setTimeout(() => setSaved(false), 1400);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "The customer could not be saved.");
@@ -107,21 +136,25 @@ export default function CustomerDetailPage() {
   return (
     <main className="page-shell">
       <PageHeader
-        eyebrow="Customer"
         title={customer.name}
-        description={`${formatPhone(customer.phone)} · ${customer.email ?? "No email"}`}
+        description={serviceAddress}
         action={canScheduleJobs(currentUser.role) ? <ButtonLink href={`/jobs/new?customerId=${customer.id}`}>Schedule service</ButtonLink> : undefined}
       />
-      <Card className="customer-profile-card">
+      <Card className={`customer-profile-card ${styles.profileCard}`}>
         <div className="section-head">
-          <div>
-            <p className="eyebrow">Customer information</p>
-            <h2>Contact and service address</h2>
-          </div>
-          {editable ? <Button onClick={saveCustomer} disabled={saveBusy}>{saveBusy ? "Saving..." : saved ? "Saved" : "Save"}</Button> : null}
+          <h2>Customer details</h2>
+          {editable ? (
+            editing ? (
+              <div className="action-row">
+                <Button variant="secondary" onClick={() => cancelEditing(customer)} disabled={saveBusy}>Cancel</Button>
+                <Button onClick={saveCustomer} disabled={saveBusy}>{saveBusy ? "Saving..." : "Save changes"}</Button>
+              </div>
+            ) : (
+              <Button variant="secondary" onClick={() => setEditing(true)}>Edit</Button>
+            )
+          ) : null}
         </div>
-        <ContactActions customer={customer} subject={`Service for ${customer.name}`} />
-        {editable ? (
+        {editing && editable ? (
           <div className="stack editable-panel">
               <TwoColumn>
                 <Field label="Name"><input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} /></Field>
@@ -205,17 +238,28 @@ export default function CustomerDetailPage() {
               {saveError ? <p className="field-error" role="alert">{saveError}</p> : null}
           </div>
         ) : (
-          <p className="muted">{customer.notes || "No notes yet."}</p>
+          <div className={styles.readOnlySummary}>
+            <ContactActions customer={customer} subject={`Service for ${customer.name}`} />
+            <div className={styles.summaryGrid}>
+              <div className={styles.summaryItem}>
+                <span>Contact</span>
+                <strong>{formatPhone(customer.phone)}</strong>
+                <small>{customer.email ?? "No email address"}</small>
+              </div>
+              <div className={styles.summaryItem}>
+                <span>Service address</span>
+                <strong>{customer.addressLine1}{customer.addressLine2 ? `, ${customer.addressLine2}` : ""}</strong>
+                <small>{customer.city}, {customer.state} {customer.zip}</small>
+              </div>
+            </div>
+            {saved ? <p className={styles.savedNotice} role="status">Customer saved</p> : null}
+          </div>
         )}
       </Card>
 
       <Card>
         <div className="section-head">
-          <div>
-            <p className="eyebrow">Service history</p>
-            <h2>Jobs for this customer</h2>
-          </div>
-          {canScheduleJobs(currentUser.role) ? <Link href={`/jobs/new?customerId=${customer.id}`} className="text-link">Schedule service</Link> : null}
+          <h2>Service history</h2>
         </div>
         {customerJobs.length === 0 ? (
           <EmptyState title="No jobs yet" description="Schedule the first visit." />
