@@ -893,12 +893,12 @@ begin
     if exists (
       select 1
       from public.invoice_signatures completion
-      join public.invoice_signatures authorization
-        on authorization.id = completion.authorization_signature_id
-       and authorization.job_id = completion.job_id
-       and authorization.purpose = 'work_authorization'
-       and authorization.status = 'active'
-       and authorization.selected_tier = completion.selected_tier
+      join public.invoice_signatures work_auth
+        on work_auth.id = completion.authorization_signature_id
+       and work_auth.job_id = completion.job_id
+       and work_auth.purpose = 'work_authorization'
+       and work_auth.status = 'active'
+       and work_auth.selected_tier = completion.selected_tier
       where completion.job_id = new.id
         and completion.purpose = 'work_completion'
         and completion.status = 'active'

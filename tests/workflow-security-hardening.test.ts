@@ -71,6 +71,8 @@ describe("field workflow security hardening", () => {
     expect(migration).toContain("storage_path like (job_id::text || '/%')");
     expect(migration).toContain("fasttrack.internal_workflow_revision_bump");
     expect(migration).toContain("pg_trigger_depth() > 1");
+    expect(migration).toContain("join public.invoice_signatures work_auth");
+    expect(migration).not.toContain("join public.invoice_signatures authorization");
   });
 });
 
