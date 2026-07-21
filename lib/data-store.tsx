@@ -1,7 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { OperationTimeoutError, wait, withTimeout } from "@/lib/async-utils";
+import { useOptionalAuth } from "@/lib/auth";
 import { demoState } from "@/lib/demo-data";
 import { buildInvoiceDraft, invoiceNumber, totalsForItems } from "@/lib/invoice";
 import { normalizePhone } from "@/lib/phone";
@@ -48,6 +50,8 @@ import type {
 } from "@/lib/types";
 
 const STORAGE_KEY = "hvac-plumbing-mvp-state-v1";
+const WORKSPACE_LOAD_TIMEOUT_MS = 30_000;
+const SESSION_REFRESH_TIMEOUT_MS = 12_000;
 
 type NewCustomerInput = Omit<Customer, "id" | "phoneDigits" | "createdAt">;
 type NewJobInput = Omit<Job, "id" | "status" | "createdAt"> & { status?: JobStatus };
@@ -59,6 +63,8 @@ type NewAllowedUserInput = Omit<AllowedUser, "id" | "createdAt">;
 type AppDataContextValue = AppState & {
   loaded: boolean;
   lastError?: string;
+  loadError?: string;
+  retryLoad: () => void;
   setState: React.Dispatch<React.SetStateAction<AppState>>;
   resetDemoData: () => void;
   searchCustomers: (query: string, visibleCustomers?: Customer[]) => Promise<Customer[]>;
@@ -82,9 +88,21 @@ const AppDataContext = createContext<AppDataContextValue | null>(null);
 
 export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const supabase = useMemo(() => (demoMode ? null : getSupabaseBrowserClient()), []);
+  const auth = useOptionalAuth();
   const [state, setState] = useState<AppState>(() => (demoMode ? demoState : createEmptyAppState()));
   const [loaded, setLoaded] = useState(false);
   const [lastError, setLastError] = useState<string | undefined>();
+  const [loadError, setLoadError] = useState<string | undefined>();
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const authReady = demoMode ? true : auth?.authReady ?? false;
+  const isAuthenticated = demoMode ? true : auth?.isAuthenticated ?? false;
+  const authenticatedUserKey = demoMode
+    ? "demo"
+    : isAuthenticated
+      ? `${auth?.sessionUserId ?? auth?.currentUser.id}:${auth?.sessionRevision ?? 0}`
+      : undefined;
+  const activeWorkspaceKeyRef = useRef<string | undefined>(authenticatedUserKey);
+  activeWorkspaceKeyRef.current = authenticatedUserKey;
 
   useEffect(() => {
     if (!demoMode) return;
@@ -110,75 +128,71 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     if (demoMode) return;
 
     const client = supabase;
+    if (!authReady) {
+      setLoaded(false);
+      setLoadError(undefined);
+      return;
+    }
+
+    if (!isAuthenticated) {
+      setState(createEmptyAppState());
+      setLastError(undefined);
+      setLoadError(undefined);
+      setLoaded(true);
+      return;
+    }
+
     if (!client) {
       setState(createEmptyAppState());
-      setLastError("Supabase credentials are not configured.");
+      setLoadError("Supabase credentials are not configured.");
       setLoaded(true);
       return;
     }
     const dataClient: NonNullable<typeof client> = client;
 
     let cancelled = false;
+    const abortController = new AbortController();
 
-    async function loadForCurrentSession() {
-      setLoaded(false);
-      const { data: sessionData, error: sessionError } = await dataClient.auth.getSession();
-      if (cancelled) return;
-
-      if (sessionError) {
-        setState(createEmptyAppState());
-        setLastError(sessionError.message);
-        setLoaded(true);
-        return;
-      }
-
-      if (!sessionData.session) {
-        setState(createEmptyAppState());
-        setLastError(undefined);
-        setLoaded(true);
-        return;
-      }
-
+    async function loadWorkspace() {
       try {
-        const nextState = await loadSupabaseStateWithRetry(dataClient);
+        const nextState = await withTimeout(
+          loadSupabaseStateWithRetry(dataClient, abortController.signal),
+          WORKSPACE_LOAD_TIMEOUT_MS,
+          "Workspace loading",
+          () => abortController.abort()
+        );
         if (cancelled) return;
         setState(nextState);
+        setLoadError(undefined);
         setLastError(undefined);
       } catch (error) {
         if (cancelled) return;
-        const message = error instanceof Error ? error.message : "Could not load Supabase data.";
+        const message = workspaceErrorMessage(error);
         setState(createEmptyAppState());
-        setLastError(message);
+        setLoadError(message);
         console.error(message, error);
       } finally {
         if (!cancelled) setLoaded(true);
       }
     }
 
-    void loadForCurrentSession();
-    const {
-      data: { subscription }
-    } = dataClient.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        setState(createEmptyAppState());
-        setLastError(undefined);
-        setLoaded(true);
-        return;
-      }
-      void loadForCurrentSession();
-    });
+    setLoaded(false);
+    setLoadError(undefined);
+    void loadWorkspace();
 
     return () => {
       cancelled = true;
-      subscription.unsubscribe();
+      abortController.abort();
     };
-  }, [supabase]);
+  }, [authReady, authenticatedUserKey, isAuthenticated, loadAttempt, supabase]);
 
   const value = useMemo<AppDataContextValue>(() => {
     function persistSupabase(label: string, action: () => Promise<unknown>) {
       if (demoMode || !supabase) return;
+      const requestWorkspaceKey = activeWorkspaceKeyRef.current;
 
       void action().catch((error) => {
+        if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) return;
         const message = error instanceof Error ? error.message : `Supabase ${label} failed.`;
         setLastError(message);
         console.error(`Supabase ${label} failed`, error);
@@ -195,6 +209,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     async function searchCustomers(query: string, visibleCustomers = state.customers) {
       const localResults = searchCustomersLocally(query, visibleCustomers);
       if (demoMode || !supabase) return localResults;
+      const requestWorkspaceKey = activeWorkspaceKeyRef.current;
 
       const trimmed = query.trim();
       if (!trimmed) return state.customers.slice(0, 25);
@@ -203,6 +218,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         search_query: trimmed,
         limit_count: 25
       });
+
+      if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) return localResults;
 
       if (error) {
         setLastError(error.message);
@@ -277,6 +294,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     function addPhoto(input: NewPhotoInput) {
+      const requestWorkspaceKey = activeWorkspaceKeyRef.current;
       const photoId = crypto.randomUUID();
       const uploadedAt = new Date().toISOString();
       const storagePath = !demoMode && input.file ? `${input.jobId}/${photoId}${safeFileExtension(input.file.name)}` : input.storagePath;
@@ -307,6 +325,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         const { error } = await supabase!.from("job_photos").insert(jobPhotoToRow({ ...photo, storagePath }));
         if (error) throw error;
+
+        if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) {
+          if (previewPath.startsWith("blob:")) URL.revokeObjectURL(previewPath);
+          return;
+        }
 
         setState((current) => ({
           ...current,
@@ -512,6 +535,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       ...state,
       loaded,
       lastError,
+      loadError,
+      retryLoad: () => setLoadAttempt((attempt) => attempt + 1),
       setState,
       resetDemoData,
       searchCustomers,
@@ -530,7 +555,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       createAllowedUser,
       updateAllowedUser
     };
-  }, [state, loaded, lastError, supabase]);
+  }, [state, loaded, lastError, loadError, supabase]);
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 }
@@ -571,26 +596,35 @@ export const tierOptions: Tier[] = ["good", "better", "best"];
 export const roleOptions: Role[] = ["owner", "tech", "call_center"];
 export const photoKinds: PhotoKind[] = ["before", "after", "other"];
 
-async function loadSupabaseStateWithRetry(supabase: SupabaseClient): Promise<AppState> {
+async function loadSupabaseStateWithRetry(supabase: SupabaseClient, signal: AbortSignal): Promise<AppState> {
   const delays = [1000, 2000, 4000, 8000];
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    throwIfAborted(signal);
     try {
-      return await loadSupabaseState(supabase);
+      return await loadSupabaseState(supabase, signal);
     } catch (error) {
       lastError = error;
+      throwIfAborted(signal);
       if (!isJwtIssuedAtFutureError(error) || attempt === delays.length) throw error;
 
       await wait(delays[attempt]);
-      await supabase.auth.refreshSession();
+      throwIfAborted(signal);
+      const { error: refreshError } = await withTimeout(
+        supabase.auth.refreshSession(),
+        SESSION_REFRESH_TIMEOUT_MS,
+        "Session refresh"
+      );
+      throwIfAborted(signal);
+      if (refreshError) throw refreshError;
     }
   }
 
   throw lastError;
 }
 
-async function loadSupabaseState(supabase: SupabaseClient): Promise<AppState> {
+async function loadSupabaseState(supabase: SupabaseClient, signal: AbortSignal): Promise<AppState> {
   const [
     allowedUsersResult,
     customersResult,
@@ -602,15 +636,15 @@ async function loadSupabaseState(supabase: SupabaseClient): Promise<AppState> {
     callLogsResult,
     callLogEventsResult
   ] = await Promise.all([
-    supabase.from("allowed_users").select("*").order("display_name", { ascending: true }),
-    supabase.from("customers").select("*").order("created_at", { ascending: false }),
-    supabase.from("jobs").select("*").order("scheduled_at", { ascending: false }),
-    supabase.from("job_photos").select("*").order("uploaded_at", { ascending: false }),
-    supabase.from("parts").select("*").order("name", { ascending: true }),
-    supabase.from("job_line_items").select("*").order("sort_order", { ascending: true }),
-    supabase.from("invoices").select("*").order("created_at", { ascending: false }),
-    supabase.from("call_logs").select("*").order("started_at", { ascending: false }).limit(100),
-    supabase.from("call_log_events").select("*").order("received_at", { ascending: false }).limit(100)
+    supabase.from("allowed_users").select("*").order("display_name", { ascending: true }).abortSignal(signal).retry(false),
+    supabase.from("customers").select("*").order("created_at", { ascending: false }).abortSignal(signal).retry(false),
+    supabase.from("jobs").select("*").order("scheduled_at", { ascending: false }).abortSignal(signal).retry(false),
+    supabase.from("job_photos").select("*").order("uploaded_at", { ascending: false }).abortSignal(signal).retry(false),
+    supabase.from("parts").select("*").order("name", { ascending: true }).abortSignal(signal).retry(false),
+    supabase.from("job_line_items").select("*").order("sort_order", { ascending: true }).abortSignal(signal).retry(false),
+    supabase.from("invoices").select("*").order("created_at", { ascending: false }).abortSignal(signal).retry(false),
+    supabase.from("call_logs").select("*").order("started_at", { ascending: false }).limit(100).abortSignal(signal).retry(false),
+    supabase.from("call_log_events").select("*").order("received_at", { ascending: false }).limit(100).abortSignal(signal).retry(false)
   ]);
 
   throwIfError("allowed_users", allowedUsersResult.error);
@@ -624,10 +658,12 @@ async function loadSupabaseState(supabase: SupabaseClient): Promise<AppState> {
   throwIfError("call_log_events", callLogEventsResult.error);
 
   const jobPhotos = await Promise.all((photosResult.data ?? []).map(async (row) => {
+    throwIfAborted(signal);
     const photo = jobPhotoFromRow(row);
     if (!photo.storagePath || photo.storagePath.startsWith("http") || photo.storagePath.startsWith("data:")) return photo;
 
     const { data } = await supabase.storage.from("job-photos").createSignedUrl(photo.storagePath, 60 * 60);
+    throwIfAborted(signal);
     return data?.signedUrl ? { ...photo, storagePath: data.signedUrl } : photo;
   }));
 
@@ -775,6 +811,25 @@ function isJwtIssuedAtFutureError(error: unknown) {
   return message.toLowerCase().includes("jwt issued at future");
 }
 
-function wait(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+function workspaceErrorMessage(error: unknown) {
+  if (error instanceof OperationTimeoutError) {
+    return "Workspace loading took too long. Your session is still active; retry when the connection is ready.";
+  }
+  if (error instanceof Error) {
+    const normalizedMessage = error.message.toLowerCase();
+    if (
+      normalizedMessage.includes("aborterror")
+      || normalizedMessage.includes("aborted")
+      || normalizedMessage.includes("timed out")
+      || normalizedMessage.includes("failed to fetch")
+    ) {
+      return "Workspace loading took too long. Your session is still active; retry when the connection is ready.";
+    }
+    return error.message;
+  }
+  return "The workspace could not be loaded. Try again.";
+}
+
+function throwIfAborted(signal: AbortSignal) {
+  if (signal.aborted) throw new DOMException("The workspace request was cancelled.", "AbortError");
 }

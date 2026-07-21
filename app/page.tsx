@@ -2,7 +2,7 @@
 
 import { BriefcaseBusiness, FileText, LockKeyhole, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { roleLabels, roleOptions } from "@/lib/data-store";
 import { Button } from "@/components/ui";
@@ -17,8 +17,28 @@ const roleIconMap: Record<Role, typeof Users> = {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { signInAsRole, signInWithGoogle, verifyMfa, signOut, isDemoMode, isAuthenticated, authReady, authError, currentUser, mfaRequired } = useAuth();
+  const {
+    signInAsRole,
+    signInWithGoogle,
+    verifyMfa,
+    retryAuth,
+    signOut,
+    isDemoMode,
+    isAuthenticated,
+    authReady,
+    authBusy,
+    authError,
+    currentUser,
+    mfaRequired,
+    canVerifyMfa
+  } = useAuth();
   const [mfaCode, setMfaCode] = useState("");
+
+  useEffect(() => {
+    if (!isDemoMode && authReady && isAuthenticated) {
+      router.replace("/dashboard");
+    }
+  }, [authReady, isAuthenticated, isDemoMode, router]);
 
   return (
     <main className="auth-screen">
@@ -34,7 +54,7 @@ export default function LoginPage() {
           </div>
           {authError ? <p className="error-message">{authError}</p> : null}
 
-          {!isDemoMode && mfaRequired ? (
+          {!isDemoMode && mfaRequired && canVerifyMfa ? (
             <form
               className="auth-form"
               onSubmit={(event) => {
@@ -51,8 +71,23 @@ export default function LoginPage() {
                   onChange={(event) => setMfaCode(event.target.value)}
                 />
               </label>
-              <Button type="submit" disabled={!mfaCode.trim()}>Verify</Button>
+              <Button type="submit" disabled={!mfaCode.trim() || authBusy}>
+                {authBusy ? "Verifying..." : "Verify"}
+              </Button>
             </form>
+          ) : null}
+
+          {!isDemoMode && mfaRequired ? (
+            <div className="auth-form">
+              {!canVerifyMfa ? (
+                <button className="button" type="button" onClick={() => void retryAuth()} disabled={authBusy}>
+                  {authBusy ? "Checking..." : "Retry access"}
+                </button>
+              ) : null}
+              <button className="auth-secondary-link" type="button" onClick={() => void signOut()} disabled={authBusy}>
+                Use a different Google account
+              </button>
+            </div>
           ) : null}
 
           {isDemoMode ? (
@@ -73,17 +108,31 @@ export default function LoginPage() {
           ) : !mfaRequired ? (
             <>
               {isAuthenticated ? (
-                <Button onClick={() => router.push("/dashboard")}>Open app</Button>
+                <Button onClick={() => router.replace("/dashboard")} disabled>
+                  Opening app...
+                </Button>
               ) : (
-                <button className="google-auth-button" type="button" onClick={() => void signInWithGoogle()} disabled={!authReady}>
+                <button
+                  className="google-auth-button"
+                  type="button"
+                  onClick={() => void signInWithGoogle()}
+                  disabled={!authReady || authBusy}
+                >
                   <GoogleIcon />
-                  <span>{authReady ? "Continue with Google" : "Checking session..."}</span>
+                  <span>{!authReady ? "Checking session..." : authBusy ? "Connecting..." : "Continue with Google"}</span>
                 </button>
               )}
-              {authError && currentUser.email ? (
-                <button className="auth-secondary-link" type="button" onClick={signOut}>
-                  Use a different Google account
-                </button>
+              {authError ? (
+                <div className="auth-form">
+                  <button className="auth-secondary-link" type="button" onClick={() => void retryAuth()} disabled={authBusy}>
+                    Retry access
+                  </button>
+                  {currentUser.email ? (
+                    <button className="auth-secondary-link" type="button" onClick={() => void signOut()} disabled={authBusy}>
+                      Use a different Google account
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </>
           ) : null}

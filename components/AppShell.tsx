@@ -7,6 +7,7 @@ import {
   Home,
   LogOut,
   Package,
+  RefreshCw,
   RotateCcw,
   ShieldCheck,
   Users
@@ -35,15 +36,17 @@ const navItems: NavItem[] = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, signOut, isAuthenticated, isDemoMode, authReady, authError } = useAuth();
-  const { resetDemoData } = useAppData();
+  const { currentUser, signOut, isAuthenticated, isDemoMode, authReady, authBusy, authError } = useAuth();
+  const { resetDemoData, loaded: workspaceLoaded, loadError, retryLoad } = useAppData();
   const isLogin = pathname === "/";
   const loadingAuth = !isDemoMode && !authReady && !isLogin;
   const blockedAuth = !isDemoMode && authReady && !isAuthenticated && !isLogin;
+  const loadingWorkspace = !isDemoMode && isAuthenticated && !workspaceLoaded && !loadError && !isLogin;
+  const failedWorkspace = !isDemoMode && isAuthenticated && Boolean(loadError) && !isLogin;
 
   useEffect(() => {
     if (blockedAuth) {
-      router.push("/");
+      router.replace("/");
     }
   }, [blockedAuth, router]);
 
@@ -57,6 +60,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <h1>{loadingAuth ? "Checking access" : "Access required"}</h1>
           <p className={authError ? "error-message" : "muted"}>{authError ?? "Redirecting to sign in."}</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (loadingWorkspace || failedWorkspace) {
+    return (
+      <main className="auth-screen">
+        <BackgroundPaperShaders />
+        <section className="auth-card auth-status-card">
+          <div className="auth-mark" aria-hidden="true">
+            {failedWorkspace ? <RefreshCw size={22} /> : <CircleUserRound size={22} />}
+          </div>
+          <h1>{failedWorkspace ? "Workspace unavailable" : "Loading workspace"}</h1>
+          <p className={failedWorkspace ? "error-message" : "muted"}>
+            {loadError ?? "Your session is ready. Loading the latest customer and job data."}
+          </p>
+          {failedWorkspace ? (
+            <div className="auth-form">
+              <button className="button" type="button" onClick={retryLoad}>
+                Retry workspace
+              </button>
+              <button className="auth-secondary-link" type="button" onClick={() => void signOut()} disabled={authBusy}>
+                {authBusy ? "Signing out..." : "Sign out"}
+              </button>
+            </div>
+          ) : null}
         </section>
       </main>
     );
@@ -90,9 +120,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <span>Reset</span>
               </button>
             ) : null}
-            <button className="text-button icon-text-button" type="button" onClick={signOut}>
+            <button className="text-button icon-text-button" type="button" onClick={() => void signOut()} disabled={authBusy}>
               <LogOut size={15} aria-hidden="true" />
-              <span>Sign out</span>
+              <span>{authBusy ? "Signing out..." : "Sign out"}</span>
             </button>
           </div>
         </header>
