@@ -66,7 +66,7 @@ export function JobStageNav({
                 <strong>{stage.shortLabel}</strong>
                 <small>{stage.description}</small>
               </span>
-              {typeof count === "number" ? <span className={styles.count}>{count}</span> : null}
+              {typeof count === "number" && count > 0 ? <span className={styles.count}>{count}</span> : null}
             </button>
           );
         })}

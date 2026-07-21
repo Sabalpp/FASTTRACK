@@ -14,7 +14,6 @@ import {
   PenLine,
   Phone,
   Save,
-  Images,
   UserRound
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -529,7 +528,7 @@ export default function JobDetailPage() {
       >
         <div className={styles.stageHeader}>
           <div><p>{stage.label}</p><h2>{stageTitle(activeStage)}</h2><span>{stageDescription(activeStage)}</span></div>
-          <span className={styles.stageCount}>{activeStage === "photos" ? `${photos.length} saved` : activeStage === "work" ? `${items.length} items` : activeStage === "approval" ? completionSignature ? "Signed" : "Signature needed" : activeStage === "invoice" ? invoice ? "Draft ready" : "Not built" : job.arrivedAt ? "Arrival recorded" : "Scheduled"}</span>
+          {activeStage === "photos" && photos.length === 0 ? null : <span className={styles.stageCount}>{activeStage === "photos" ? `${photos.length} saved` : activeStage === "work" ? `${items.length} items` : activeStage === "approval" ? completionSignature ? "Signed" : "Signature needed" : activeStage === "invoice" ? invoice ? "Draft ready" : "Not built" : job.arrivedAt ? "Arrival recorded" : "Scheduled"}</span>}
         </div>
 
         {activeStage === "overview" ? (
@@ -609,17 +608,12 @@ export default function JobDetailPage() {
           canSeePhotos(currentUser.role) ? (
             <div className={styles.stageBody}>
               <PhotoUploader jobId={job.id} uploadedBy={currentUser.id} />
-              {photos.length === 0 ? (
-                <div className={styles.photoEmpty}>
-                  <Images size={20} aria-hidden="true" />
-                  <span><strong>No job photos yet</strong><small>The first saved photo will appear here.</small></span>
-                </div>
-              ) : (
+              {photos.length > 0 ? (
                 <section className={styles.photoGallery} aria-label="Saved job photos">
                   <div className={styles.photoGalleryHeader}><strong>Saved photos</strong><span>{photos.length}</span></div>
                   <div className={styles.photoGrid}>{photos.map((photo) => <article key={photo.id} className={styles.photoCard}>{photo.storagePath.startsWith("data:") || photo.storagePath.startsWith("http") ? <img src={photo.storagePath} alt={photo.caption ?? photo.kind} /> : <div className={styles.photoPlaceholder}>Private photo</div>}<div><strong>{photo.kind}</strong><span>{photo.caption ?? photo.storagePath}</span></div></article>)}</div>
                 </section>
-              )}
+              ) : null}
             </div>
           ) : <ProtectedStage />
         ) : null}

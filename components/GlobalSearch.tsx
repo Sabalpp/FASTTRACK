@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
-import { canViewCustomer } from "@/lib/access";
+import { canCreateCustomers, canViewCustomer } from "@/lib/access";
 import { formatPhone } from "@/lib/phone";
 import type { Customer } from "@/lib/types";
 
@@ -56,7 +56,7 @@ export function GlobalSearch({ compact = false }: { compact?: boolean }) {
       ) : query.trim().length > 1 ? (
         <div className="search-results search-results-empty">
           <span>No match.</span>
-          {currentUser.role !== "tech" ? <Link href="/customers/new">Create new customer</Link> : null}
+          {canCreateCustomers(currentUser.role) ? <Link href="/customers/new">Create new customer</Link> : null}
         </div>
       ) : null}
     </div>

@@ -58,7 +58,7 @@ export async function rejectSignature(target: SignatureTarget, signatureId: stri
     const updated = signatures.map((signature) => signature.id === signatureId
       ? { ...signature, status: "rejected" as const, rejectedAt: now, rejectionReason: reason }
       : signature);
-    window.localStorage.setItem(DEMO_SIGNATURES_KEY, JSON.stringify(updated));
+    persistDemoSignatures(updated);
     return updated.find((signature) => signature.id === signatureId)!;
   }
 
@@ -101,8 +101,16 @@ async function saveDemoSignature(input: SaveSignatureInput) {
     collectedBy: input.collectedBy,
     createdAt: now
   };
-  window.localStorage.setItem(DEMO_SIGNATURES_KEY, JSON.stringify([signature, ...current]));
+  persistDemoSignatures([signature, ...current]);
   return signature;
+}
+
+function persistDemoSignatures(signatures: InvoiceSignature[]) {
+  try {
+    window.localStorage.setItem(DEMO_SIGNATURES_KEY, JSON.stringify(signatures));
+  } catch (error) {
+    console.warn("Demo signatures could not be saved on this device.", error);
+  }
 }
 
 function readDemoSignatures(): InvoiceSignature[] {

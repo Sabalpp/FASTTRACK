@@ -7,12 +7,13 @@ import {
   CircleAlert,
   FileText,
   Search,
+  UserPlus,
   UserRound
 } from "lucide-react";
 import { useMemo } from "react";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { OperationsChart } from "@/components/OperationsChart";
-import { canScheduleJobs, canViewInvoice, canViewJob } from "@/lib/access";
+import { canCreateCustomers, canScheduleJobs, canViewInvoice, canViewJob } from "@/lib/access";
 import { useAuth } from "@/lib/auth";
 import { roleLabels, useAppData } from "@/lib/data-store";
 import { formatDateTime } from "@/lib/date";
@@ -85,6 +86,11 @@ export default function DashboardPage() {
           <Link href="/jobs/new" className={styles.primaryAction}>
             <CalendarPlus size={19} aria-hidden="true" />
             Schedule service
+          </Link>
+        ) : canCreateCustomers(currentUser.role) ? (
+          <Link href="/customers/new" className={styles.primaryAction}>
+            <UserPlus size={19} aria-hidden="true" />
+            New customer
           </Link>
         ) : null}
       </header>

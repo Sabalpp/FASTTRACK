@@ -9,6 +9,7 @@ import { buildInvoiceDraft, invoiceNumber, totalsForItems } from "@/lib/invoice"
 import { normalizePhone } from "@/lib/phone";
 import { demoMode } from "@/lib/runtime";
 import { defaultServiceWindowEndAt } from "@/lib/service-window";
+import { compactDemoStateForStorage, persistDemoState } from "@/lib/demo-storage";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import {
   allowedUserFromRow,
@@ -111,7 +112,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        setState(normalizeDemoState(JSON.parse(raw) as AppState));
+        setState(compactDemoStateForStorage(normalizeDemoState(JSON.parse(raw) as AppState)));
       }
     } catch (error) {
       console.warn("Could not load demo state from localStorage", error);
@@ -122,7 +123,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!demoMode || !loaded) return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    persistDemoState(window.localStorage, STORAGE_KEY, state);
   }, [loaded, state]);
 
   useEffect(() => {
@@ -204,7 +205,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       if (!demoMode) return;
 
       setState(demoState);
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(demoState));
+      persistDemoState(window.localStorage, STORAGE_KEY, demoState);
     }
 
     async function searchCustomers(query: string, visibleCustomers = state.customers) {

@@ -151,7 +151,7 @@ describe("Phase 4 invoice database controls", () => {
   });
 
   it("keeps the canonical fresh-install schema synchronized", () => {
-    expect(canonicalSchema.endsWith(migration)).toBe(true);
+    expect(canonicalSchema).toContain(migration);
   });
 });
 

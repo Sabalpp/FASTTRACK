@@ -24,6 +24,10 @@ export function canScheduleJobs(role: Role): boolean {
   return role === "owner" || role === "call_center";
 }
 
+export function canCreateCustomers(role: Role): boolean {
+  return role === "owner" || role === "call_center" || role === "tech";
+}
+
 export function canEditCustomers(role: Role): boolean {
   return role === "owner" || role === "call_center";
 }

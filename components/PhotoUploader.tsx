@@ -1,8 +1,9 @@
 "use client";
 
 import { Camera, Check, ImagePlus, X } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { photoKinds, useAppData } from "@/lib/data-store";
+import { createPhotoPreview } from "@/lib/photo-preview";
 import { demoMode } from "@/lib/runtime";
 import type { PhotoKind } from "@/lib/types";
 import styles from "./PhotoUploader.module.css";
@@ -16,21 +17,38 @@ export function PhotoUploader({ jobId, uploadedBy }: { jobId: string; uploadedBy
   const [fileName, setFileName] = useState("");
   const [dataUrl, setDataUrl] = useState("");
   const [file, setFile] = useState<File | undefined>();
+  const [processing, setProcessing] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | undefined>();
 
-  function handleFile(nextFile: File | undefined) {
+  useEffect(() => {
+    if (!saved) return;
+    const timeout = window.setTimeout(() => setSaved(false), 1600);
+    return () => window.clearTimeout(timeout);
+  }, [saved]);
+
+  async function handleFile(nextFile: File | undefined) {
     if (!nextFile) return;
     setFile(nextFile);
     setFileName(nextFile.name);
-
-    const reader = new FileReader();
-    reader.onload = () => setDataUrl(String(reader.result));
-    reader.readAsDataURL(nextFile);
+    setProcessing(true);
+    setSaved(false);
+    setError(undefined);
+    try {
+      setDataUrl(await createPhotoPreview(nextFile));
+    } catch (previewError) {
+      setDataUrl("");
+      setError(previewError instanceof Error ? previewError.message : "The selected photo could not be prepared.");
+    } finally {
+      setProcessing(false);
+    }
   }
 
   function clearSelection() {
     setFile(undefined);
     setFileName("");
     setDataUrl("");
+    setError(undefined);
     if (inputRef.current) inputRef.current.value = "";
   }
 
@@ -48,6 +66,7 @@ export function PhotoUploader({ jobId, uploadedBy }: { jobId: string; uploadedBy
     setCaption("");
     setKind("before");
     clearSelection();
+    setSaved(true);
   }
 
   return (
@@ -60,16 +79,16 @@ export function PhotoUploader({ jobId, uploadedBy }: { jobId: string; uploadedBy
           type="file"
           accept="image/*"
           capture="environment"
-          onChange={(event) => handleFile(event.target.files?.[0])}
+          onChange={(event) => void handleFile(event.target.files?.[0])}
         />
         <label className={styles.captureButton} htmlFor={inputId}>
           {file ? <ImagePlus size={24} aria-hidden="true" /> : <Camera size={24} aria-hidden="true" />}
-          <span>
-            <strong>{file ? "Choose a different photo" : "Take or choose a photo"}</strong>
-            <small>{file ? fileName : "Opens the camera on iPad and the photo picker on a computer"}</small>
-          </span>
+          <span><strong>{processing ? "Preparing photo…" : file ? "Choose a different photo" : "Take or choose photo"}</strong></span>
         </label>
       </div>
+
+      {error ? <p className={styles.error} role="alert">{error}</p> : null}
+      {saved ? <p className={styles.saved} role="status"><Check size={17} aria-hidden="true" />Photo saved</p> : null}
 
       {dataUrl ? (
         <div className={styles.selection}>
@@ -107,7 +126,7 @@ export function PhotoUploader({ jobId, uploadedBy }: { jobId: string; uploadedBy
               />
             </label>
 
-            <button className={styles.saveButton} type="submit">
+            <button className={styles.saveButton} type="submit" disabled={processing}>
               <Check size={19} aria-hidden="true" />
               {demoMode ? "Save photo" : "Upload photo"}
             </button>

@@ -385,7 +385,11 @@ export function AuthProvider({ children, demoAllowedUsers = [] }: AuthProviderPr
       return;
     }
 
-    window.localStorage.setItem(EXPLICIT_SIGN_OUT_KEY, "true");
+    try {
+      window.localStorage.setItem(EXPLICIT_SIGN_OUT_KEY, "true");
+    } catch (error) {
+      console.warn("Could not persist the signed-out marker on this device.", error);
+    }
 
     try {
       if (supabase) {
@@ -416,7 +420,11 @@ export function AuthProvider({ children, demoAllowedUsers = [] }: AuthProviderPr
   const value = useMemo<AuthContextValue>(() => {
     function setCurrentUserId(id: string) {
       if (!demoMode) return;
-      window.localStorage.setItem(CURRENT_USER_KEY, id);
+      try {
+        window.localStorage.setItem(CURRENT_USER_KEY, id);
+      } catch (error) {
+        console.warn("Could not persist the selected demo user on this device.", error);
+      }
       setCurrentUserIdState(id);
     }
 

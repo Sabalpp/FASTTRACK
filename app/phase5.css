@@ -749,11 +749,23 @@ body {
 }
 
 .ft5-app .address-suggestions {
-  overflow: hidden;
+  max-height: min(260px, 40dvh);
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid var(--ft-border);
   border-radius: 12px;
   background: var(--ft-surface);
   box-shadow: var(--ft-shadow-md);
+}
+
+.ft5-app .customer-intake-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ft5-app .customer-intake-actions .button {
+  min-width: 190px;
+  min-height: 48px;
 }
 
 .ft5-app .address-suggestions button {
@@ -810,6 +822,22 @@ body {
     width: 100%;
     min-width: 0;
     max-width: 100%;
+  }
+}
+
+@media (max-width: 1024px) and (pointer: coarse) {
+  .ft5-app :where(input, select, textarea) {
+    font-size: 16px;
+  }
+
+  .ft5-app .address-suggestions {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 680px) {
+  .ft5-app .customer-intake-actions .button {
+    width: 100%;
   }
 }
 

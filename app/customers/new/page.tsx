@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth";
+import { canScheduleJobs } from "@/lib/access";
 import { useAppData } from "@/lib/data-store";
 import { formatPhoneInput, normalizePhone } from "@/lib/phone";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
@@ -12,7 +13,7 @@ import type { Customer } from "@/lib/types";
 
 export default function NewCustomerPage() {
   return (
-    <RoleGate allowed={["owner", "call_center"]}>
+    <RoleGate allowed={["owner", "call_center", "tech"]}>
       <Suspense fallback={<main className="page-shell"><p>Loading customer intake...</p></main>}>
         <NewCustomerClient />
       </Suspense>
@@ -25,7 +26,7 @@ function NewCustomerClient() {
   const params = useSearchParams();
   const { currentUser } = useAuth();
   const data = useAppData();
-  const continueToJob = params.get("next") === "job";
+  const continueToJob = params.get("next") === "job" && canScheduleJobs(currentUser.role);
   const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(true);
   const [smsConsentOptIn, setSmsConsentOptIn] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -63,10 +64,10 @@ function NewCustomerClient() {
         emailNotificationsEnabled,
         smsConsentStatus: smsConsentOptIn ? "opted_in" : "unknown",
         smsConsentAt: smsConsentOptIn ? new Date().toISOString() : undefined,
-        smsConsentSource: smsConsentOptIn ? "staff_recorded" : undefined,
+        smsConsentSource: smsConsentOptIn ? currentUser.role === "tech" ? "customer_intake" : "staff_recorded" : undefined,
         createdBy: currentUser.id
       });
-      router.push(continueToJob ? `/jobs/new?customerId=${customer.id}` : `/customers/${customer.id}`);
+      router.replace(continueToJob ? `/jobs/new?customerId=${customer.id}` : `/customers/${customer.id}`);
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "The customer could not be created.");
     } finally {
@@ -78,8 +79,12 @@ function NewCustomerClient() {
     <main className="page-shell">
       <PageHeader
         eyebrow="Customer"
-        title="Create customer"
-        description={continueToJob ? "Add the customer record first. The next screen will schedule the job against this customer." : undefined}
+        title={currentUser.role === "tech" ? "New customer intake" : "Create customer"}
+        description={continueToJob
+          ? "Add the customer record first. The next screen will schedule the job against this customer."
+          : currentUser.role === "tech"
+            ? "Hand the iPad to the customer so they can enter and confirm their contact information."
+            : undefined}
       />
       <Card>
         <form className="stack" onSubmit={submit}>
@@ -140,16 +145,18 @@ function NewCustomerClient() {
             />
           </Field>
           <TwoColumn>
-            <Field label="Address line 2"><input value={form.addressLine2} onChange={(event) => update("addressLine2", event.target.value)} /></Field>
+          <Field label="Unit (optional)"><input value={form.addressLine2} onChange={(event) => update("addressLine2", event.target.value)} /></Field>
             <Field label="City"><input required value={form.city} onChange={(event) => update("city", event.target.value)} /></Field>
           </TwoColumn>
           <TwoColumn>
             <Field label="State"><input required value={form.state} onChange={(event) => update("state", event.target.value.toUpperCase())} placeholder="VA" maxLength={2} /></Field>
             <Field label="ZIP"><input required value={form.zip} onChange={(event) => update("zip", event.target.value)} /></Field>
           </TwoColumn>
-          <Field label="Notes"><textarea value={form.notes} onChange={(event) => update("notes", event.target.value)} placeholder="Gate code, preferred times, equipment notes..." /></Field>
+          <Field label="Access notes (optional)"><textarea value={form.notes} onChange={(event) => update("notes", event.target.value)} placeholder="Gate code, preferred times, equipment notes..." /></Field>
           {submitError ? <p className="field-error" role="alert">{submitError}</p> : null}
-          <Button type="submit" disabled={submitting}>{submitting ? "Creating..." : continueToJob ? "Create and schedule job" : "Create customer"}</Button>
+          <div className="customer-intake-actions">
+            <Button type="submit" disabled={submitting}>{submitting ? "Creating..." : continueToJob ? "Create and schedule job" : "Create customer"}</Button>
+          </div>
         </form>
       </Card>
     </main>
