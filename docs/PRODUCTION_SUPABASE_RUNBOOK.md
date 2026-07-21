@@ -181,9 +181,9 @@ matching Vercel environment update and redeploy. Keep
 Set a long random `CRON_SECRET` as well so Vercel can authorize the daily
 notification outbox catch-up job declared in `vercel.json`.
 
-If the deployed app shows `Owner`, `Tech`, and `Desk` buttons, it is still running in demo mode. Production login should show `Continue with Google`. Check Vercel environment variables and redeploy the latest `main` branch.
+If the deployed app shows `Owner`, `Tech`, and `Desk` buttons, it is running in the temporary acceptance-test demo. A live operational deployment should show `Continue with Google`; check Vercel environment variables and redeploy the latest `main` branch before real use.
 
-Production builds intentionally do not allow the demo role picker. Local dev can still use demo mode, but Vercel production should always route through real auth. If production cannot find Supabase env vars, it should show a Supabase configuration/auth error instead of fake role buttons.
+Hosted builds allow the demo role picker only when `NEXT_PUBLIC_DEMO_MODE=true` is explicitly set at build time. Use that setting only for a temporary acceptance-test deployment: it swaps the browser UI to seeded localStorage data and simulated messaging. Set it back to `false` and redeploy before real operations. A hosted build never falls back to demo mode merely because Supabase variables are missing; it should show a Supabase configuration/auth error instead.
 
 ## Production Smoke Test
 

@@ -111,7 +111,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
             <span className="ft5-brand-copy">
               <strong>Fast Track</strong>
-              <small>Field service</small>
+              <small>{isDemoMode ? "Demo workspace" : "Field service"}</small>
             </span>
           </Link>
           <nav className="main-nav ft5-main-nav" aria-label="Primary navigation">
