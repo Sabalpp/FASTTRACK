@@ -262,7 +262,7 @@ describe("appointment notification database foundation", () => {
     ]) {
       expect(canonicalSchema).toContain(contract);
     }
-    expect(canonicalSchema.endsWith(migration)).toBe(true);
+    expect(canonicalSchema).toContain(migration);
   });
 });
 

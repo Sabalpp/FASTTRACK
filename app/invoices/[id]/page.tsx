@@ -276,31 +276,42 @@ export default function InvoiceDetailPage() {
         ? { ...signature, status: "rejected" as const, rejectedAt: saved.signedAt, rejectionReason: "Replaced by a newly collected signature." }
         : signature
     ))]);
-    if (saved.purpose === "invoice_approval") {
-      if (demoMode) {
-        const next = { ...invoiceRecord, approvalStatus: "signed" as const, approvedAt: saved.signedAt, updatedAt: saved.signedAt };
-        data.updateInvoice(invoiceRecord.id, next);
-        replaceInvoice(next);
-      } else {
-        await refreshInvoice();
-      }
-    }
+    const next: Invoice = {
+      ...invoiceRecord,
+      ...(saved.purpose === "invoice_approval"
+        ? { approvalStatus: "signed" as const, approvedAt: saved.signedAt }
+        : {}),
+      pdfStoragePath: undefined,
+      pdfGeneratedAt: undefined,
+      pdfSha256: undefined,
+      pdfSizeBytes: undefined,
+      updatedAt: saved.signedAt
+    };
+    replaceInvoice(next);
+    if (demoMode) data.updateInvoice(invoiceRecord.id, next);
+    else await Promise.all([refreshInvoice(), refreshSignatures()]);
     setDialog(undefined);
-    setMessage("Signature saved with its signer and audit timestamp.");
+    setMessage("Signature saved with its signer and audit timestamp. Generate a new PDF when signatures are final.");
   }
 
   async function rejectSavedSignature(signature: InvoiceSignature, reason: string) {
     const rejected = await rejectSignature({ type: "invoice", id: invoiceRecord.id }, signature.id, reason);
     setSignatures((current) => current.map((candidate) => candidate.id === rejected.id ? { ...candidate, ...rejected } : candidate));
-    if (signature.purpose === "invoice_approval") {
-      if (demoMode) {
-        const next = { ...invoiceRecord, approvalStatus: "not_signed" as const, approvedAt: undefined, pdfStoragePath: undefined, pdfGeneratedAt: undefined, pdfSha256: undefined, pdfSizeBytes: undefined, updatedAt: new Date().toISOString() };
-        data.updateInvoice(invoiceRecord.id, next);
-        replaceInvoice(next);
-      } else {
-        await refreshInvoice();
-      }
-    }
+    const rejectedAt = rejected.rejectedAt ?? new Date().toISOString();
+    const next: Invoice = {
+      ...invoiceRecord,
+      ...(signature.purpose === "invoice_approval"
+        ? { approvalStatus: "not_signed" as const, approvedAt: undefined }
+        : {}),
+      pdfStoragePath: undefined,
+      pdfGeneratedAt: undefined,
+      pdfSha256: undefined,
+      pdfSizeBytes: undefined,
+      updatedAt: rejectedAt
+    };
+    replaceInvoice(next);
+    if (demoMode) data.updateInvoice(invoiceRecord.id, next);
+    else await Promise.all([refreshInvoice(), refreshSignatures()]);
     setMessage("Signature rejected. A new signature is required.");
   }
 

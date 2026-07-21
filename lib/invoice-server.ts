@@ -20,6 +20,15 @@ export type InvoiceBundle = {
   items: JobLineItem[];
 };
 
+export type SignatureImageIntegrityMetadata = {
+  storagePath: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  byteSize: number;
+  contentSha256: string;
+};
+
 export async function loadInvoiceBundle(actor: ServerActor, invoiceId: string): Promise<InvoiceBundle> {
   const { data: invoiceRow, error: invoiceError } = await actor.supabase
     .from("invoices")
@@ -62,36 +71,95 @@ export async function loadJobForActor(actor: ServerActor, jobId: string): Promis
 }
 
 export function invoiceDocumentHash(bundle: InvoiceBundle) {
+  const { invoice, job, customer } = bundle;
   const selectedItems = bundle.items
-    .filter((item) => item.tier === bundle.invoice.selectedTier)
+    .filter((item) => item.tier === invoice.selectedTier)
+    .sort((left, right) => left.sortOrder - right.sortOrder)
     .map((item) => ({
       id: item.id,
+      jobId: item.jobId,
+      tier: item.tier,
       description: item.description,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       sortOrder: item.sortOrder
     }));
 
+  const selectedSubtotal = invoice.selectedTier === "good"
+    ? invoice.subtotalGood
+    : invoice.selectedTier === "better"
+      ? invoice.subtotalBetter
+      : invoice.selectedTier === "best"
+        ? invoice.subtotalBest
+        : 0;
+  const selectedTotal = invoice.selectedTier === "good"
+    ? invoice.totalGood
+    : invoice.selectedTier === "better"
+      ? invoice.totalBetter
+      : invoice.selectedTier === "best"
+        ? invoice.totalBest
+        : 0;
+
   return sha256Json({
-    invoiceId: bundle.invoice.id,
-    invoiceNumber: bundle.invoice.invoiceNumber,
-    jobId: bundle.job.id,
-    customerId: bundle.customer.id,
-    serviceAddress: bundle.job.serviceAddress,
-    selectedTier: bundle.invoice.selectedTier ?? null,
-    optionLabel: bundle.invoice.optionLabel,
-    taxRate: bundle.invoice.taxRate,
-    notes: bundle.invoice.notes,
-    totals: {
-      subtotalGood: bundle.invoice.subtotalGood,
-      subtotalBetter: bundle.invoice.subtotalBetter,
-      subtotalBest: bundle.invoice.subtotalBest,
-      totalGood: bundle.invoice.totalGood,
-      totalBetter: bundle.invoice.totalBetter,
-      totalBest: bundle.invoice.totalBest
+    version: 2,
+    invoice: {
+      id: invoice.id,
+      jobId: invoice.jobId,
+      invoiceNumber: invoice.invoiceNumber,
+      createdAt: invoice.createdAt,
+      selectedTier: invoice.selectedTier ?? null,
+      optionLabel: invoice.optionLabel,
+      notes: invoice.notes,
+      taxRate: invoice.taxRate,
+      selectedSubtotal,
+      selectedTax: selectedTotal - selectedSubtotal,
+      selectedTotal
+    },
+    customer: {
+      id: customer.id,
+      name: customer.name,
+      phone: customer.phone,
+      email: customer.email ?? null,
+      addressLine1: customer.addressLine1,
+      addressLine2: customer.addressLine2 ?? null,
+      city: customer.city,
+      state: customer.state,
+      zip: customer.zip
+    },
+    job: {
+      id: job.id,
+      customerId: job.customerId,
+      serviceAddress: job.serviceAddress,
+      description: job.description,
+      notes: job.notes,
+      scheduledAt: job.scheduledAt,
+      arrivalWindowEndAt: job.arrivalWindowEndAt,
+      arrivedAt: job.arrivedAt ?? null,
+      serviceDate: job.arrivedAt ?? job.scheduledAt
     },
     selectedItems
   });
+}
+
+export function assertSignatureDocumentCurrent(
+  signatureDocumentSha256: unknown,
+  currentDocumentSha256: string,
+  message: string
+) {
+  if (signatureDocumentSha256 !== currentDocumentSha256) throw new HttpError(409, message);
+}
+
+export function assertInvoicePdfIntegrity(invoice: Invoice, bytes: Uint8Array) {
+  if (!invoice.pdfSha256 || invoice.pdfSizeBytes === undefined) {
+    throw new HttpError(409, "The saved invoice PDF is missing integrity metadata. Generate it again.");
+  }
+  if (bytes.byteLength !== invoice.pdfSizeBytes) {
+    throw new HttpError(409, "The saved invoice PDF failed its integrity check. Generate it again.");
+  }
+  const actualSha256 = createHash("sha256").update(bytes).digest("hex");
+  if (actualSha256 !== invoice.pdfSha256) {
+    throw new HttpError(409, "The saved invoice PDF failed its integrity check. Generate it again.");
+  }
 }
 
 export function jobCompletionDocumentHash(job: Job) {
@@ -103,6 +171,15 @@ export function jobCompletionDocumentHash(job: Job) {
     notes: job.notes,
     arrivedAt: job.arrivedAt ?? null
   });
+}
+
+export function assertJobCanAcceptCompletionSignature(job: Job) {
+  if (job.status === "complete" || job.status === "cancelled") {
+    throw new HttpError(409, "This job is no longer open for signature collection.");
+  }
+  if (!job.arrivedAt) {
+    throw new HttpError(409, "Record the technician arrival before collecting the completion signature.");
+  }
 }
 
 export async function listSignatures(
@@ -143,11 +220,47 @@ export function signatureFromRow(row: Record<string, unknown>, imageUrl?: string
   };
 }
 
-export async function signatureDataUrl(supabase: SupabaseClient, storagePath: string) {
-  const { data, error } = await supabase.storage.from("invoice-signatures").download(storagePath);
+export async function signatureDataUrl(
+  supabase: SupabaseClient,
+  signature: SignatureImageIntegrityMetadata
+) {
+  const { data, error } = await supabase.storage.from("invoice-signatures").download(signature.storagePath);
   if (error || !data) throw new HttpError(503, "The saved signature image could not be loaded.");
   const bytes = Buffer.from(await data.arrayBuffer());
+  assertSignatureImageIntegrity(signature, bytes);
   return `data:image/png;base64,${bytes.toString("base64")}`;
+}
+
+export function assertSignatureImageIntegrity(
+  signature: Omit<SignatureImageIntegrityMetadata, "storagePath">,
+  bytes: Uint8Array
+) {
+  if (
+    signature.mimeType !== "image/png"
+    || !Number.isInteger(signature.byteSize)
+    || bytes.byteLength !== signature.byteSize
+  ) {
+    throw new HttpError(409, "The saved signature image failed its integrity check. Collect the signature again.");
+  }
+
+  const actualSha256 = createHash("sha256").update(bytes).digest("hex");
+  if (actualSha256 !== signature.contentSha256) {
+    throw new HttpError(409, "The saved signature image failed its integrity check. Collect the signature again.");
+  }
+
+  const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const pngMagic = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  const validHeader = buffer.byteLength >= 24
+    && pngMagic.every((value, index) => buffer[index] === value)
+    && buffer.readUInt32BE(8) === 13
+    && buffer.toString("ascii", 12, 16) === "IHDR";
+  if (
+    !validHeader
+    || buffer.readUInt32BE(16) !== signature.width
+    || buffer.readUInt32BE(20) !== signature.height
+  ) {
+    throw new HttpError(409, "The saved signature image failed its integrity check. Collect the signature again.");
+  }
 }
 
 function sha256Json(value: unknown) {

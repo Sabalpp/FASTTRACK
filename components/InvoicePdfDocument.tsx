@@ -134,7 +134,7 @@ function InvoiceIntro({ model }: { model: InvoiceViewModel }) {
   const billToAddress = [customer.addressLine1, customer.addressLine2, `${customer.city}, ${customer.state} ${customer.zip}`]
     .filter(Boolean)
     .join("\n");
-  const serviceDate = job.completedAt ?? job.arrivedAt ?? job.scheduledAt;
+  const serviceDate = job.arrivedAt ?? job.scheduledAt;
   return (
     <>
       <View style={styles.invoiceIntro}>
@@ -154,7 +154,7 @@ function InvoiceIntro({ model }: { model: InvoiceViewModel }) {
       <View style={styles.factGrid}>
         <Fact label="Issue date" value={formatDate(invoice.createdAt)} />
         <Fact label="Service date" value={formatDate(serviceDate)} />
-        <Fact label="Invoice status" value={invoice.status.replaceAll("_", " ")} />
+        <Fact label="Approval" value="Customer approved" />
         <Fact label="Payment" value={paymentLabel(invoice.paymentStatus)} last />
       </View>
     </>

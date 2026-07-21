@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { getAuthenticatedSupabase, RequestAuthError } from "@/lib/supabase-user-server";
 import type { AllowedUser } from "@/lib/types";
 
 export class HttpError extends Error {
@@ -24,26 +25,35 @@ export async function requireServerActor(request: NextRequest): Promise<ServerAc
   const supabase = getSupabaseAdminClient();
   if (!supabase) throw new HttpError(503, "The protected server connection is not configured.");
 
-  const authorization = request.headers.get("authorization") ?? "";
-  const match = authorization.match(/^Bearer\s+(.+)$/i);
-  if (!match) throw new HttpError(401, "Sign in again to continue.");
-
-  const { data: authData, error: authError } = await supabase.auth.getUser(match[1]);
-  const authUser = authData.user;
-  if (authError || !authUser?.email) throw new HttpError(401, "Your session could not be verified.");
+  let authenticated: Awaited<ReturnType<typeof getAuthenticatedSupabase>>;
+  try {
+    // Keep invoice/signature routes on the same exact allowlist and owner-MFA
+    // policy used by the rest of the server API.
+    authenticated = await getAuthenticatedSupabase(request);
+  } catch (error) {
+    if (error instanceof RequestAuthError) throw new HttpError(error.status, error.message);
+    throw error;
+  }
 
   const { data: allowedUser, error: allowedUserError } = await supabase
     .from("allowed_users")
     .select("id,email,role,display_name,active,created_at")
-    .ilike("email", authUser.email)
+    .eq("id", authenticated.allowedUserId)
     .eq("active", true)
     .maybeSingle();
 
   if (allowedUserError) throw new HttpError(503, "Account access could not be checked.");
   if (!allowedUser) throw new HttpError(403, "This account is not active in the Fast Track workspace.");
+  if (
+    allowedUser.id !== authenticated.allowedUserId
+    || allowedUser.role !== authenticated.role
+    || allowedUser.email.trim().toLowerCase() !== authenticated.email.trim().toLowerCase()
+  ) {
+    throw new HttpError(403, "Your Fast Track access changed. Sign in again.");
+  }
 
   return {
-    authUserId: authUser.id,
+    authUserId: authenticated.authUserId,
     user: {
       id: allowedUser.id,
       email: allowedUser.email,

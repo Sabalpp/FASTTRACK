@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { loadInvoiceBundle } from "@/lib/invoice-server";
+import { assertSignatureDocumentCurrent, invoiceDocumentHash, loadInvoiceBundle } from "@/lib/invoice-server";
 import { selectedTotal } from "@/lib/invoice";
 import { HttpError, requireOwner, requireServerActor, routeErrorResponse } from "@/lib/server-auth";
 import { invoiceFromRow, type InvoiceRow } from "@/lib/supabase-mappers";
@@ -82,6 +82,31 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Enter a valid customer email.");
       if (bundle.invoice.approvalStatus !== "signed") throw new HttpError(409, "Save the customer approval signature before sending.");
       if (!bundle.invoice.pdfStoragePath || !bundle.invoice.pdfGeneratedAt) throw new HttpError(409, "Generate the signed PDF before sending.");
+
+      const { data: signatureRows, error: signaturesError } = await actor.supabase
+        .from("invoice_signatures")
+        .select("purpose,status,document_sha256,created_at,rejected_at")
+        .eq("invoice_id", id)
+        .in("purpose", ["invoice_approval", "technician_acknowledgement"]);
+      if (signaturesError) throw new HttpError(503, "Saved signatures could not be checked before sending.");
+      const approval = signatureRows?.find((signature) => (
+        signature.purpose === "invoice_approval" && signature.status === "active"
+      ));
+      if (!approval) throw new HttpError(409, "Save the customer approval signature before sending.");
+      assertSignatureDocumentCurrent(
+        approval.document_sha256,
+        invoiceDocumentHash(bundle),
+        "The invoice changed after it was signed. Reject and collect the customer signature again."
+      );
+
+      const generatedAt = Date.parse(bundle.invoice.pdfGeneratedAt);
+      const signaturesChangedAfterGeneration = !Number.isFinite(generatedAt) || (signatureRows ?? []).some((signature) => (
+        timestampAfter(signature.created_at, generatedAt) || timestampAfter(signature.rejected_at, generatedAt)
+      ));
+      if (signaturesChangedAfterGeneration) {
+        throw new HttpError(409, "Invoice signatures changed after the PDF was generated. Generate the signed PDF again.");
+      }
+
       requiredSignedPdfPath = bundle.invoice.pdfStoragePath;
       patch = {
         sent_to_email: email,
@@ -110,4 +135,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   } catch (error) {
     return routeErrorResponse(error);
   }
+}
+
+function timestampAfter(value: unknown, reference: number) {
+  if (typeof value !== "string" || !value) return false;
+  const parsed = Date.parse(value);
+  return !Number.isFinite(parsed) || parsed > reference;
 }

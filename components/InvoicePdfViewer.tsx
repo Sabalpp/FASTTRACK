@@ -30,56 +30,84 @@ export function InvoicePdfViewer({
   const [generating, setGenerating] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const activeObjectUrl = useRef<string | null>(null);
+  const pdfRequestVersion = useRef(0);
 
-  const showBlob = useCallback((blob: Blob) => {
+  const clearPdf = useCallback(() => {
+    pdfRequestVersion.current += 1;
+    if (activeObjectUrl.current) URL.revokeObjectURL(activeObjectUrl.current);
+    activeObjectUrl.current = null;
+    setPdfUrl(null);
+    setLoadingSaved(false);
+    setGenerating(false);
+  }, []);
+
+  const showBlob = useCallback((blob: Blob, requestVersion: number) => {
+    if (requestVersion !== pdfRequestVersion.current) return false;
     if (activeObjectUrl.current) URL.revokeObjectURL(activeObjectUrl.current);
     const nextUrl = URL.createObjectURL(blob);
     activeObjectUrl.current = nextUrl;
     setPdfUrl(nextUrl);
+    return true;
   }, []);
 
   const loadSavedPdf = useCallback(async () => {
     if (demoMode || !invoice.pdfStoragePath) return;
+    const requestVersion = ++pdfRequestVersion.current;
     setLoadingSaved(true);
     setPdfError(null);
     try {
       const blob = await loadProtectedInvoicePdf(invoice.id);
-      if (blob) showBlob(blob);
+      if (blob) showBlob(blob, requestVersion);
     } catch (error) {
-      setPdfError(error instanceof Error ? error.message : "The saved PDF could not be loaded.");
+      if (requestVersion === pdfRequestVersion.current) {
+        setPdfError(error instanceof Error ? error.message : "The saved PDF could not be loaded.");
+      }
     } finally {
-      setLoadingSaved(false);
+      if (requestVersion === pdfRequestVersion.current) setLoadingSaved(false);
     }
   }, [invoice.id, invoice.pdfStoragePath, showBlob]);
 
+  const signatureRevision = signatures
+    .filter((signature) => signature.purpose === "invoice_approval" || signature.purpose === "technician_acknowledgement")
+    .map((signature) => [
+      signature.id,
+      signature.status,
+      signature.contentSha256,
+      signature.signedAt,
+      signature.rejectedAt ?? ""
+    ].join(":"))
+    .sort()
+    .join("|");
+
   useEffect(() => {
+    clearPdf();
+    setPdfError(null);
     if (demoMode) return;
-    setPdfUrl(null);
-    if (activeObjectUrl.current) {
-      URL.revokeObjectURL(activeObjectUrl.current);
-      activeObjectUrl.current = null;
-    }
     void loadSavedPdf();
-  }, [invoice.pdfVersion, loadSavedPdf]);
+  }, [clearPdf, invoice.pdfSha256, invoice.pdfSizeBytes, invoice.pdfVersion, loadSavedPdf, signatureRevision]);
 
   useEffect(() => () => {
+    pdfRequestVersion.current += 1;
     if (activeObjectUrl.current) URL.revokeObjectURL(activeObjectUrl.current);
     activeObjectUrl.current = null;
   }, []);
 
   async function generatePdf() {
+    const requestVersion = ++pdfRequestVersion.current;
     setGenerating(true);
     setPdfError(null);
     try {
       const blob = demoMode
         ? await pdf(<InvoicePdfDocument invoice={invoice} job={job} customer={customer} items={items} signatures={signatures} />).toBlob()
         : await generateProtectedInvoicePdf(invoice.id);
-      showBlob(blob);
+      if (!showBlob(blob, requestVersion)) return;
       await onGenerated?.();
     } catch (error) {
-      setPdfError(error instanceof Error ? error.message : "The invoice PDF could not be generated.");
+      if (requestVersion === pdfRequestVersion.current) {
+        setPdfError(error instanceof Error ? error.message : "The invoice PDF could not be generated.");
+      }
     } finally {
-      setGenerating(false);
+      if (requestVersion === pdfRequestVersion.current) setGenerating(false);
     }
   }
 

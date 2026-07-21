@@ -212,6 +212,24 @@ create trigger invoice_20_recalculate_amounts
 before insert or update on public.invoices
 for each row execute function public.recalculate_invoice_amounts();
 
+-- Re-run the protected totals trigger for every invoice that predates Phase 4.
+-- Preserve the caller's transaction-local setting so this migration does not
+-- accidentally authorize unrelated invoice writes later in the transaction.
+do $$
+declare
+  previous_total_sync_setting text := current_setting('fasttrack.invoice_total_sync', true);
+begin
+  perform set_config('fasttrack.invoice_total_sync', 'on', true);
+  update public.invoices
+  set updated_at = statement_timestamp();
+  perform set_config(
+    'fasttrack.invoice_total_sync',
+    coalesce(previous_total_sync_setting, ''),
+    true
+  );
+end
+$$;
+
 create or replace function public.protect_signed_invoice_line_items()
 returns trigger
 language plpgsql
@@ -278,6 +296,70 @@ create trigger sync_job_invoice_totals
 after insert or update or delete on public.job_line_items
 for each row execute function public.sync_job_invoice_totals();
 
+create or replace function public.invalidate_invoice_pdf_after_signature_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  affected_invoice_ids uuid[] := array[]::uuid[];
+  rendered_signature_changed boolean := false;
+begin
+  -- PDF versions remain monotonic for auditability, but the current artifact
+  -- and delivery receipt are no longer valid whenever a signature rendered in
+  -- the invoice PDF is added, replaced, rejected, or moved between invoices.
+  -- Work-completion signatures are job evidence and are not rendered there.
+  if tg_op = 'INSERT' then
+    if new.purpose in ('invoice_approval', 'technician_acknowledgement')
+      and new.invoice_id is not null then
+      affected_invoice_ids := array_append(affected_invoice_ids, new.invoice_id);
+    end if;
+  elsif tg_op = 'UPDATE' then
+    rendered_signature_changed := new.status is distinct from old.status
+      or new.purpose is distinct from old.purpose
+      or new.signer_name is distinct from old.signer_name
+      or new.signer_role is distinct from old.signer_role
+      or new.storage_path is distinct from old.storage_path
+      or new.content_sha256 is distinct from old.content_sha256
+      or new.document_sha256 is distinct from old.document_sha256
+      or new.signed_at is distinct from old.signed_at
+      or new.invoice_id is distinct from old.invoice_id;
+
+    if rendered_signature_changed then
+      if old.purpose in ('invoice_approval', 'technician_acknowledgement')
+        and old.invoice_id is not null then
+        affected_invoice_ids := array_append(affected_invoice_ids, old.invoice_id);
+      end if;
+      if new.purpose in ('invoice_approval', 'technician_acknowledgement')
+        and new.invoice_id is not null then
+        affected_invoice_ids := array_append(affected_invoice_ids, new.invoice_id);
+      end if;
+    end if;
+  end if;
+
+  if cardinality(affected_invoice_ids) > 0 then
+    update public.invoices
+    set
+      pdf_storage_path = null,
+      pdf_generated_at = null,
+      pdf_sha256 = null,
+      pdf_size_bytes = null,
+      sent_to_email = null,
+      sent_at = null,
+      status = case when payment_status = 'paid' then 'paid' else 'draft' end
+    where id = any(affected_invoice_ids);
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists invalidate_invoice_pdf_after_signature_change on public.invoice_signatures;
+create trigger invalidate_invoice_pdf_after_signature_change
+after insert or update on public.invoice_signatures
+for each row execute function public.invalidate_invoice_pdf_after_signature_change();
+
 create or replace function public.create_or_refresh_invoice_draft(
   p_job_id uuid,
   p_created_by uuid
@@ -343,9 +425,27 @@ set search_path = public
 as $$
 declare
   result public.invoice_signatures;
+  target_job public.jobs;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'Server role required.' using errcode = '42501';
+  end if;
+
+  -- Serialize completion-signature collection with job cancellation and
+  -- completion. A request that resolved the job while it was open must not be
+  -- able to save a signature after another transaction closes the job.
+  if p_purpose = 'work_completion' then
+    select * into target_job
+    from public.jobs
+    where id = p_job_id
+    for update;
+
+    if not found then
+      raise exception 'Job not found.' using errcode = 'P0002';
+    end if;
+    if target_job.status <> 'in_progress' or target_job.arrived_at is null then
+      raise exception 'Only an arrived job in progress can accept a completion signature.' using errcode = '42501';
+    end if;
   end if;
 
   if p_invoice_id is not null and not exists (
@@ -409,9 +509,33 @@ set search_path = public
 as $$
 declare
   result public.invoice_signatures;
+  target_signature public.invoice_signatures;
+  target_job public.jobs;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'Server role required.' using errcode = '42501';
+  end if;
+
+  select * into target_signature
+  from public.invoice_signatures
+  where id = p_signature_id;
+
+  if not found then
+    raise exception 'Active signature not found.' using errcode = 'P0002';
+  end if;
+
+  -- Completion takes the job lock before the signature lock. Rejection uses
+  -- the same order so it cannot wait for completion and then reject the exact
+  -- signature that authorized the completed job.
+  if target_signature.purpose = 'work_completion' then
+    select * into target_job
+    from public.jobs
+    where id = target_signature.job_id
+    for update;
+
+    if target_job.status = 'complete' then
+      raise exception 'Reopen the job before rejecting its completion signature.' using errcode = '42501';
+    end if;
   end if;
 
   update public.invoice_signatures
@@ -431,12 +555,7 @@ begin
     update public.invoices
     set
       approval_status = 'not_signed',
-      approved_at = null,
-      pdf_storage_path = null,
-      pdf_generated_at = null,
-      pdf_sha256 = null,
-      pdf_size_bytes = null,
-      status = case when payment_status = 'paid' then 'paid' else 'draft' end
+      approved_at = null
     where id = result.invoice_id;
   end if;
 
@@ -446,6 +565,131 @@ $$;
 
 revoke all on function public.reject_invoice_signature(uuid, uuid, text) from public, anon, authenticated;
 grant execute on function public.reject_invoice_signature(uuid, uuid, text) to service_role;
+
+create or replace function public.complete_job_with_signature(
+  p_job_id uuid,
+  p_expected_status text,
+  p_expected_customer_id uuid,
+  p_expected_assigned_tech_id uuid,
+  p_expected_service_address text,
+  p_expected_description text,
+  p_expected_notes text,
+  p_expected_arrived_at timestamptz,
+  p_expected_signature_id uuid,
+  p_expected_signature_document_sha256 text,
+  p_override_by uuid,
+  p_override_reason text
+)
+returns public.jobs
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  current_job public.jobs;
+  current_signature public.invoice_signatures;
+  result public.jobs;
+  normalized_override_reason text := nullif(trim(coalesce(p_override_reason, '')), '');
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Server role required.' using errcode = '42501';
+  end if;
+
+  -- The job lock is also acquired first by record_invoice_signature. This
+  -- makes cancellation, signature replacement, and completion serialize in a
+  -- deterministic order instead of relying on an application read/update gap.
+  select * into current_job
+  from public.jobs
+  where id = p_job_id
+  for update;
+
+  if not found then
+    raise exception 'Job not found.' using errcode = 'P0002';
+  end if;
+
+  if current_job.status is distinct from p_expected_status
+    or current_job.customer_id is distinct from p_expected_customer_id
+    or current_job.assigned_tech_id is distinct from p_expected_assigned_tech_id
+    or current_job.service_address is distinct from p_expected_service_address
+    or current_job.description is distinct from p_expected_description
+    or coalesce(current_job.notes, '') is distinct from coalesce(p_expected_notes, '')
+    or current_job.arrived_at is distinct from p_expected_arrived_at then
+    raise exception 'The job changed while completion was being recorded. Review and try again.' using errcode = '40001';
+  end if;
+
+  if current_job.status <> 'in_progress' or current_job.arrived_at is null then
+    raise exception 'Only an arrived job in progress can be completed.' using errcode = '42501';
+  end if;
+
+  select * into current_signature
+  from public.invoice_signatures
+  where job_id = p_job_id
+    and purpose = 'work_completion'
+    and status = 'active'
+  for update;
+
+  if p_expected_signature_id is not null then
+    if p_override_by is not null or normalized_override_reason is not null then
+      raise exception 'A signed completion cannot also use an owner override.' using errcode = '23514';
+    end if;
+    if current_signature.id is null
+      or current_signature.id is distinct from p_expected_signature_id
+      or current_signature.document_sha256 is distinct from p_expected_signature_document_sha256 then
+      raise exception 'The customer completion signature changed. Review and try again.' using errcode = '40001';
+    end if;
+  else
+    if p_expected_signature_document_sha256 is not null then
+      raise exception 'A signature hash requires a signature identifier.' using errcode = '23514';
+    end if;
+    if current_signature.id is not null then
+      raise exception 'A customer completion signature was added. Review and try again.' using errcode = '40001';
+    end if;
+    if p_override_by is null or normalized_override_reason is null
+      or char_length(normalized_override_reason) < 10
+      or char_length(normalized_override_reason) > 500 then
+      raise exception 'Owner override requires a clear reason of 10 to 500 characters.' using errcode = '23514';
+    end if;
+    if not exists (
+      select 1
+      from public.allowed_users owner_user
+      where owner_user.id = p_override_by
+        and owner_user.active
+        and owner_user.role = 'owner'
+    ) then
+      raise exception 'Only an active owner can override the customer completion signature.' using errcode = '42501';
+    end if;
+  end if;
+
+  update public.jobs
+  set
+    status = 'complete',
+    completed_at = statement_timestamp(),
+    completion_signature_override_at = case
+      when p_expected_signature_id is null then statement_timestamp()
+      else null
+    end,
+    completion_signature_override_by = case
+      when p_expected_signature_id is null then p_override_by
+      else null
+    end,
+    completion_signature_override_reason = case
+      when p_expected_signature_id is null then normalized_override_reason
+      else null
+    end
+  where id = p_job_id
+  returning * into result;
+
+  return result;
+end;
+$$;
+
+revoke all on function public.complete_job_with_signature(
+  uuid, text, uuid, uuid, text, text, text, timestamptz, uuid, text, uuid, text
+) from public, anon, authenticated;
+grant execute on function public.complete_job_with_signature(
+  uuid, text, uuid, uuid, text, text, text, timestamptz, uuid, text, uuid, text
+) to service_role;
 
 create or replace function public.enforce_job_completion_signature()
 returns trigger
@@ -499,10 +743,46 @@ begin
 end;
 $$;
 
+-- This trigger intentionally sorts after Phase 3's
+-- protect_job_workflow_fields trigger. It therefore sees an arrived_at value
+-- that Phase 3 may set while starting a job and prevents that implicit change
+-- from making an existing completion signature stale.
+create or replace function public.protect_work_completion_signed_job_fields()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if exists (
+    select 1
+    from public.invoice_signatures signature
+    where signature.job_id = old.id
+      and signature.purpose = 'work_completion'
+      and signature.status = 'active'
+  ) and (
+    new.customer_id is distinct from old.customer_id
+    or new.service_address is distinct from old.service_address
+    or new.description is distinct from old.description
+    or new.notes is distinct from old.notes
+    or new.arrived_at is distinct from old.arrived_at
+  ) then
+    raise exception 'Reject the saved work-completion signature before changing signed job details.' using errcode = '42501';
+  end if;
+
+  return new;
+end;
+$$;
+
 drop trigger if exists enforce_job_completion_signature on public.jobs;
 create trigger enforce_job_completion_signature
 before update on public.jobs
 for each row execute function public.enforce_job_completion_signature();
+
+drop trigger if exists protect_work_completion_signed_job_fields on public.jobs;
+create trigger protect_work_completion_signed_job_fields
+before update on public.jobs
+for each row execute function public.protect_work_completion_signed_job_fields();
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('invoice-signatures', 'invoice-signatures', false, 1048576, array['image/png'])
@@ -544,6 +824,13 @@ using (
     )
   )
 );
+
+-- The application now generates and replaces PDFs through its service-role
+-- server route. Remove every legacy authenticated mutation policy for this
+-- bucket; authenticated users retain read-only access through the policy above.
+drop policy if exists "invoice pdfs insert by owner" on storage.objects;
+drop policy if exists "invoice pdfs update by owner" on storage.objects;
+drop policy if exists "invoice pdfs delete by owner" on storage.objects;
 
 drop policy if exists "owner tech assigned create invoice drafts" on public.invoices;
 drop policy if exists "owner or assigned tech updates invoice drafts" on public.invoices;

@@ -618,10 +618,12 @@ export default function JobDetailPage() {
             onRetry={() => void refreshCompletionSignatures()}
             canReject={currentUser.role === "owner" && job.status !== "complete"}
             onReject={completionSignature ? rejectCompletionSignature : undefined}
-            drawDisabled={job.status === "complete" || job.status === "cancelled"}
+            drawDisabled={!job.arrivedAt || job.status === "complete" || job.status === "cancelled"}
           />
           <p className="signature-completion-note">
-            {completionSignature
+            {!job.arrivedAt
+              ? "Record the technician arrival before collecting the customer completion signature."
+              : completionSignature
               ? "Signature saved. The job can now be completed."
               : currentUser.role === "owner"
                 ? "A saved signature is required unless you explicitly record an owner override while completing the job."

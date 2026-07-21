@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import {
+  assertJobCanAcceptCompletionSignature,
   invoiceDocumentHash,
   jobCompletionDocumentHash,
   listSignatures,
@@ -171,7 +172,7 @@ async function resolveTarget(
     throw new HttpError(400, "Job completion requires a customer signature.");
   }
   const job = await loadJobForActor(actor, target.id);
-  if (job.status === "complete" || job.status === "cancelled") throw new HttpError(409, "This job is no longer open for signature collection.");
+  assertJobCanAcceptCompletionSignature(job);
   const { data: invoice } = await actor.supabase.from("invoices").select("id").eq("job_id", job.id).maybeSingle();
   return {
     invoiceId: invoice?.id as string | undefined,
