@@ -101,10 +101,13 @@ export function InvoicePdfDocument({ invoice, job, customer, items, signatures =
 }
 
 function DocumentHeader({ invoice }: { invoice: Invoice }) {
+  const logoSource = typeof window === "undefined"
+    ? `${process.cwd()}/public${branding.invoiceLogoPath}`
+    : branding.invoiceLogoPath;
   return (
     <View style={styles.header}>
       <View style={styles.brandBlock}>
-        <View style={styles.brandMark}><Text style={styles.brandMarkText}>FT</Text></View>
+        <Image src={logoSource} style={styles.brandLogo} />
         <View style={styles.brandCopy}>
           <Text style={styles.brandName}>{branding.businessName}</Text>
           <Text style={styles.brandContact}>{branding.address}</Text>
@@ -335,8 +338,7 @@ const styles = StyleSheet.create({
   page: { paddingTop: 30, paddingRight: 40, paddingBottom: 46, paddingLeft: 40, backgroundColor: colors.white, color: colors.ink, fontFamily: "Helvetica", fontSize: 8.6, lineHeight: 1.35 },
   header: { position: "relative", height: 66, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 },
   brandBlock: { flexDirection: "row", alignItems: "center", width: "72%" },
-  brandMark: { width: 36, height: 36, marginRight: 10, borderRadius: 9, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center" },
-  brandMarkText: { color: colors.white, fontSize: 14, fontWeight: 700, letterSpacing: 0.5 },
+  brandLogo: { width: 48, height: 38, marginRight: 10, objectFit: "contain" },
   brandCopy: { flex: 1 },
   brandName: { color: colors.brand, fontSize: 13, fontWeight: 700, marginBottom: 1 },
   brandContact: { color: colors.muted, fontSize: 7.2, marginBottom: 1 },

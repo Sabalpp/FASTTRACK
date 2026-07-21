@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button, Field, TwoColumn } from "@/components/ui";
 import { tierLabels, tierOptions, useAppData } from "@/lib/data-store";
+import { sameLineItemService } from "@/lib/line-items";
 import type { Tier } from "@/lib/types";
 
 export function LineItemForm({ jobId }: { jobId: string }) {
@@ -30,7 +31,7 @@ export function LineItemForm({ jobId }: { jobId: string }) {
   function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!description.trim()) return;
-    data.addLineItem({
+    const nextItem = {
       jobId,
       partId: selectedPart?.id,
       description: description.trim(),
@@ -38,7 +39,18 @@ export function LineItemForm({ jobId }: { jobId: string }) {
       unitPrice: Number(unitPrice),
       tier,
       isManual: !selectedPart
-    });
+    };
+    const matchingItems = data.jobLineItems.filter((item) => (
+      item.jobId === jobId
+      && sameLineItemService(item, nextItem)
+    ));
+    const [matchingItem, ...duplicateItems] = matchingItems;
+    if (matchingItem) {
+      data.updateLineItem(matchingItem.id, nextItem);
+      duplicateItems.forEach((item) => data.deleteLineItem(item.id));
+    } else {
+      data.addLineItem(nextItem);
+    }
     setDescription(selectedPart?.name ?? "");
     setQuantity("1");
     setUnitPrice(String(selectedPart?.defaultPrice ?? 0));
@@ -53,19 +65,10 @@ export function LineItemForm({ jobId }: { jobId: string }) {
             <option value="manual">Custom item</option>
           </select>
         </Field>
-        <Field label="Option">
-          <div className="segmented-control tier-segments">
-            {tierOptions.map((option) => (
-              <button
-                key={option}
-                type="button"
-                className={tier === option ? "active" : ""}
-                onClick={() => setTier(option)}
-              >
-                {tierLabels[option]}
-              </button>
-            ))}
-          </div>
+        <Field label="Estimate option">
+          <select value={tier} onChange={(event) => setTier(event.target.value as Tier)}>
+            {tierOptions.map((option) => <option key={option} value={option}>{tierLabels[option]}</option>)}
+          </select>
         </Field>
       </TwoColumn>
       <Field label="Description">
@@ -82,7 +85,7 @@ export function LineItemForm({ jobId }: { jobId: string }) {
           </div>
         </Field>
       </TwoColumn>
-      <Button type="submit">Add item</Button>
+      <Button type="submit">Save line item</Button>
     </form>
   );
 }

@@ -51,15 +51,15 @@
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 20px;
+  gap: 14px 20px;
   overflow: hidden;
-  padding: 28px;
+  padding: 21px 23px 17px;
   border: 1px solid #dce3ea;
-  border-radius: 22px;
+  border-radius: 18px;
   background:
     radial-gradient(circle at 93% 10%, rgba(21, 63, 75, 0.1), transparent 32%),
     linear-gradient(145deg, #fff 0%, #fbfcfd 65%, #f4f8fc 100%);
-  box-shadow: 0 18px 48px rgba(23, 34, 48, 0.07);
+  box-shadow: 0 12px 34px rgba(23, 34, 48, 0.06);
 }
 
 .hero::before {
@@ -109,7 +109,7 @@
 
 .heroCopy h1 {
   color: #1f2935;
-  font-size: clamp(2rem, 3.7vw, 3.35rem);
+  font-size: clamp(1.7rem, 2.7vw, 2.45rem);
   font-weight: 760;
   letter-spacing: -0.045em;
   line-height: 1.02;
@@ -117,9 +117,9 @@
 
 .heroCopy > p {
   max-width: 760px;
-  margin-top: 10px;
+  margin-top: 6px;
   color: #687486;
-  font-size: 1rem;
+  font-size: 0.86rem;
   line-height: 1.55;
 }
 
@@ -135,27 +135,18 @@
 .assignmentStrip {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 0.82fr 1.2fr 1fr;
-  gap: 1px;
-  overflow: hidden;
-  margin-top: 5px;
-  border: 1px solid #e2e7ed;
-  border-radius: 15px;
-  background: #e2e7ed;
+  grid-template-columns: 0.78fr 1.08fr 1.14fr;
+  margin-top: 2px;
+  border-top: 1px solid #e1e7eb;
 }
 
 .assignmentItem {
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
   min-width: 0;
-  min-height: 78px;
-  padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.92);
+  min-height: 60px;
+  padding: 12px 16px 4px 0;
+  border-right: 1px solid #e5eaee;
 }
 
-.metaIcon,
 .customerAvatar,
 .approvalIntro > span,
 .invoiceIcon,
@@ -165,11 +156,6 @@
   border-radius: 11px;
   color: #153f4b;
   background: #e7f0f1;
-}
-
-.metaIcon {
-  width: 36px;
-  height: 36px;
 }
 
 .assignmentItem > span:last-child,
@@ -192,7 +178,7 @@
   overflow: hidden;
   margin-top: 2px;
   color: #2d3744;
-  font-size: 0.79rem;
+  font-size: 0.8rem;
   font-weight: 730;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -207,6 +193,15 @@
   font-style: normal;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.assignmentItem + .assignmentItem {
+  padding-left: 16px;
+}
+
+.assignmentItem:last-child {
+  padding-right: 0;
+  border-right: 0;
 }
 
 .errorBanner {
@@ -285,14 +280,7 @@
   padding: 22px 24px 26px;
 }
 
-.customerGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
-  gap: 14px;
-}
-
 .customerCard,
-.timelineCard,
 .innerPanel,
 .approvalPanel,
 .overridePanel,
@@ -305,10 +293,11 @@
 
 .customerCard {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  gap: 11px;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
   align-items: center;
-  padding: 14px;
+  padding: 13px 14px;
+  background: #fff;
 }
 
 .customerAvatar {
@@ -316,7 +305,7 @@
   height: 42px;
 }
 
-.customerCard > div,
+.customerIdentity,
 .customerCard small,
 .customerCard strong,
 .customerCard span {
@@ -325,7 +314,7 @@
 }
 
 .customerCard small,
-.timelineCard small {
+.photoGalleryHeader span {
   color: #7b8796;
   font-size: 0.65rem;
   font-weight: 700;
@@ -339,7 +328,7 @@
   font-weight: 740;
 }
 
-.customerCard div > span {
+.customerIdentity > span {
   overflow: hidden;
   margin-top: 2px;
   color: #758091;
@@ -348,35 +337,37 @@
   white-space: nowrap;
 }
 
-.customerCard > :global(.contact-actions) {
-  grid-column: 1 / -1;
+.customerActions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
 }
 
-.timelineCard {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  overflow: hidden;
+.customerActions a {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid #d8e0e6;
+  border-radius: 9px;
+  color: #294553;
+  background: #fff;
+  font-size: 0.74rem;
+  font-weight: 720;
+  text-decoration: none;
 }
 
-.timelineCard > div {
-  min-width: 0;
-  padding: 14px;
-  border-right: 1px solid #e6eaee;
+.customerActions a:hover {
+  border-color: #aebfc5;
+  background: #f4f8f8;
 }
 
-.timelineCard > div:last-child {
-  border-right: 0;
-}
-
-.timelineCard strong {
-  display: block;
-  overflow: hidden;
-  margin-top: 5px;
-  color: #374351;
-  font-size: 0.75rem;
-  font-weight: 700;
-  line-height: 1.35;
-  text-overflow: ellipsis;
+.customerActions a:focus-visible {
+  outline: 3px solid rgba(21, 63, 75, 0.2);
+  outline-offset: 2px;
 }
 
 .editSection,
@@ -545,6 +536,66 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.photoGallery {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.photoGalleryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.photoGalleryHeader > strong {
+  color: #34414e;
+  font-size: 0.82rem;
+}
+
+.photoGalleryHeader > span {
+  display: grid;
+  min-width: 26px;
+  min-height: 26px;
+  place-items: center;
+  border-radius: 999px;
+  color: #526174;
+  background: #edf1f4;
+}
+
+.photoEmpty {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 56px;
+  padding: 10px 13px;
+  border: 1px dashed #cfd9df;
+  border-radius: 11px;
+  color: #657386;
+  background: #fafbfc;
+}
+
+.photoEmpty > svg {
+  flex: 0 0 auto;
+}
+
+.photoEmpty span,
+.photoEmpty strong,
+.photoEmpty small {
+  display: block;
+}
+
+.photoEmpty strong {
+  color: #43505e;
+  font-size: 0.78rem;
+}
+
+.photoEmpty small {
+  margin-top: 2px;
+  color: #7a8695;
+  font-size: 0.7rem;
 }
 
 .photoCard {
@@ -804,6 +855,8 @@
 
   .assignmentItem:last-child {
     grid-column: 1 / -1;
+    padding-left: 0;
+    border-top: 1px solid #e5eaee;
   }
 
   .dispatchGrid {
@@ -852,12 +905,18 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .assignmentItem,
+  .assignmentItem + .assignmentItem,
   .assignmentItem:last-child {
     grid-column: auto;
+    min-height: 54px;
+    padding: 10px 0;
+    border-right: 0;
+    border-top: 1px solid #e5eaee;
   }
 
-  .assignmentItem {
-    min-height: 68px;
+  .assignmentItem:first-child {
+    border-top: 0;
   }
 
   .stagePanel {
@@ -869,7 +928,6 @@
     padding: 17px;
   }
 
-  .customerGrid,
   .formGrid,
   .dispatchGrid {
     grid-template-columns: minmax(0, 1fr);
@@ -879,16 +937,19 @@
     grid-column: auto;
   }
 
-  .timelineCard {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .customerCard {
+    grid-template-columns: 42px minmax(0, 1fr);
   }
 
-  .timelineCard > div:nth-child(2) {
-    border-right: 0;
+  .customerActions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    justify-content: stretch;
   }
 
-  .timelineCard > div:nth-child(n + 3) {
-    border-top: 1px solid #e6eaee;
+  .customerActions a {
+    min-width: 0;
   }
 
   .editSection,
@@ -956,6 +1017,10 @@
 
   .stageCount {
     justify-self: start;
+  }
+
+  .customerActions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .photoGrid {

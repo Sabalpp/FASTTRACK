@@ -8,6 +8,7 @@ export const branding = {
   website: "www.fasttrackdmv.org",
   licenseNumber: "VA License #PLACEHOLDER",
   address: "13817 Fount Beattie Ct., Centreville, VA 20121",
-  logoPlaceholder: "/logo-placeholder.svg",
+  logoPath: "/brand/fast-track-logo.avif",
+  invoiceLogoPath: "/brand/fast-track-logo-pdf.png",
   taxRate: 0.06
 };

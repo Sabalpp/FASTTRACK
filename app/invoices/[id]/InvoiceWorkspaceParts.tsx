@@ -63,7 +63,7 @@ export function resolveInvoiceWorkspaceAction(input: {
     };
   }
 
-  if (input.paymentEditorOpen && input.canManageInvoice && input.deliveryRecorded) {
+  if (input.paymentEditorOpen && input.canManageInvoice) {
     return {
       id: "save_payment",
       label: "Save payment record",
@@ -92,9 +92,9 @@ export function resolveInvoiceWorkspaceAction(input: {
     }
     return {
       id: "record_sent",
-      label: "Record as sent",
-      title: "Record customer delivery",
-      helper: "Email delivery is not active. Share the invoice separately, then record the destination here."
+      label: "Email invoice PDF",
+      title: "Send the final invoice",
+      helper: "Email the saved signed PDF to the customer. The invoice is marked sent only after the provider accepts it."
     };
   }
 
@@ -154,9 +154,10 @@ export function InvoiceScopeEditor({
 
   return (
     <section aria-labelledby="estimate-scope-heading">
-      <p id="estimate-scope-heading" className={styles.truthNote}>
-        Compare estimate options here only. After approval, the invoice uses one neutral chosen scope.
-      </p>
+      <div className={styles.scopeIntro}>
+        <strong id="estimate-scope-heading">Choose one invoice scope</strong>
+        <span>Switching replaces the current choice. It does not add another line item.</span>
+      </div>
       <div className={styles.scopeGrid} aria-label="Estimate options">
         {tierOptions.map((tier) => {
           const itemCount = itemCountByTier[tier];
@@ -167,13 +168,18 @@ export function InvoiceScopeEditor({
               className={styles.scopeChoice}
               data-selected={selectedTier === tier}
               aria-pressed={selectedTier === tier}
+              aria-label={`Use ${tierLabels[tier]} estimate, ${money(totalByTier[tier])}, ${itemCount} item${itemCount === 1 ? "" : "s"}`}
               onClick={() => onSelect(tier)}
               disabled={!canEdit || itemCount === 0}
             >
-              <span>{tierLabels[tier]} estimate</span>
-              <strong>{money(totalByTier[tier])}</strong>
-              <small>{itemCount} item{itemCount === 1 ? "" : "s"}</small>
-              {selectedTier === tier ? <Check size={15} aria-label="Selected" /> : null}
+              <span className={styles.scopeChoiceText}>
+                <strong>{tierLabels[tier]}</strong>
+                <small>{itemCount} item{itemCount === 1 ? "" : "s"}</small>
+              </span>
+              <strong className={styles.scopeChoiceAmount}>{money(totalByTier[tier])}</strong>
+              <span className={styles.scopeChoiceState}>
+                {selectedTier === tier ? <><Check size={15} aria-hidden="true" /> Selected</> : "Choose"}
+              </span>
             </button>
           );
         })}

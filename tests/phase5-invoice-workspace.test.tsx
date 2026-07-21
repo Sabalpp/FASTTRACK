@@ -30,8 +30,8 @@ describe("Phase 5 invoice workspace", () => {
       pdfGenerated: true
     });
     expect(delivery.id).toBe("record_sent");
-    expect(delivery.label).toBe("Record as sent");
-    expect(delivery.helper).toContain("Email delivery is not active");
+    expect(delivery.label).toBe("Email invoice PDF");
+    expect(delivery.helper).toContain("marked sent only after the provider accepts it");
 
     const payment = resolveInvoiceWorkspaceAction({
       ...base,
@@ -53,6 +53,16 @@ describe("Phase 5 invoice workspace", () => {
     });
     expect(savePayment.id).toBe("save_payment");
     expect(savePayment.helper).toContain("does not charge");
+
+    const savePaymentBeforeDelivery = resolveInvoiceWorkspaceAction({
+      ...base,
+      selectedSaved: true,
+      approvalSaved: true,
+      pdfGenerated: true,
+      deliveryRecorded: false,
+      paymentEditorOpen: true
+    });
+    expect(savePaymentBeforeDelivery.id).toBe("save_payment");
 
     expect(resolveInvoiceWorkspaceAction({
       ...base,
@@ -76,10 +86,11 @@ describe("Phase 5 invoice workspace", () => {
     };
     const view = render(<InvoiceScopeEditor {...props} locked={false} />);
 
-    expect(screen.getByRole("button", { name: /Good estimate/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Better estimate/i }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: /Best estimate/i }));
+    expect(screen.getByRole("button", { name: /Use Good estimate/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Use Better estimate/i }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: /Use Best estimate/i }));
     expect(onSelect).toHaveBeenCalledWith("best");
+    expect(screen.getByText(/Switching replaces the current choice/i)).toBeTruthy();
 
     view.rerender(<InvoiceScopeEditor {...props} locked />);
     expect(screen.getByTestId("locked-invoice-scope").textContent).toContain("Approved work");

@@ -1,9 +1,13 @@
 "use client";
 
+import { ChevronDown, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { tierLabels, tierOptions } from "@/lib/data-store";
 import { subtotalForTier } from "@/lib/invoice";
+import { sameLineItemService } from "@/lib/line-items";
 import { money } from "@/lib/money";
 import type { JobLineItem, Tier } from "@/lib/types";
+import styles from "./TierColumns.module.css";
 
 export function TierColumns({
   items,
@@ -18,92 +22,150 @@ export function TierColumns({
   onDelete?: (id: string) => void;
   editable?: boolean;
 }) {
+  const [activeTier, setActiveTier] = useState<Tier>(() => firstOptionWithWork(items));
+  const tierItems = items.filter((item) => item.tier === activeTier);
+  const subtotal = subtotalForTier(items, activeTier);
+  const tax = subtotal * taxRate;
+  const total = subtotal + tax;
+
+  function moveItem(item: JobLineItem, nextTier: Tier) {
+    if (!onEdit || nextTier === item.tier) return;
+    const duplicateAtDestination = items.find((candidate) => (
+      candidate.id !== item.id
+      && candidate.jobId === item.jobId
+      && candidate.tier === nextTier
+      && sameLineItemService(candidate, item)
+    ));
+    if (duplicateAtDestination && onDelete) onDelete(duplicateAtDestination.id);
+    onEdit(item.id, { tier: nextTier });
+    setActiveTier(nextTier);
+  }
+
   return (
-    <div className="tier-grid estimate-tier-grid">
-      {tierOptions.map((tier) => {
-        const tierItems = items.filter((item) => item.tier === tier);
-        const subtotal = subtotalForTier(items, tier);
-        const tax = subtotal * taxRate;
-        const total = subtotal + tax;
-        return (
-          <div className={`tier-card estimate-tier-card ${tierItems.length === 0 ? "tier-card-empty" : ""}`} key={tier}>
-            <div className="tier-head">
-              <div>
-                <span>{tierLabels[tier]}</span>
-                <small>{tierItems.length} item{tierItems.length === 1 ? "" : "s"}</small>
-              </div>
-              {tierItems.length > 0 ? <strong>{money(total)}</strong> : null}
-            </div>
-            {tierItems.length === 0 ? (
-              <p className="muted">Add an item when this option needs work.</p>
-            ) : (
-              <div className="line-items-list">
-                {tierItems.map((item) => (
-                  <div key={item.id} className={`line-item-row estimate-line-item ${editable ? "line-item-row-editable" : ""}`}>
+    <div className={styles.workspace}>
+      <div className={styles.optionTabs} role="tablist" aria-label="Estimate option">
+        {tierOptions.map((tier) => {
+          const optionItems = items.filter((item) => item.tier === tier);
+          const optionTotal = subtotalForTier(items, tier) * (1 + taxRate);
+          const selected = activeTier === tier;
+          return (
+            <button
+              id={`estimate-option-${tier}`}
+              key={tier}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-controls="active-estimate-option"
+              className={selected ? styles.optionActive : undefined}
+              onClick={() => setActiveTier(tier)}
+            >
+              <span>{tierLabels[tier]}</span>
+              <strong>{optionItems.length > 0 ? money(optionTotal) : "No items"}</strong>
+              <small>{optionItems.length} {optionItems.length === 1 ? "item" : "items"}</small>
+            </button>
+          );
+        })}
+      </div>
+
+      <section
+        id="active-estimate-option"
+        className={styles.optionPanel}
+        role="tabpanel"
+        aria-labelledby={`estimate-option-${activeTier}`}
+      >
+        <header className={styles.optionHeader}>
+          <div>
+            <span>Estimate option</span>
+            <h4>{tierLabels[activeTier]}</h4>
+          </div>
+          {tierItems.length > 0 ? <strong>{money(total)}</strong> : null}
+        </header>
+
+        {tierItems.length === 0 ? (
+          <div className={styles.emptyOption}>
+            <strong>No work in this option</strong>
+            <span>Add a service above, or move an existing line here.</span>
+          </div>
+        ) : (
+          <div className={styles.itemList}>
+            {tierItems.map((item) => (
+              <article className={styles.item} key={item.id}>
+                <div className={styles.itemMain}>
+                  <div>
                     {editable && onEdit ? (
-                      <div className="estimate-line-editor">
+                      <input
+                        className={styles.descriptionInput}
+                        aria-label={`Description for ${item.description}`}
+                        value={item.description}
+                        onChange={(event) => onEdit(item.id, { description: event.target.value })}
+                      />
+                    ) : <strong>{item.description}</strong>}
+                    <small>{item.quantity} × {money(item.unitPrice)}</small>
+                  </div>
+                  <strong>{money(item.quantity * item.unitPrice)}</strong>
+                </div>
+
+                {editable && onEdit ? (
+                  <details className={styles.editDetails}>
+                    <summary><span>Edit line</span><ChevronDown size={16} aria-hidden="true" /></summary>
+                    <div className={styles.editControls}>
+                      <label>
+                        <span>Quantity</span>
                         <input
-                          className="line-description-input"
-                          aria-label="Line item description"
-                          value={item.description}
-                          onChange={(event) => onEdit(item.id, { description: event.target.value })}
-                        />
-                        <input
-                          aria-label="Quantity"
+                          aria-label={`Quantity for ${item.description}`}
                           type="number"
                           min="0"
                           step="0.01"
                           value={item.quantity}
                           onChange={(event) => onEdit(item.id, { quantity: Number(event.target.value) })}
                         />
-                        <div className="money-input compact-money-input">
-                          <span>$</span>
-                          <input
-                            aria-label="Unit price"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={item.unitPrice}
-                            onChange={(event) => onEdit(item.id, { unitPrice: Number(event.target.value) })}
-                          />
-                        </div>
-                        <div className="segmented-control tier-move-segments" aria-label="Move item to option">
-                          {tierOptions.map((option) => (
-                            <button
-                              key={option}
-                              type="button"
-                              className={item.tier === option ? "active" : ""}
-                              onClick={() => onEdit(item.id, { tier: option as Tier })}
-                            >
-                              {tierLabels[option]}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <div>
-                        <strong>{item.description}</strong>
-                        <small>{item.quantity} × {money(item.unitPrice)}</small>
-                      </div>
-                    )}
-                    <div className="line-item-actions">
-                      <span className="line-item-amount">{money(item.quantity * item.unitPrice)}</span>
-                      {editable && onDelete ? <button type="button" className="mini-button" onClick={() => onDelete(item.id)}>Remove</button> : null}
+                      </label>
+                      <label>
+                        <span>Unit price</span>
+                        <input
+                          aria-label={`Unit price for ${item.description}`}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.unitPrice}
+                          onChange={(event) => onEdit(item.id, { unitPrice: Number(event.target.value) })}
+                        />
+                      </label>
+                      <label>
+                        <span>Move to</span>
+                        <select
+                          aria-label={`Move ${item.description} to estimate option`}
+                          value={item.tier}
+                          onChange={(event) => moveItem(item, event.target.value as Tier)}
+                        >
+                          {tierOptions.map((option) => <option key={option} value={option}>{tierLabels[option]}</option>)}
+                        </select>
+                      </label>
+                      {onDelete ? (
+                        <button className={styles.deleteButton} type="button" onClick={() => onDelete(item.id)}>
+                          <Trash2 size={16} aria-hidden="true" />Remove line
+                        </button>
+                      ) : null}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {tierItems.length > 0 ? (
-              <div className="tier-totals">
-                <span>Subtotal <strong>{money(subtotal)}</strong></span>
-                <span>Tax <strong>{money(tax)}</strong></span>
-                <span>Total <strong>{money(total)}</strong></span>
-              </div>
-            ) : null}
+                  </details>
+                ) : null}
+              </article>
+            ))}
           </div>
-        );
-      })}
+        )}
+
+        {tierItems.length > 0 ? (
+          <div className={styles.totals}>
+            <span>Subtotal <strong>{money(subtotal)}</strong></span>
+            <span>Tax <strong>{money(tax)}</strong></span>
+            <span>Total <strong>{money(total)}</strong></span>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
+}
+
+function firstOptionWithWork(items: JobLineItem[]): Tier {
+  return tierOptions.find((tier) => items.some((item) => item.tier === tier)) ?? "good";
 }

@@ -14,8 +14,6 @@ import {
   allowedUserFromRow,
   allowedUserPatchToRow,
   allowedUserToRow,
-  callLogEventFromRow,
-  callLogFromRow,
   createEmptyAppState,
   customerFromRow,
   customerPatchToRow,
@@ -486,25 +484,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     function updateLineItem(id: string, input: Partial<JobLineItem>) {
-      const existingItem = state.jobLineItems.find((item) => item.id === id);
-      const nextLineItems = state.jobLineItems.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              ...input,
-              quantity: input.quantity === undefined ? item.quantity : Number(input.quantity),
-              unitPrice: input.unitPrice === undefined ? item.unitPrice : Number(input.unitPrice)
-            }
-          : item
-      );
-      const invoicePatch = existingItem ? invoiceTotalsPatchForJob(state.invoices, nextLineItems, existingItem.jobId) : undefined;
-
       setState((current) => ({
-        ...current,
-        jobLineItems: nextLineItems,
-        invoices: invoicePatch
-          ? current.invoices.map((invoice) => (invoice.id === invoicePatch.id ? { ...invoice, ...invoicePatch.patch } : invoice))
-          : current.invoices
+        ...applyLineItemUpdate(current, id, input)
       }));
       persistSupabase("line item update", async () => {
         const { error } = await supabase!.from("job_line_items").update(lineItemPatchToRow(input)).eq("id", id);
@@ -513,16 +494,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     function deleteLineItem(id: string) {
-      const existingItem = state.jobLineItems.find((item) => item.id === id);
-      const nextLineItems = state.jobLineItems.filter((item) => item.id !== id);
-      const invoicePatch = existingItem ? invoiceTotalsPatchForJob(state.invoices, nextLineItems, existingItem.jobId) : undefined;
-
       setState((current) => ({
-        ...current,
-        jobLineItems: nextLineItems,
-        invoices: invoicePatch
-          ? current.invoices.map((invoice) => (invoice.id === invoicePatch.id ? { ...invoice, ...invoicePatch.patch } : invoice))
-          : current.invoices
+        ...applyLineItemDelete(current, id)
       }));
       persistSupabase("line item delete", async () => {
         const { error } = await supabase!.from("job_line_items").delete().eq("id", id);
@@ -739,9 +712,7 @@ async function loadSupabaseState(supabase: SupabaseClient, signal: AbortSignal):
     photosResult,
     partsResult,
     lineItemsResult,
-    invoicesResult,
-    callLogsResult,
-    callLogEventsResult
+    invoicesResult
   ] = await Promise.all([
     supabase.from("allowed_users").select("*").order("display_name", { ascending: true }).abortSignal(signal).retry(false),
     supabase.from("customers").select("*").order("created_at", { ascending: false }).abortSignal(signal).retry(false),
@@ -749,9 +720,7 @@ async function loadSupabaseState(supabase: SupabaseClient, signal: AbortSignal):
     supabase.from("job_photos").select("*").order("uploaded_at", { ascending: false }).abortSignal(signal).retry(false),
     supabase.from("parts").select("*").order("name", { ascending: true }).abortSignal(signal).retry(false),
     supabase.from("job_line_items").select("*").order("sort_order", { ascending: true }).abortSignal(signal).retry(false),
-    supabase.from("invoices").select("*").order("created_at", { ascending: false }).abortSignal(signal).retry(false),
-    supabase.from("call_logs").select("*").order("started_at", { ascending: false }).limit(100).abortSignal(signal).retry(false),
-    supabase.from("call_log_events").select("*").order("received_at", { ascending: false }).limit(100).abortSignal(signal).retry(false)
+    supabase.from("invoices").select("*").order("created_at", { ascending: false }).abortSignal(signal).retry(false)
   ]);
 
   throwIfError("allowed_users", allowedUsersResult.error);
@@ -761,8 +730,6 @@ async function loadSupabaseState(supabase: SupabaseClient, signal: AbortSignal):
   throwIfError("parts", partsResult.error);
   throwIfError("job_line_items", lineItemsResult.error);
   throwIfError("invoices", invoicesResult.error);
-  throwIfError("call_logs", callLogsResult.error);
-  throwIfError("call_log_events", callLogEventsResult.error);
 
   const jobPhotos = await Promise.all((photosResult.data ?? []).map(async (row) => {
     throwIfAborted(signal);
@@ -782,8 +749,41 @@ async function loadSupabaseState(supabase: SupabaseClient, signal: AbortSignal):
     parts: (partsResult.data ?? []).map(partFromRow),
     jobLineItems: (lineItemsResult.data ?? []).map(lineItemFromRow),
     invoices: (invoicesResult.data ?? []).map(invoiceFromRow),
-    callLogs: (callLogsResult.data ?? []).map(callLogFromRow),
-    callLogEvents: (callLogEventsResult.data ?? []).map(callLogEventFromRow)
+    callLogs: [],
+    callLogEvents: []
+  };
+}
+
+function applyLineItemUpdate(state: AppState, id: string, input: Partial<JobLineItem>): AppState {
+  const existingItem = state.jobLineItems.find((item) => item.id === id);
+  if (!existingItem) return state;
+  const nextLineItems = state.jobLineItems.map((item) => item.id === id ? {
+    ...item,
+    ...input,
+    quantity: input.quantity === undefined ? item.quantity : Number(input.quantity),
+    unitPrice: input.unitPrice === undefined ? item.unitPrice : Number(input.unitPrice)
+  } : item);
+  const invoicePatch = invoiceTotalsPatchForJob(state.invoices, nextLineItems, existingItem.jobId);
+  return {
+    ...state,
+    jobLineItems: nextLineItems,
+    invoices: invoicePatch
+      ? state.invoices.map((invoice) => invoice.id === invoicePatch.id ? { ...invoice, ...invoicePatch.patch } : invoice)
+      : state.invoices
+  };
+}
+
+function applyLineItemDelete(state: AppState, id: string): AppState {
+  const existingItem = state.jobLineItems.find((item) => item.id === id);
+  if (!existingItem) return state;
+  const nextLineItems = state.jobLineItems.filter((item) => item.id !== id);
+  const invoicePatch = invoiceTotalsPatchForJob(state.invoices, nextLineItems, existingItem.jobId);
+  return {
+    ...state,
+    jobLineItems: nextLineItems,
+    invoices: invoicePatch
+      ? state.invoices.map((invoice) => invoice.id === invoicePatch.id ? { ...invoice, ...invoicePatch.patch } : invoice)
+      : state.invoices
   };
 }
 

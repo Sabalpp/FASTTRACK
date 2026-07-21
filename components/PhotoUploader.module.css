@@ -1,0 +1,242 @@
+.uploader {
+  min-width: 0;
+}
+
+.captureControl {
+  position: relative;
+  min-width: 0;
+}
+
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.captureButton {
+  display: flex;
+  gap: 13px;
+  align-items: center;
+  min-height: 76px;
+  padding: 14px 17px;
+  border: 1px solid #b9ced3;
+  border-radius: 14px;
+  color: #fff;
+  background: #153f4b;
+  box-shadow: 0 8px 20px rgba(21, 63, 75, 0.16);
+  cursor: pointer;
+  transition: background-color 140ms ease, box-shadow 140ms ease, transform 120ms ease;
+}
+
+.captureButton:hover {
+  background: #0f3039;
+  box-shadow: 0 10px 24px rgba(21, 63, 75, 0.2);
+  transform: translateY(-1px);
+}
+
+.fileInput:focus-visible + .captureButton {
+  outline: 3px solid rgba(21, 63, 75, 0.24);
+  outline-offset: 3px;
+}
+
+.captureButton > svg {
+  flex: 0 0 auto;
+}
+
+.captureButton span,
+.captureButton strong,
+.captureButton small {
+  display: block;
+  min-width: 0;
+}
+
+.captureButton strong {
+  font-size: 0.92rem;
+  font-weight: 760;
+}
+
+.captureButton small {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.selection {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.34fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #dfe6eb;
+  border-radius: 14px;
+  background: #f8fafb;
+}
+
+.previewWrap {
+  position: relative;
+  min-width: 0;
+}
+
+.preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 190px;
+  max-height: 280px;
+  border-radius: 11px;
+  background: #e9eef1;
+  object-fit: cover;
+}
+
+.removeSelection {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(24, 35, 45, 0.76);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.removeSelection:focus-visible,
+.kindControl button:focus-visible,
+.saveButton:focus-visible {
+  outline: 3px solid rgba(21, 63, 75, 0.22);
+  outline-offset: 2px;
+}
+
+.details {
+  display: grid;
+  gap: 13px;
+  align-content: start;
+  min-width: 0;
+}
+
+.kindControl {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.kindControl legend,
+.caption > span {
+  margin-bottom: 7px;
+  color: #596779;
+  font-size: 0.72rem;
+  font-weight: 720;
+}
+
+.kindControl > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #d5dde4;
+  border-radius: 10px;
+  background: #edf1f4;
+}
+
+.kindControl button {
+  min-width: 0;
+  min-height: 40px;
+  border: 0;
+  border-radius: 8px;
+  color: #657286;
+  background: transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 720;
+  text-transform: capitalize;
+  cursor: pointer;
+}
+
+.kindControl .kindActive {
+  color: #1f2b36;
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(22, 34, 45, 0.08);
+}
+
+.caption,
+.caption > span {
+  display: block;
+  min-width: 0;
+}
+
+.caption small {
+  color: #8a95a2;
+  font-weight: 620;
+}
+
+.caption input {
+  width: 100%;
+  min-height: 46px;
+}
+
+.saveButton {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  min-height: 46px;
+  padding: 10px 17px;
+  border: 1px solid #153f4b;
+  border-radius: 10px;
+  color: #fff;
+  background: #153f4b;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 740;
+  cursor: pointer;
+}
+
+.saveButton:hover {
+  background: #0f3039;
+}
+
+.privateNote {
+  margin: -4px 0 0;
+  color: #748091;
+  font-size: 0.7rem;
+}
+
+@media (max-width: 760px) {
+  .captureButton {
+    min-height: 72px;
+  }
+
+  .selection {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 11px;
+  }
+
+  .preview {
+    height: auto;
+    min-height: 0;
+    max-height: 340px;
+    aspect-ratio: 4 / 3;
+  }
+
+  .saveButton {
+    width: 100%;
+    min-height: 50px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .captureButton {
+    transition: none;
+  }
+}

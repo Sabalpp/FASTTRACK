@@ -288,7 +288,7 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  async function markSent() {
+  async function sendInvoicePdf() {
     setSendBusy(true);
     setMessage(undefined);
     setActionError(undefined);
@@ -299,9 +299,11 @@ export default function InvoiceDetailPage() {
         : await markProtectedInvoiceSent(invoiceRecord.id, email);
       if (demoMode) data.updateInvoice(invoiceRecord.id, next);
       replaceInvoice(next);
-      setMessage(`Sent record saved for ${email.trim()}. Email delivery is not active; this did not send an email.`);
+      setMessage(demoMode
+        ? `Demo mode: invoice email simulated for ${email.trim()}. No external email was sent.`
+        : `Invoice email accepted by the delivery provider for ${email.trim()}.`);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "The invoice could not be marked sent.");
+      setActionError(error instanceof Error ? error.message : "The invoice PDF could not be emailed. It remains unsent.");
     } finally {
       setSendBusy(false);
     }
@@ -408,7 +410,7 @@ export default function InvoiceDetailPage() {
         setPdfGenerationRequest((current) => current + 1);
         return;
       case "record_sent":
-        await markSent();
+        await sendInvoicePdf();
         return;
       case "open_payment":
         openPaymentEditor();
@@ -435,7 +437,7 @@ export default function InvoiceDetailPage() {
   const primaryLabel = primaryBusy
     ? reviewBusy ? "Saving invoice details..."
       : paymentBusy ? "Saving payment record..."
-        : sendBusy ? "Recording delivery..."
+        : sendBusy ? "Sending invoice PDF..."
           : "Generating signed PDF..."
     : primaryAction.label;
 
@@ -474,7 +476,7 @@ export default function InvoiceDetailPage() {
           <div className={styles.documentToolbar}>
             <div className={styles.documentToolbarTitle}>
               <strong>Customer document</strong>
-              <span>Live invoice and protected PDF</span>
+              <span>Preview, create, view, or download. Email is a separate action.</span>
             </div>
             <div className={styles.documentTabs} role="tablist" aria-label="Document views">
               <button
@@ -547,7 +549,7 @@ export default function InvoiceDetailPage() {
                     } else {
                       await refreshInvoice();
                     }
-                    setMessage("Signed PDF generated and saved.");
+                    setMessage("Signed PDF created and saved. It has not been emailed yet.");
                   }}
                 />
               </div>
@@ -592,7 +594,7 @@ export default function InvoiceDetailPage() {
                 <ProgressRow label="Chosen scope" state={reviewDirty ? "Unsaved changes" : selectedSaved ? "Saved" : "Not chosen"} complete={selectedSaved && !reviewDirty} />
                 <ProgressRow label="Customer approval" state={approval ? "Signed" : "Not signed"} complete={approvalSaved} />
                 <ProgressRow label="Final PDF" state={generated ? `Version ${invoice.pdfVersion}` : "Not generated"} complete={generated} />
-                <ProgressRow label="Delivery record" state={invoice.sentAt ? "Recorded" : "Not recorded"} complete={deliveryRecorded} />
+                <ProgressRow label="Invoice email" state={invoice.sentAt ? "Provider accepted" : "Not sent"} complete={deliveryRecorded} />
                 <ProgressRow label="Payment" state={humanizeState(invoice.paymentStatus)} complete={invoice.paymentStatus === "paid"} />
               </div>
             </section>
@@ -616,11 +618,14 @@ export default function InvoiceDetailPage() {
               {primaryAction.id === "record_sent" ? (
                 <div className={styles.deliveryEditor}>
                   <label className={styles.field}>
-                    <span>Customer email</span>
+                    <span>Email invoice to</span>
                     <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" disabled={!canEdit} />
                   </label>
-                  <p className={styles.truthNote}>Email delivery is not active. “Record as sent” saves delivery metadata only; share the PDF outside the app first.</p>
-                  {email.trim() && !customerEmailValid ? <p className={styles.errorNote}>Enter a valid customer email before recording delivery.</p> : null}
+                  <p className={styles.truthNote}>The signed PDF will be attached. The invoice stays unsent unless the email provider accepts it.</p>
+                  {email.trim() && !customerEmailValid ? <p className={styles.errorNote}>Enter a valid customer email before sending.</p> : null}
+                  <button className={styles.textButton} type="button" onClick={openPaymentEditor} disabled={!canEdit}>
+                    Payment already received? Record it without emailing first
+                  </button>
                 </div>
               ) : null}
 
@@ -668,7 +673,7 @@ export default function InvoiceDetailPage() {
                 )}
                 <span className={styles.primaryHint}>
                   {primaryAction.id === "record_sent" && !customerEmailValid
-                    ? "A valid customer email is required for the delivery record."
+                    ? "A valid customer email is required to send the PDF."
                     : "The primary action changes as this invoice advances."}
                 </span>
               </div>
@@ -769,8 +774,8 @@ export default function InvoiceDetailPage() {
                     <div className={styles.identityRow}>
                       <Mail size={18} aria-hidden="true" />
                       <div>
-                        <strong>{invoice.sentAt ? `Recorded for ${invoice.sentToEmail}` : "Delivery not recorded"}</strong>
-                        <span>{invoice.sentAt ? formatDateTime(invoice.sentAt) : "Email delivery is not active in this build."}</span>
+                        <strong>{invoice.sentAt ? `Email accepted for ${invoice.sentToEmail}` : "Invoice email not sent"}</strong>
+                        <span>{invoice.sentAt ? formatDateTime(invoice.sentAt) : "Generate the signed PDF, then send it from the main action."}</span>
                       </div>
                     </div>
                     <div className={styles.identityRow}>
@@ -786,13 +791,13 @@ export default function InvoiceDetailPage() {
                   {canEdit && invoice.sentAt ? (
                     <>
                       <label className={styles.field}>
-                        <span>Delivery record email</span>
+                        <span>Send invoice again to</span>
                         <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" />
                       </label>
-                      <p className={styles.truthNote}>Updating this record does not send an email.</p>
-                      <button className={styles.secondaryButton} type="button" onClick={() => void markSent()} disabled={!generated || !approval || !customerEmailValid || sendBusy}>
+                      <p className={styles.truthNote}>This sends the same signed PDF. The audit record updates only after provider acceptance.</p>
+                      <button className={styles.secondaryButton} type="button" onClick={() => void sendInvoicePdf()} disabled={!generated || !approval || !customerEmailValid || sendBusy}>
                         <Mail size={17} aria-hidden="true" />
-                        {sendBusy ? "Updating record..." : "Update delivery record"}
+                        {sendBusy ? "Sending invoice..." : "Email invoice PDF"}
                       </button>
                     </>
                   ) : null}

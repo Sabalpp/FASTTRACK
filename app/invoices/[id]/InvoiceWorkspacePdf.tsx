@@ -1,7 +1,7 @@
 "use client";
 
 import { pdf } from "@react-pdf/renderer";
-import { Download, FileCheck2, FileText, RefreshCw } from "lucide-react";
+import { Download, ExternalLink, FileCheck2, FileText, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { InvoicePdfDocument } from "@/components/InvoicePdfDocument";
 import { generateProtectedInvoicePdf, loadProtectedInvoicePdf } from "@/lib/invoices-client";
@@ -154,22 +154,37 @@ export function InvoiceWorkspacePdf({
           <h2 id="workspace-pdf-heading">Final invoice PDF</h2>
           <p>
             {invoice.pdfGeneratedAt
-              ? `Protected version ${invoice.pdfVersion} is saved.`
-              : "Generate the signed invoice when the customer approval is final."}
+              ? `Protected version ${invoice.pdfVersion} is saved. Creating a PDF does not email it.`
+              : "Create the signed document here. Emailing it is a separate next step."}
           </p>
         </div>
-        <a
-          className={styles.pdfDownload}
-          href={pdfUrl ?? "#"}
-          download={`${fileName || invoice.invoiceNumber}.pdf`}
-          aria-disabled={!pdfUrl}
-          onClick={(event) => {
-            if (!pdfUrl) event.preventDefault();
-          }}
-        >
-          <Download size={16} aria-hidden="true" />
-          Download PDF
-        </a>
+        <div className={styles.pdfActions}>
+          <a
+            className={styles.pdfDownload}
+            href={pdfUrl ?? "#"}
+            target="_blank"
+            rel="noreferrer"
+            aria-disabled={!pdfUrl}
+            onClick={(event) => {
+              if (!pdfUrl) event.preventDefault();
+            }}
+          >
+            <ExternalLink size={16} aria-hidden="true" />
+            Open PDF
+          </a>
+          <a
+            className={styles.pdfDownload}
+            href={pdfUrl ?? "#"}
+            download={`${fileName || invoice.invoiceNumber}.pdf`}
+            aria-disabled={!pdfUrl}
+            onClick={(event) => {
+              if (!pdfUrl) event.preventDefault();
+            }}
+          >
+            <Download size={16} aria-hidden="true" />
+            Download PDF
+          </a>
+        </div>
       </header>
 
       {!canGenerate ? (
@@ -200,7 +215,13 @@ export function InvoiceWorkspacePdf({
             <div>
               <FileText size={30} aria-hidden="true" />
               <strong>{generating ? "Generating signed PDF..." : loadingSaved ? "Loading saved PDF..." : "No final PDF preview yet"}</strong>
-              <span>{generating || loadingSaved ? "Please keep this workspace open." : "Use the primary action to generate the protected document."}</span>
+              <span>{generating || loadingSaved ? "Please keep this workspace open." : "Create the protected document, then open, download, or email it."}</span>
+              {!generating && !loadingSaved && canGenerate ? (
+                <button className={styles.primaryButton} type="button" onClick={() => void generatePdf()}>
+                  <FileCheck2 size={16} aria-hidden="true" />
+                  Generate signed PDF
+                </button>
+              ) : null}
             </div>
           </div>
         )}

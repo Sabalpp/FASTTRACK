@@ -1,0 +1,313 @@
+.workspace {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.optionTabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid #d7dfe6;
+  border-radius: 13px;
+  background: #edf1f4;
+}
+
+.optionTabs button {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  min-height: 74px;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #627083;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.optionTabs button > span,
+.optionTabs button > strong,
+.optionTabs button > small {
+  display: block;
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.optionTabs button > span {
+  font-size: 0.76rem;
+  font-weight: 780;
+}
+
+.optionTabs button > strong {
+  color: #344150;
+  font-size: 0.85rem;
+}
+
+.optionTabs button > small {
+  color: #7d8998;
+  font-size: 0.66rem;
+}
+
+.optionTabs button.optionActive {
+  border-color: #cbd9dd;
+  color: #153f4b;
+  background: #fff;
+  box-shadow: 0 5px 14px rgba(23, 35, 46, 0.08);
+}
+
+.optionTabs button:focus-visible,
+.editDetails summary:focus-visible,
+.deleteButton:focus-visible {
+  outline: 3px solid rgba(21, 63, 75, 0.2);
+  outline-offset: 2px;
+}
+
+.optionPanel {
+  overflow: hidden;
+  min-width: 0;
+  border: 1px solid #dfe5ea;
+  border-radius: 13px;
+  background: #fff;
+}
+
+.optionHeader {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 15px;
+  border-bottom: 1px solid #e6ebef;
+  background: #fafbfc;
+}
+
+.optionHeader span,
+.optionHeader h4 {
+  display: block;
+  margin: 0;
+}
+
+.optionHeader span {
+  color: #7a8695;
+  font-size: 0.62rem;
+  font-weight: 730;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.optionHeader h4 {
+  margin-top: 2px;
+  color: #293641;
+  font-size: 0.98rem;
+}
+
+.optionHeader > strong {
+  color: #1e2a35;
+  font-size: 1rem;
+}
+
+.itemList {
+  display: grid;
+  min-width: 0;
+}
+
+.item {
+  min-width: 0;
+  padding: 12px 15px;
+  border-bottom: 1px solid #e7ebef;
+}
+
+.itemMain {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.itemMain > div,
+.itemMain strong,
+.itemMain small {
+  display: block;
+  min-width: 0;
+}
+
+.itemMain strong {
+  color: #27333f;
+  font-size: 0.83rem;
+}
+
+.itemMain small {
+  margin-top: 3px;
+  color: #778394;
+  font-size: 0.69rem;
+}
+
+.descriptionInput {
+  width: 100%;
+  min-height: 39px !important;
+  padding: 7px 9px !important;
+  font-size: 0.8rem !important;
+}
+
+.editDetails {
+  margin-top: 7px;
+}
+
+.editDetails summary {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  min-height: 34px;
+  color: #627083;
+  font-size: 0.7rem;
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+}
+
+.editDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.editDetails summary svg {
+  transition: transform 140ms ease;
+}
+
+.editDetails[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.editControls {
+  display: grid;
+  grid-template-columns: minmax(84px, 0.6fr) minmax(110px, 0.8fr) minmax(120px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f5f7f8;
+}
+
+.editControls label,
+.editControls label > span {
+  display: block;
+  min-width: 0;
+}
+
+.editControls label > span {
+  margin-bottom: 5px;
+  color: #6d7989;
+  font-size: 0.64rem;
+  font-weight: 690;
+}
+
+.editControls input,
+.editControls select {
+  width: 100%;
+  min-height: 39px !important;
+  padding: 7px 8px !important;
+  font-size: 0.75rem !important;
+}
+
+.deleteButton {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  min-height: 39px;
+  padding: 7px 10px;
+  border: 1px solid #d9dee3;
+  border-radius: 8px;
+  color: #7a4b4b;
+  background: #fff;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 680;
+  cursor: pointer;
+}
+
+.totals {
+  display: grid;
+  gap: 6px;
+  padding: 13px 15px;
+  background: #fafbfc;
+}
+
+.totals span {
+  display: flex;
+  justify-content: space-between;
+  color: #5f6c7c;
+  font-size: 0.75rem;
+}
+
+.totals span:last-child {
+  padding-top: 6px;
+  border-top: 1px solid #dfe5e9;
+  color: #25313c;
+  font-size: 0.82rem;
+}
+
+.emptyOption {
+  display: grid;
+  gap: 3px;
+  padding: 20px 15px;
+}
+
+.emptyOption strong {
+  color: #455261;
+  font-size: 0.8rem;
+}
+
+.emptyOption span {
+  color: #7a8695;
+  font-size: 0.72rem;
+}
+
+@media (max-width: 700px) {
+  .optionTabs button {
+    min-height: 62px;
+    padding: 8px;
+    text-align: center;
+  }
+
+  .optionTabs button > strong {
+    font-size: 0.73rem;
+  }
+
+  .optionTabs button > small {
+    display: none;
+  }
+
+  .editControls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .deleteButton {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 430px) {
+  .optionTabs button > strong {
+    display: none;
+  }
+
+  .optionTabs button {
+    min-height: 48px;
+  }
+
+  .editControls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editDetails summary svg {
+    transition: none;
+  }
+}

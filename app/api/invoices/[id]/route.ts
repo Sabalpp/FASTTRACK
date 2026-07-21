@@ -1,6 +1,19 @@
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { assertSignatureDocumentCurrent, invoiceDocumentHash, loadInvoiceBundle } from "@/lib/invoice-server";
+import { branding } from "@/lib/branding";
+import {
+  buildInvoiceEmailMessage,
+  InvoiceDeliveryError,
+  sendInvoiceEmail
+} from "@/lib/invoice-delivery";
+import {
+  assertInvoicePdfIntegrity,
+  assertSignatureDocumentCurrent,
+  invoiceDocumentHash,
+  loadInvoiceBundle
+} from "@/lib/invoice-server";
 import { selectedTotal } from "@/lib/invoice";
+import { money } from "@/lib/money";
 import { HttpError, requireOwner, requireServerActor, routeErrorResponse } from "@/lib/server-auth";
 import { invoiceFromRow, type InvoiceRow } from "@/lib/supabase-mappers";
 import type { InvoiceOptionLabel, InvoicePaymentStatus, Tier } from "@/lib/types";
@@ -79,7 +92,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       };
     } else if (action === "send") {
       const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+      const requestId = typeof body.requestId === "string" ? body.requestId.trim().toLowerCase() : "";
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Enter a valid customer email.");
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)) {
+        throw new HttpError(400, "A valid invoice email request ID is required.");
+      }
       if (bundle.invoice.approvalStatus !== "signed") throw new HttpError(409, "Save the customer approval signature before sending.");
       if (!bundle.invoice.pdfStoragePath || !bundle.invoice.pdfGeneratedAt) throw new HttpError(409, "Generate the signed PDF before sending.");
 
@@ -108,6 +125,42 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
 
       requiredSignedPdfPath = bundle.invoice.pdfStoragePath;
+      const { data: savedPdf, error: savedPdfError } = await actor.supabase.storage
+        .from("invoices")
+        .download(requiredSignedPdfPath);
+      if (savedPdfError || !savedPdf) {
+        throw new HttpError(409, "The saved invoice PDF is unavailable. Generate it again before emailing.");
+      }
+      const pdfBytes = new Uint8Array(await savedPdf.arrayBuffer());
+      assertInvoicePdfIntegrity(bundle.invoice, pdfBytes);
+      const message = buildInvoiceEmailMessage({
+        customerName: bundle.customer.name,
+        invoiceNumber: bundle.invoice.invoiceNumber,
+        balanceLabel: money(Math.max(0, selectedTotal(bundle.invoice) - bundle.invoice.amountPaid)),
+        businessName: branding.businessName,
+        businessPhone: branding.phone,
+        businessEmail: branding.email
+      });
+      const recipientHash = createHash("sha256").update(email).digest("hex").slice(0, 24);
+      const pdfRevision = bundle.invoice.pdfSha256 ?? createHash("sha256").update(pdfBytes).digest("hex");
+      try {
+        await sendInvoiceEmail({
+          to: email,
+          ...message,
+          idempotencyKey: `invoice/${id}/${pdfRevision}/${recipientHash}/${requestId}`,
+          filename: `${bundle.invoice.invoiceNumber}-${bundle.customer.name}.pdf`,
+          pdfBytes
+        });
+      } catch (error) {
+        if (error instanceof InvoiceDeliveryError) {
+          const configurationHint = error.code === "not_configured"
+            ? " Add RESEND_API_KEY and INVOICE_FROM_EMAIL in Vercel, then redeploy."
+            : "";
+          throw new HttpError(error.retryable || error.code === "not_configured" ? 503 : 502, `${error.message}${configurationHint}`);
+        }
+        throw error;
+      }
+
       patch = {
         sent_to_email: email,
         sent_at: new Date().toISOString(),

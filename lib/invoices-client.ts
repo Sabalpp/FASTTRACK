@@ -40,11 +40,15 @@ export async function saveProtectedInvoicePayment(invoiceId: string, input: {
   return result.invoice;
 }
 
-export async function markProtectedInvoiceSent(invoiceId: string, email: string) {
+export async function markProtectedInvoiceSent(
+  invoiceId: string,
+  email: string,
+  requestId = crypto.randomUUID()
+) {
   const result = await protectedJson<{ invoice: Invoice }>(`/api/invoices/${invoiceId}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action: "send", email })
+    body: JSON.stringify({ action: "send", email, requestId })
   });
   return result.invoice;
 }

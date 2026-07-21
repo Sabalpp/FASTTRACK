@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Users
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -105,7 +106,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {!isLogin ? (
         <header className="app-header ft5-header">
           <Link className="ft5-brand" href="/dashboard" aria-label={`${branding.businessName} home`}>
-            <span className="ft5-brand-mark" aria-hidden="true">FT</span>
+            <span className="ft5-brand-mark" aria-hidden="true">
+              <Image src={branding.logoPath} alt="" width={44} height={34} priority />
+            </span>
             <span className="ft5-brand-copy">
               <strong>Fast Track</strong>
               <small>Field service</small>

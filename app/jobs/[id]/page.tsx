@@ -4,14 +4,17 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  CalendarClock,
   Check,
   ChevronRight,
   CircleUserRound,
   FileText,
+  Mail,
   MapPin,
+  MessageSquare,
   PenLine,
+  Phone,
   Save,
+  Images,
   UserRound
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -21,7 +24,6 @@ import { canScheduleJobs, canSeeMoney, canSeePhotos, canViewJob } from "@/lib/ac
 import { dateInputValue, formatDateTime } from "@/lib/date";
 import { money } from "@/lib/money";
 import { formatPhone } from "@/lib/phone";
-import { ContactActions } from "@/components/ContactActions";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { LineItemForm } from "@/components/LineItemForm";
 import { PhotoUploader } from "@/components/PhotoUploader";
@@ -483,23 +485,20 @@ export default function JobDetailPage() {
             <span>Service job</span>
             <StatusPill tone={status === "complete" ? "good" : status === "cancelled" ? "bad" : "info"}>{status.replace("_", " ")}</StatusPill>
           </div>
-          <h1>{customer?.name ?? "Unknown customer"}</h1>
-          <p>{jobDescription || job.description}</p>
+          <h1>{jobDescription || job.description}</h1>
+          <p>For {customer?.name ?? "unknown customer"}</p>
         </div>
         {invoice ? <Link href={`/invoices/${invoice.id}`} className={styles.headerLink}><FileText size={17} aria-hidden="true" />Open invoice</Link> : null}
 
         <div className={styles.assignmentStrip}>
           <div className={styles.assignmentItem}>
-            <span className={styles.metaIcon}><UserRound size={18} aria-hidden="true" /></span>
             <span><small>Assigned technician</small><strong>{tech?.displayName ?? "Unassigned"}</strong><em>{tech ? roleLabel(tech.role) : "Needs assignment"}</em></span>
           </div>
           <div className={styles.assignmentItem}>
-            <span className={styles.metaIcon}><CalendarClock size={18} aria-hidden="true" /></span>
             <span><small>Customer window</small><strong>{formatServiceWindow(scheduledAtIso ?? job.scheduledAt, arrivalWindowEndAtIso ?? job.arrivalWindowEndAt)}</strong><em>{job.arrivedAt ? `Arrived ${formatDateTime(job.arrivedAt)}` : "Arrival not recorded"}</em></span>
           </div>
           <div className={styles.assignmentItem}>
-            <span className={styles.metaIcon}><MapPin size={18} aria-hidden="true" /></span>
-            <span><small>Service address</small><strong>{serviceAddress || job.serviceAddress}</strong><em>{customer ? formatPhone(customer.phone) : "No customer phone"}</em></span>
+            <span><small>Service address</small><strong>{serviceAddress || job.serviceAddress}</strong></span>
           </div>
         </div>
       </header>
@@ -535,19 +534,22 @@ export default function JobDetailPage() {
 
         {activeStage === "overview" ? (
           <div className={styles.stageBody}>
-            <div className={styles.customerGrid}>
-              <div className={styles.customerCard}>
-                <span className={styles.customerAvatar}><CircleUserRound size={23} aria-hidden="true" /></span>
-                <div><small>Customer</small><strong>{customer?.name ?? "Unknown customer"}</strong><span>{customer?.email ?? "No email on file"}</span></div>
-                {customer ? <ContactActions customer={customer} subject={jobDescription || job.description} /> : null}
+            <section className={styles.customerCard} aria-label="Customer contact information">
+              <span className={styles.customerAvatar}><CircleUserRound size={23} aria-hidden="true" /></span>
+              <div className={styles.customerIdentity}>
+                <small>Customer</small>
+                <strong>{customer?.name ?? "Unknown customer"}</strong>
+                <span>{customer ? `${formatPhone(customer.phone)}${customer.email ? ` · ${customer.email}` : ""}` : "No contact information on file"}</span>
               </div>
-              <div className={styles.timelineCard}>
-                <div><small>Arrival window</small><strong>{formatServiceWindow(scheduledAtIso ?? job.scheduledAt, arrivalWindowEndAtIso ?? job.arrivalWindowEndAt)}</strong></div>
-                <div><small>Arrival</small><strong>{job.arrivedAt ? formatDateTime(job.arrivedAt) : "Not recorded"}</strong></div>
-                <div><small>Created</small><strong>{formatDateTime(job.createdAt)}</strong></div>
-                {job.completedAt ? <div><small>Completed</small><strong>{formatDateTime(job.completedAt)}</strong></div> : null}
-              </div>
-            </div>
+              {customer ? (
+                <div className={styles.customerActions} aria-label={`Contact ${customer.name}`}>
+                  <a href={`tel:${customer.phoneDigits || customer.phone}`}><Phone size={17} aria-hidden="true" /><span>Call</span></a>
+                  <a href={`sms:${customer.phoneDigits || customer.phone}`}><MessageSquare size={17} aria-hidden="true" /><span>Text</span></a>
+                  {customer.email ? <a href={`mailto:${customer.email}?subject=${encodeURIComponent(jobDescription || job.description)}`}><Mail size={17} aria-hidden="true" /><span>Email</span></a> : null}
+                  <a href={mapsHref(serviceAddress || job.serviceAddress)} target="_blank" rel="noreferrer"><MapPin size={17} aria-hidden="true" /><span>Map</span></a>
+                </div>
+              ) : null}
+            </section>
 
             <div className={styles.editSection}>
               <div className={styles.subhead}><div><h3>Job and dispatch</h3><p>Keep the customer-facing service details and assignment accurate.</p></div></div>
@@ -607,8 +609,16 @@ export default function JobDetailPage() {
           canSeePhotos(currentUser.role) ? (
             <div className={styles.stageBody}>
               <PhotoUploader jobId={job.id} uploadedBy={currentUser.id} />
-              {photos.length === 0 ? <EmptyState title="No photos yet" description="Add before, after, serial number, or job-proof photos from the iPad camera." /> : (
-                <div className={styles.photoGrid}>{photos.map((photo) => <article key={photo.id} className={styles.photoCard}>{photo.storagePath.startsWith("data:") || photo.storagePath.startsWith("http") ? <img src={photo.storagePath} alt={photo.caption ?? photo.kind} /> : <div className={styles.photoPlaceholder}>Private photo</div>}<div><strong>{photo.kind}</strong><span>{photo.caption ?? photo.storagePath}</span></div></article>)}</div>
+              {photos.length === 0 ? (
+                <div className={styles.photoEmpty}>
+                  <Images size={20} aria-hidden="true" />
+                  <span><strong>No job photos yet</strong><small>The first saved photo will appear here.</small></span>
+                </div>
+              ) : (
+                <section className={styles.photoGallery} aria-label="Saved job photos">
+                  <div className={styles.photoGalleryHeader}><strong>Saved photos</strong><span>{photos.length}</span></div>
+                  <div className={styles.photoGrid}>{photos.map((photo) => <article key={photo.id} className={styles.photoCard}>{photo.storagePath.startsWith("data:") || photo.storagePath.startsWith("http") ? <img src={photo.storagePath} alt={photo.caption ?? photo.kind} /> : <div className={styles.photoPlaceholder}>Private photo</div>}<div><strong>{photo.kind}</strong><span>{photo.caption ?? photo.storagePath}</span></div></article>)}</div>
+                </section>
               )}
             </div>
           ) : <ProtectedStage />
@@ -737,6 +747,10 @@ function localDateTimeIso(value: string): string | undefined {
   if (!value) return undefined;
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
+}
+
+function mapsHref(address: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 }
 
 function shouldPollConfirmationStatus(

@@ -72,7 +72,6 @@ export default function CustomerDetailPage() {
     );
   }
 
-  const callHistory = data.callLogs.filter((call) => call.customerId === customer.id);
   const editable = canEditCustomers(currentUser.role);
   const customerId = customer.id;
   const phoneChanged = normalizePhone(draft.phone) !== customer.phoneDigits;
@@ -113,18 +112,17 @@ export default function CustomerDetailPage() {
         description={`${formatPhone(customer.phone)} · ${customer.email ?? "No email"}`}
         action={canScheduleJobs(currentUser.role) ? <ButtonLink href={`/jobs/new?customerId=${customer.id}`}>Schedule service</ButtonLink> : undefined}
       />
-      <TwoColumn>
-        <Card>
-          <div className="section-head">
-            <div>
-              <p className="eyebrow">Contact</p>
-              <h2>{customer.name}</h2>
-            </div>
-            {editable ? <Button onClick={saveCustomer} disabled={saveBusy}>{saveBusy ? "Saving..." : saved ? "Saved" : "Save"}</Button> : null}
+      <Card className="customer-profile-card">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">Customer information</p>
+            <h2>Contact and service address</h2>
           </div>
-          <ContactActions customer={customer} subject={`Service for ${customer.name}`} />
-          {editable ? (
-            <div className="stack editable-panel">
+          {editable ? <Button onClick={saveCustomer} disabled={saveBusy}>{saveBusy ? "Saving..." : saved ? "Saved" : "Save"}</Button> : null}
+        </div>
+        <ContactActions customer={customer} subject={`Service for ${customer.name}`} />
+        {editable ? (
+          <div className="stack editable-panel">
               <TwoColumn>
                 <Field label="Name"><input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} /></Field>
                 <Field label="Phone"><input inputMode="tel" value={draft.phone} onChange={(event) => {
@@ -141,8 +139,9 @@ export default function CustomerDetailPage() {
               <Field label="Email"><input value={draft.email} onChange={(event) => updateDraft("email", event.target.value)} /></Field>
               <div className="notification-preferences-panel">
                 <div>
-                  <p className="eyebrow">Service updates</p>
-                  <h3>Customer confirmations</h3>
+                  <p className="eyebrow">Appointment updates</p>
+                  <h3>How should we contact this customer?</h3>
+                  <p className="muted">Choose only the channels the customer has approved.</p>
                 </div>
                 <label className="preference-check">
                   <input
@@ -150,7 +149,7 @@ export default function CustomerDetailPage() {
                     checked={draft.emailNotificationsEnabled}
                     onChange={(event) => updateDraft("emailNotificationsEnabled", event.target.checked)}
                   />
-                  <span><strong>Email appointment updates</strong><small>{draft.email ? `Send to ${draft.email}` : "Add an email address to use this channel."}</small></span>
+                  <span><strong>Email updates</strong><small>{draft.email ? draft.email : "Add an email address to enable this channel."}</small></span>
                 </label>
                 <label className="preference-check">
                   <input
@@ -168,14 +167,14 @@ export default function CustomerDetailPage() {
                     }}
                   />
                   <span>
-                    <strong>Customer expressly consented to appointment texts</strong>
+                    <strong>Customer agrees to automated appointment texts</strong>
                     <small>{phoneChanged
                       ? "Save the new phone number first. SMS consent resets whenever the number changes."
-                      : "Check only after the customer agrees to automated Fast Track confirmations and schedule changes at this number. Message frequency varies; message and data rates may apply. Reply STOP to opt out."}</small>
+                      : "Fast Track may send confirmations and schedule updates. Message frequency varies; message and data rates may apply. Reply STOP to opt out or HELP for help."}</small>
                   </span>
                 </label>
-                <p className="muted">
-                  SMS status: {draft.smsConsentStatus.replace("_", " ")}
+                <p className="customer-consent-status">
+                  Text consent: {draft.smsConsentStatus.replace("_", " ")}
                   {draft.smsConsentAt ? ` · recorded ${formatDateTime(draft.smsConsentAt)}` : " · no consent recorded"}
                 </p>
               </div>
@@ -204,34 +203,17 @@ export default function CustomerDetailPage() {
               <Field label="Zip"><input value={draft.zip} onChange={(event) => updateDraft("zip", event.target.value)} /></Field>
               <Field label="Notes"><textarea value={draft.notes} onChange={(event) => updateDraft("notes", event.target.value)} /></Field>
               {saveError ? <p className="field-error" role="alert">{saveError}</p> : null}
-            </div>
-          ) : (
-            <p className="muted">{customer.notes || "No notes yet."}</p>
-          )}
-        </Card>
-        <Card>
-          <p className="eyebrow">Calls</p>
-          <h2>History</h2>
-          {callHistory.length === 0 ? (
-            <p className="muted">No calls yet.</p>
-          ) : (
-            <div className="stack">
-              {callHistory.map((call) => (
-                <div key={call.id} className="call-card">
-                  <strong>{call.summary ?? "Call summary pending"}</strong>
-                  <span>{formatDateTime(call.startedAt)} · {call.durationSeconds}s</span>
-                  <small>{call.transcript}</small>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </TwoColumn>
+          </div>
+        ) : (
+          <p className="muted">{customer.notes || "No notes yet."}</p>
+        )}
+      </Card>
 
       <Card>
         <div className="section-head">
           <div>
-            <h2>History</h2>
+            <p className="eyebrow">Service history</p>
+            <h2>Jobs for this customer</h2>
           </div>
           {canScheduleJobs(currentUser.role) ? <Link href={`/jobs/new?customerId=${customer.id}`} className="text-link">Schedule service</Link> : null}
         </div>

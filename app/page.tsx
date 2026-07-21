@@ -1,12 +1,14 @@
 "use client";
 
-import { BriefcaseBusiness, FileText, LockKeyhole, Users } from "lucide-react";
+import { BriefcaseBusiness, FileText, Users } from "lucide-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { roleLabels, roleOptions } from "@/lib/data-store";
 import { Button } from "@/components/ui";
 import { BackgroundPaperShaders } from "@/components/ui/background-paper-shaders";
+import { branding } from "@/lib/branding";
 import type { Role } from "@/lib/types";
 
 const roleIconMap: Record<Role, typeof Users> = {
@@ -45,8 +47,14 @@ export default function LoginPage() {
       <BackgroundPaperShaders />
       <div className="auth-layout">
         <section className="auth-card">
-          <div className="auth-mark" aria-hidden="true">
-            <LockKeyhole size={22} />
+          <div className="auth-logo">
+            <Image
+              src={branding.logoPath}
+              alt={branding.businessName}
+              width={88}
+              height={69}
+              priority
+            />
           </div>
           <div className="auth-card-copy">
             <h1>Sign in</h1>

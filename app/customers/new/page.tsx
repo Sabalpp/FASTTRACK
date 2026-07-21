@@ -98,9 +98,9 @@ function NewCustomerClient() {
           <Field label="Email"><input type="email" value={form.email} onChange={(event) => update("email", event.target.value)} /></Field>
           <div className="notification-preferences-panel">
             <div>
-              <p className="eyebrow">Service updates</p>
-              <h2>Confirmation preferences</h2>
-              <p className="muted">Appointment confirmations include the exact arrival window and service policy.</p>
+              <p className="eyebrow">Appointment updates</p>
+              <h2>How should we contact this customer?</h2>
+              <p className="muted">Choose only the channels the customer has approved.</p>
             </div>
             <label className="preference-check">
               <input
@@ -108,7 +108,7 @@ function NewCustomerClient() {
                 checked={emailNotificationsEnabled}
                 onChange={(event) => setEmailNotificationsEnabled(event.target.checked)}
               />
-              <span><strong>Email appointment updates</strong><small>Uses the customer email above when available.</small></span>
+              <span><strong>Email updates</strong><small>Uses the customer email above when available.</small></span>
             </label>
             <label className="preference-check">
               <input
@@ -118,8 +118,8 @@ function NewCustomerClient() {
                 disabled={normalizePhone(form.phone).length !== 10}
               />
               <span>
-                <strong>Customer expressly consented to appointment texts</strong>
-                <small>Check only after the customer agrees to automated Fast Track confirmations and schedule changes at this number. Message frequency varies; message and data rates may apply. Reply STOP to opt out.</small>
+                <strong>Customer agrees to automated appointment texts</strong>
+                <small>Fast Track may send confirmations and schedule updates. Message frequency varies; message and data rates may apply. Reply STOP to opt out or HELP for help.</small>
               </span>
             </label>
           </div>
