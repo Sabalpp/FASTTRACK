@@ -17,7 +17,7 @@ describe("runtime demo mode", () => {
     expect(demoMode).toBe(true);
   });
 
-  it("never falls back to demo mode in a hosted build", async () => {
+  it("locks the temporary hosted acceptance release to demo mode", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "false");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
@@ -26,7 +26,7 @@ describe("runtime demo mode", () => {
 
     const { demoMode } = await import("@/lib/runtime");
 
-    expect(demoMode).toBe(false);
+    expect(demoMode).toBe(true);
   });
 
   it("keeps the missing-config fallback for local development", async () => {

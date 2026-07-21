@@ -183,7 +183,7 @@ notification outbox catch-up job declared in `vercel.json`.
 
 If the deployed app shows `Owner`, `Tech`, and `Desk` buttons, it is running in the temporary acceptance-test demo. A live operational deployment should show `Continue with Google`; check Vercel environment variables and redeploy the latest `main` branch before real use.
 
-Hosted builds allow the demo role picker only when `NEXT_PUBLIC_DEMO_MODE=true` is explicitly set at build time. Use that setting only for a temporary acceptance-test deployment: it swaps the browser UI to seeded localStorage data and simulated messaging. Set it back to `false` and redeploy before real operations. A hosted build never falls back to demo mode merely because Supabase variables are missing; it should show a Supabase configuration/auth error instead.
+Hosted builds allow the demo role picker when `NEXT_PUBLIC_DEMO_MODE=true` is explicitly set at build time. During the current owner acceptance pass, `lib/runtime.ts` also contains a clearly marked temporary hosted-demo lock so the Vercel release cannot accidentally touch live browser data even if the environment variable remains false. Remove that lock, set the variable back to `false`, and redeploy before Stripe or real operations. Outside an explicitly locked acceptance release, a hosted build must never fall back to demo mode merely because Supabase variables are missing.
 
 ## Production Smoke Test
 
