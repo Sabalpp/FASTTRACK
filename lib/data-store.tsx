@@ -8,6 +8,7 @@ import { demoState } from "@/lib/demo-data";
 import { buildInvoiceDraft, invoiceNumber, totalsForItems } from "@/lib/invoice";
 import { normalizePhone } from "@/lib/phone";
 import { demoMode } from "@/lib/runtime";
+import { defaultServiceWindowEndAt } from "@/lib/service-window";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import {
   allowedUserFromRow,
@@ -54,7 +55,7 @@ const WORKSPACE_LOAD_TIMEOUT_MS = 30_000;
 const SESSION_REFRESH_TIMEOUT_MS = 12_000;
 
 type NewCustomerInput = Omit<Customer, "id" | "phoneDigits" | "createdAt">;
-type NewJobInput = Omit<Job, "id" | "status" | "createdAt"> & { status?: JobStatus };
+type NewJobInput = Omit<Job, "id" | "status" | "createdAt" | "arrivedAt" | "completedAt"> & { status?: JobStatus };
 type NewPartInput = Omit<Part, "id" | "createdAt" | "active"> & { active?: boolean };
 type NewLineItemInput = Omit<JobLineItem, "id" | "sortOrder">;
 type NewPhotoInput = Omit<JobPhoto, "id" | "uploadedAt"> & { file?: File };
@@ -70,8 +71,9 @@ type AppDataContextValue = AppState & {
   searchCustomers: (query: string, visibleCustomers?: Customer[]) => Promise<Customer[]>;
   createCustomer: (input: NewCustomerInput) => Customer;
   updateCustomer: (id: string, input: Partial<Customer>) => void;
-  createJob: (input: NewJobInput) => Job;
-  updateJob: (id: string, input: Partial<Job>) => void;
+  createJob: (input: NewJobInput) => Promise<Job>;
+  updateJob: (id: string, input: Partial<Job>) => Promise<void>;
+  markJobArrived: (id: string) => Promise<void>;
   addPhoto: (input: NewPhotoInput) => JobPhoto;
   addLineItem: (input: NewLineItemInput) => JobLineItem;
   updateLineItem: (id: string, input: Partial<JobLineItem>) => void;
@@ -110,7 +112,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        setState(JSON.parse(raw) as AppState);
+        setState(normalizeDemoState(JSON.parse(raw) as AppState));
       }
     } catch (error) {
       console.warn("Could not load demo state from localStorage", error);
@@ -261,36 +263,112 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    function createJob(input: NewJobInput) {
+    async function createJob(input: NewJobInput) {
       const job: Job = {
         ...input,
         id: crypto.randomUUID(),
         status: input.status ?? "scheduled",
         createdAt: new Date().toISOString()
       };
-      setState((current) => ({ ...current, jobs: [job, ...current.jobs] }));
-      persistSupabase("job insert", async () => {
-        const { error } = await supabase!.from("jobs").insert(jobToRow(job));
-        if (error) throw error;
-      });
-      return job;
+
+      if (demoMode) {
+        setState((current) => ({ ...current, jobs: [job, ...current.jobs] }));
+        return job;
+      }
+
+      if (!supabase) throw new Error("Supabase credentials are not configured.");
+      const requestWorkspaceKey = activeWorkspaceKeyRef.current;
+      const { data, error } = await supabase
+        .from("jobs")
+        .insert(jobToRow(job))
+        .select("*")
+        .single();
+      if (error) {
+        if (activeWorkspaceKeyRef.current === requestWorkspaceKey) setLastError(error.message);
+        throw error;
+      }
+      if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) throw new Error("The signed-in account changed before the job was created.");
+      const persistedJob = jobFromRow(data);
+      setState((current) => ({ ...current, jobs: [persistedJob, ...current.jobs] }));
+      setLastError(undefined);
+      return persistedJob;
     }
 
-    function updateJob(id: string, input: Partial<Job>) {
+    async function updateJob(id: string, input: Partial<Job>) {
+      if (Object.keys(input).length === 0) return;
+      const existingJob = state.jobs.find((job) => job.id === id);
+      if (!existingJob) throw new Error("The job could not be found.");
       let patch = input;
+      if (input.status !== undefined) {
+        const completedAt = input.status === "complete"
+          ? existingJob.completedAt ?? new Date().toISOString()
+          : existingJob.status === "complete"
+            ? null
+            : existingJob.completedAt;
+        patch = { ...input, completedAt };
+      }
+
+      if (demoMode) {
+        setState((current) => ({
+          ...current,
+          jobs: current.jobs.map((job) => job.id === id ? { ...job, ...patch } : job)
+        }));
+        return;
+      }
+
+      if (!supabase) throw new Error("Supabase credentials are not configured.");
+      const requestWorkspaceKey = activeWorkspaceKeyRef.current;
+      const { data, error } = await supabase
+        .from("jobs")
+        .update(jobPatchToRow(patch))
+        .eq("id", id)
+        .select("*")
+        .maybeSingle();
+      if (error) {
+        if (activeWorkspaceKeyRef.current === requestWorkspaceKey) setLastError(error.message);
+        throw error;
+      }
+      if (!data) throw new Error("The job could not be updated. Refresh and confirm your access.");
+      if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) return;
+      const persistedJob = jobFromRow(data);
       setState((current) => ({
         ...current,
-        jobs: current.jobs.map((job) => {
-          if (job.id !== id) return job;
-          const completedAt = input.status === "complete" && job.status !== "complete" ? new Date().toISOString() : job.completedAt;
-          patch = { ...input, completedAt };
-          return { ...job, ...patch };
-        })
+        jobs: current.jobs.map((job) => job.id === id ? persistedJob : job)
       }));
-      persistSupabase("job update", async () => {
-        const { error } = await supabase!.from("jobs").update(jobPatchToRow(patch)).eq("id", id);
-        if (error) throw error;
-      });
+      setLastError(undefined);
+    }
+
+    async function markJobArrived(id: string) {
+      const existingJob = state.jobs.find((job) => job.id === id);
+      if (!existingJob || existingJob.arrivedAt || existingJob.status === "complete" || existingJob.status === "cancelled") return;
+
+      if (demoMode) {
+        const arrivedAt = new Date().toISOString();
+        setState((current) => ({
+          ...current,
+          jobs: current.jobs.map((job) => job.id === id ? { ...job, arrivedAt, status: "in_progress" } : job)
+        }));
+        return;
+      }
+
+      if (!supabase) throw new Error("Supabase credentials are not configured.");
+      const requestWorkspaceKey = activeWorkspaceKeyRef.current;
+      const { data, error } = await supabase
+        .rpc("mark_job_arrived", { p_job_id: id })
+        .maybeSingle();
+      if (error) {
+        if (activeWorkspaceKeyRef.current === requestWorkspaceKey) setLastError(error.message);
+        throw error;
+      }
+      if (!data) throw new Error("This job could not be started. Confirm that it is still assigned to you.");
+      if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) return;
+      const result = data as { recorded_arrived_at: string; job_status: JobStatus };
+      setState((current) => ({
+        ...current,
+        jobs: current.jobs.map((job) => job.id === id
+          ? { ...job, arrivedAt: result.recorded_arrived_at, status: result.job_status }
+          : job)
+      }));
     }
 
     function addPhoto(input: NewPhotoInput) {
@@ -544,6 +622,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       updateCustomer,
       createJob,
       updateJob,
+      markJobArrived,
       addPhoto,
       addLineItem,
       updateLineItem,
@@ -790,6 +869,16 @@ function mergeCustomers(state: AppState, customers: Customer[]) {
 
   if (!changed) return state;
   return { ...state, customers: Array.from(byId.values()) };
+}
+
+function normalizeDemoState(state: AppState): AppState {
+  return {
+    ...state,
+    jobs: (state.jobs ?? []).map((job) => ({
+      ...job,
+      arrivalWindowEndAt: job.arrivalWindowEndAt ?? defaultServiceWindowEndAt(job.scheduledAt) ?? job.scheduledAt
+    }))
+  };
 }
 
 function safeStorageName(fileName: string) {

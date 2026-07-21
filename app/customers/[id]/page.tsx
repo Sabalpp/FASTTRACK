@@ -8,14 +8,18 @@ import { useAppData } from "@/lib/data-store";
 import { canEditCustomers, canScheduleJobs, canViewCustomer, canViewJob } from "@/lib/access";
 import { formatDateTime } from "@/lib/date";
 import { formatPhone } from "@/lib/phone";
+import { formatServiceWindow } from "@/lib/service-window";
+import { useCurrentTime } from "@/lib/use-current-time";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { ContactActions } from "@/components/ContactActions";
+import { ServiceWindowBadge } from "@/components/ServiceWindowBadge";
 import { Button, ButtonLink, Card, EmptyState, Field, PageHeader, StatusPill, TwoColumn } from "@/components/ui";
 
 export default function CustomerDetailPage() {
   const params = useParams<{ id: string }>();
   const data = useAppData();
   const { currentUser } = useAuth();
+  const now = useCurrentTime();
   const customer = data.customers.find((candidate) => candidate.id === params.id);
   const [saved, setSaved] = useState(false);
   const [draft, setDraft] = useState(() => ({
@@ -167,10 +171,13 @@ export default function CustomerDetailPage() {
                   <span>{job.serviceAddress}</span>
                 </div>
                 <div className="record-meta">
-                  <span>{formatDateTime(job.scheduledAt)}</span>
+                  <span>{formatServiceWindow(job.scheduledAt, job.arrivalWindowEndAt)}</span>
                 </div>
                 <div className="record-side">
-                  <StatusPill tone={job.status === "complete" ? "good" : "info"}>{job.status.replace("_", " ")}</StatusPill>
+                  <div className="window-status-stack">
+                    <ServiceWindowBadge job={job} now={now} />
+                    <StatusPill tone={job.status === "complete" ? "good" : "info"}>{job.status.replace("_", " ")}</StatusPill>
+                  </div>
                 </div>
               </Link>
             ))}

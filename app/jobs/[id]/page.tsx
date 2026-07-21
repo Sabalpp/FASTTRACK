@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { tierOptions, useAppData } from "@/lib/data-store";
 import { canScheduleJobs, canSeeMoney, canSeePhotos, canViewJob } from "@/lib/access";
@@ -13,10 +13,18 @@ import { ContactActions } from "@/components/ContactActions";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { LineItemForm } from "@/components/LineItemForm";
 import { PhotoUploader } from "@/components/PhotoUploader";
+import { ServiceWindowBadge } from "@/components/ServiceWindowBadge";
 import { TierColumns } from "@/components/TierColumns";
 import { Button, ButtonLink, Card, EmptyState, Field, PageHeader, StatusPill, TwoColumn } from "@/components/ui";
 import { WorkflowRail } from "@/components/WorkflowRail";
-import type { JobStatus } from "@/lib/types";
+import {
+  defaultServiceWindowEndAt,
+  findTechnicianWindowConflicts,
+  formatServiceWindow,
+  isValidServiceWindow
+} from "@/lib/service-window";
+import { useCurrentTime } from "@/lib/use-current-time";
+import type { Job, JobStatus } from "@/lib/types";
 
 export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
@@ -25,12 +33,50 @@ export default function JobDetailPage() {
   const data = useAppData();
   const job = data.jobs.find((candidate) => candidate.id === params.id);
   const [saved, setSaved] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | undefined>();
   const [notes, setNotes] = useState(job?.notes ?? "");
   const [status, setStatus] = useState<JobStatus>(job?.status ?? "scheduled");
   const [assignedTechId, setAssignedTechId] = useState(job?.assignedTechId ?? "");
   const [jobDescription, setJobDescription] = useState(job?.description ?? "");
   const [serviceAddress, setServiceAddress] = useState(job?.serviceAddress ?? "");
   const [scheduledAt, setScheduledAt] = useState(dateInputValue(job?.scheduledAt));
+  const [arrivalWindowEndAt, setArrivalWindowEndAt] = useState(dateInputValue(job?.arrivalWindowEndAt ?? defaultServiceWindowEndAt(job?.scheduledAt)));
+  const [conflictConfirmed, setConflictConfirmed] = useState(false);
+  const [arrivalBusy, setArrivalBusy] = useState(false);
+  const [arrivalError, setArrivalError] = useState<string | undefined>();
+  const now = useCurrentTime();
+  const scheduledAtIso = localDateTimeIso(scheduledAt);
+  const arrivalWindowEndAtIso = localDateTimeIso(arrivalWindowEndAt);
+  const validWindow = isValidServiceWindow(scheduledAtIso, arrivalWindowEndAtIso);
+  const dispatchChanged = Boolean(job && (
+    (assignedTechId || null) !== (job.assignedTechId ?? null)
+    || (scheduledAtIso && scheduledAtIso !== job.scheduledAt)
+    || (arrivalWindowEndAtIso && arrivalWindowEndAtIso !== job.arrivalWindowEndAt)
+  ));
+  const conflicts = useMemo(
+    () => job && !job.arrivedAt && dispatchChanged && status !== "complete" && status !== "cancelled" ? findTechnicianWindowConflicts(data.jobs, {
+      assignedTechId: assignedTechId || undefined,
+      scheduledAt: scheduledAtIso,
+      arrivalWindowEndAt: arrivalWindowEndAtIso,
+      excludeJobId: job.id
+    }) : [],
+    [arrivalWindowEndAtIso, assignedTechId, data.jobs, dispatchChanged, job, scheduledAtIso, status]
+  );
+
+  useEffect(() => {
+    if (!job) return;
+    setNotes(job.notes);
+    setStatus(job.status);
+    setAssignedTechId(job.assignedTechId ?? "");
+    setJobDescription(job.description);
+    setServiceAddress(job.serviceAddress);
+    setScheduledAt(dateInputValue(job.scheduledAt));
+    setArrivalWindowEndAt(dateInputValue(job.arrivalWindowEndAt ?? defaultServiceWindowEndAt(job.scheduledAt)));
+    setConflictConfirmed(false);
+    setArrivalError(undefined);
+    setSaveError(undefined);
+  }, [job?.id]);
 
   if (!job || !canViewJob(currentUser, job)) {
     return (
@@ -41,6 +87,8 @@ export default function JobDetailPage() {
   }
 
   const jobRecord = job;
+  const canEditSchedule = canScheduleJobs(currentUser.role);
+  const canEditDispatch = canEditSchedule && !job.arrivedAt;
   const customer = data.customers.find((candidate) => candidate.id === job.customerId);
   const tech = data.allowedUsers.find((candidate) => candidate.id === job.assignedTechId);
   const activeTechs = data.allowedUsers.filter((user) => user.active && user.role === "tech");
@@ -55,22 +103,51 @@ export default function JobDetailPage() {
   const previousJob = jobIndex > 0 ? jobNav[jobIndex - 1] : undefined;
   const nextJob = jobIndex >= 0 && jobIndex < jobNav.length - 1 ? jobNav[jobIndex + 1] : undefined;
 
-  function saveInspect() {
-    data.updateJob(jobId, {
-      notes,
-      status,
-      assignedTechId: assignedTechId || undefined,
-      description: jobDescription.trim() || jobRecord.description,
-      serviceAddress: serviceAddress.trim() || jobRecord.serviceAddress,
-      scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : jobRecord.scheduledAt
-    });
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 1400);
+  async function saveInspect() {
+    if (canEditDispatch && (!scheduledAtIso || !arrivalWindowEndAtIso || !validWindow)) return;
+    if (canEditDispatch && conflicts.length > 0 && !conflictConfirmed) return;
+    const patch: Partial<Job> = {};
+    const nextDescription = jobDescription.trim() || jobRecord.description;
+    const nextAddress = serviceAddress.trim() || jobRecord.serviceAddress;
+    if (nextDescription !== jobRecord.description) patch.description = nextDescription;
+    if (nextAddress !== jobRecord.serviceAddress) patch.serviceAddress = nextAddress;
+    if (currentUser.role !== "call_center" && notes !== jobRecord.notes) patch.notes = notes;
+    if (currentUser.role !== "call_center" && status !== jobRecord.status) patch.status = status;
+    if (canEditDispatch) {
+      const nextAssignedTechId = assignedTechId || null;
+      if (nextAssignedTechId !== (jobRecord.assignedTechId ?? null)) patch.assignedTechId = nextAssignedTechId;
+      if (scheduledAtIso && scheduledAtIso !== jobRecord.scheduledAt) patch.scheduledAt = scheduledAtIso;
+      if (arrivalWindowEndAtIso && arrivalWindowEndAtIso !== jobRecord.arrivalWindowEndAt) patch.arrivalWindowEndAt = arrivalWindowEndAtIso;
+    }
+    setSaveBusy(true);
+    setSaveError(undefined);
+    try {
+      await data.updateJob(jobId, patch);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 1400);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "The job could not be saved.");
+    } finally {
+      setSaveBusy(false);
+    }
   }
 
   function buildInvoice() {
     const draft = data.createOrUpdateInvoiceDraft(jobId, currentUser.id);
     router.push(`/invoices/${draft.id}`);
+  }
+
+  async function markArrived() {
+    setArrivalBusy(true);
+    setArrivalError(undefined);
+    try {
+      await data.markJobArrived(jobId);
+      setStatus("in_progress");
+    } catch (error) {
+      setArrivalError(error instanceof Error ? error.message : "The arrival could not be recorded.");
+    } finally {
+      setArrivalBusy(false);
+    }
   }
 
   const tierCounts = Object.fromEntries(tierOptions.map((tier) => [tier, items.filter((item) => item.tier === tier).length]));
@@ -96,11 +173,15 @@ export default function JobDetailPage() {
           <WorkflowRail active={invoice ? "Email" : items.length > 0 ? "Invoice" : photos.length > 0 ? "Charge" : "Case"} compact />
         </div>
         <div className="job-command-actions">
+          {!job.arrivedAt && status !== "complete" && status !== "cancelled" && currentUser.role !== "call_center" ? (
+            <Button onClick={markArrived} disabled={arrivalBusy || saveBusy}>{arrivalBusy ? "Recording arrival..." : "Arrived · Start job"}</Button>
+          ) : null}
           <div className="metric-pill"><strong>{photos.length}</strong><span>photos</span></div>
           <div className="metric-pill"><strong>{items.length}</strong><span>line items</span></div>
           {canSeeMoney(currentUser.role) ? <Button onClick={buildInvoice} disabled={items.length === 0}>{invoice ? "Rebuild draft" : "Build invoice"}</Button> : null}
         </div>
       </section>
+      {arrivalError ? <p className="field-error" role="alert">{arrivalError}</p> : null}
 
       <Card>
         <div className="section-head">
@@ -108,7 +189,10 @@ export default function JobDetailPage() {
             <p className="eyebrow">Inspect</p>
             <h2>Basics</h2>
           </div>
-          <StatusPill tone={status === "complete" ? "good" : status === "cancelled" ? "bad" : "info"}>{status.replace("_", " ")}</StatusPill>
+          <div className="window-status-stack">
+            <ServiceWindowBadge job={job} now={now} />
+            <StatusPill tone={status === "complete" ? "good" : status === "cancelled" ? "bad" : "info"}>{status.replace("_", " ")}</StatusPill>
+          </div>
         </div>
         <TwoColumn>
           <div className="detail-block">
@@ -119,8 +203,10 @@ export default function JobDetailPage() {
             {customer ? <ContactActions customer={customer} subject={jobDescription || job.description} /> : null}
           </div>
           <div className="detail-block">
-            <strong>{formatDateTime(scheduledAt ? new Date(scheduledAt).toISOString() : job.scheduledAt)}</strong>
+            <strong>{formatServiceWindow(scheduledAtIso ?? job.scheduledAt, arrivalWindowEndAtIso ?? job.arrivalWindowEndAt)}</strong>
+            <span>Customer arrival window</span>
             <span>Assigned: {tech?.displayName ?? "Unassigned"}</span>
+            {job.arrivedAt ? <span>Arrived: {formatDateTime(job.arrivedAt)}</span> : null}
             <span>Created: {formatDateTime(job.createdAt)}</span>
             {job.completedAt ? <span>Completed: {formatDateTime(job.completedAt)}</span> : null}
           </div>
@@ -140,10 +226,47 @@ export default function JobDetailPage() {
               onSelect={(address) => setServiceAddress(address.formatted)}
             />
           </Field>
-          <Field label="Scheduled time">
-            <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} />
+          <Field label="Window starts">
+            <input
+              type="datetime-local"
+              value={scheduledAt}
+              onChange={(event) => {
+                const nextStart = event.target.value;
+                setScheduledAt(nextStart);
+                setArrivalWindowEndAt(dateInputValue(defaultServiceWindowEndAt(localDateTimeIso(nextStart))));
+                setConflictConfirmed(false);
+              }}
+              disabled={!canEditDispatch}
+            />
+          </Field>
+          <Field label="Window ends">
+            <input
+              type="datetime-local"
+              value={arrivalWindowEndAt}
+              onChange={(event) => {
+                setArrivalWindowEndAt(event.target.value);
+                setConflictConfirmed(false);
+              }}
+              disabled={!canEditDispatch}
+            />
           </Field>
         </div>
+        {job.arrivedAt && canEditSchedule ? (
+          <p className="muted">The arrival window and assignment are locked because the technician arrival has been recorded.</p>
+        ) : null}
+        {canEditDispatch && scheduledAt && arrivalWindowEndAt && !validWindow ? (
+          <p className="field-error" role="alert">The arrival window must end after it starts.</p>
+        ) : null}
+        {canEditDispatch && conflicts.length > 0 ? (
+          <div className="window-conflict" role="alert">
+            <strong>Technician schedule overlap</strong>
+            <span>{conflicts.length === 1 ? "Another assigned job overlaps this arrival window." : `${conflicts.length} assigned jobs overlap this arrival window.`}</span>
+            <label>
+              <input type="checkbox" checked={conflictConfirmed} onChange={(event) => setConflictConfirmed(event.target.checked)} />
+              Save this overlap anyway
+            </label>
+          </div>
+        ) : null}
         <TwoColumn>
           <Field label="Status">
             <div className="segmented-control">
@@ -153,7 +276,11 @@ export default function JobDetailPage() {
                   type="button"
                   className={status === option ? "active" : ""}
                   onClick={() => setStatus(option)}
-                  disabled={currentUser.role === "call_center"}
+                  disabled={
+                    currentUser.role === "call_center"
+                    || ((option === "in_progress" || option === "complete") && !job.arrivedAt)
+                    || (option === "scheduled" && Boolean(job.arrivedAt))
+                  }
                 >
                   {option.replace("_", " ")}
                 </button>
@@ -162,7 +289,10 @@ export default function JobDetailPage() {
           </Field>
           {canScheduleJobs(currentUser.role) ? (
             <Field label="Assigned tech">
-              <select value={assignedTechId} onChange={(event) => setAssignedTechId(event.target.value)}>
+              <select value={assignedTechId} disabled={!canEditDispatch} onChange={(event) => {
+                setAssignedTechId(event.target.value);
+                setConflictConfirmed(false);
+              }}>
                 <option value="">Unassigned</option>
                 {activeTechs.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.displayName}</option>)}
               </select>
@@ -178,7 +308,13 @@ export default function JobDetailPage() {
             <textarea value={notes} onChange={(event) => setNotes(event.target.value)} disabled={currentUser.role === "call_center"} />
           </Field>
         ) : null}
-        <Button onClick={saveInspect}>{saved ? "Saved" : "Save job"}</Button>
+        {saveError ? <p className="field-error" role="alert">{saveError}</p> : null}
+        <Button
+          onClick={saveInspect}
+          disabled={saveBusy || (canEditDispatch && !validWindow) || (canEditDispatch && conflicts.length > 0 && !conflictConfirmed)}
+        >
+          {saveBusy ? "Saving..." : saved ? "Saved" : "Save job"}
+        </Button>
       </Card>
 
       {canSeePhotos(currentUser.role) ? (
@@ -262,4 +398,10 @@ export default function JobDetailPage() {
       )}
     </main>
   );
+}
+
+function localDateTimeIso(value: string): string | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
 }

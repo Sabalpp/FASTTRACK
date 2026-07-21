@@ -5,15 +5,18 @@ import { useMemo } from "react";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
 import { canScheduleJobs, canViewJob } from "@/lib/access";
-import { formatDateTime } from "@/lib/date";
+import { compareJobsForDispatch, formatServiceWindow } from "@/lib/service-window";
+import { useCurrentTime } from "@/lib/use-current-time";
+import { ServiceWindowBadge } from "@/components/ServiceWindowBadge";
 import { ButtonLink, EmptyState, PageHeader, StatusPill } from "@/components/ui";
 
 export default function JobsPage() {
   const { currentUser } = useAuth();
   const data = useAppData();
+  const now = useCurrentTime();
   const visibleJobs = useMemo(
-    () => data.jobs.filter((job) => canViewJob(currentUser, job)),
-    [currentUser, data.jobs]
+    () => data.jobs.filter((job) => canViewJob(currentUser, job)).sort((a, b) => compareJobsForDispatch(a, b, now)),
+    [currentUser, data.jobs, now]
   );
 
   return (
@@ -41,11 +44,14 @@ export default function JobsPage() {
                   <span>{job.description}</span>
                 </div>
                 <div className="record-meta">
-                  <span>{formatDateTime(job.scheduledAt)}</span>
-                  <small>{tech?.displayName ?? "Unassigned"}</small>
+                  <span>{formatServiceWindow(job.scheduledAt, job.arrivalWindowEndAt)}</span>
+                  <small>{tech ? `Assigned to ${tech.displayName}` : "Unassigned"}</small>
                 </div>
                 <div className="record-side">
-                  <StatusPill tone={job.status === "complete" ? "good" : job.status === "cancelled" ? "bad" : "info"}>{job.status.replace("_", " ")}</StatusPill>
+                  <div className="window-status-stack">
+                    <ServiceWindowBadge job={job} now={now} />
+                    <StatusPill tone={job.status === "complete" ? "good" : job.status === "cancelled" ? "bad" : "info"}>{job.status.replace("_", " ")}</StatusPill>
+                  </div>
                 </div>
               </Link>
             );

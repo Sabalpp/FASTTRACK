@@ -69,6 +69,7 @@ GitHub/migration path:
 - Use that migration file as the canonical source for future schema history.
 - If Supabase dashboard still shows `Last migration: No migrations`, it means the SQL has not been applied through the dashboard/CLI yet. The GitHub connection alone does not create tables.
 - After the first manual SQL Editor run, future schema changes should be added as new timestamped files under `supabase/migrations/`.
+- Arrival-window rollout is deliberately phased: apply `20260720235000_add_job_arrival_windows.sql`, deploy the matching app commit, then apply `20260720235500_protect_job_arrival_workflow.sql`. The first migration adds the columns and server-authoritative arrival RPC; the second locks protected fields after the new role-aware UI is live.
 
 Current project URL supplied during setup:
 

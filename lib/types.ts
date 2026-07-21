@@ -35,15 +35,17 @@ export type Customer = {
 export type Job = {
   id: string;
   customerId: string;
-  assignedTechId?: string;
+  assignedTechId?: string | null;
   status: JobStatus;
   scheduledAt: string;
+  arrivalWindowEndAt: string;
+  arrivedAt?: string;
   serviceAddress: string;
   description: string;
   notes: string;
   originatingCallId?: string;
   createdAt: string;
-  completedAt?: string;
+  completedAt?: string | null;
 };
 
 export type JobPhoto = {

@@ -7,6 +7,7 @@ import { useAppData } from "@/lib/data-store";
 import { canScheduleJobs, canViewCustomer } from "@/lib/access";
 import { canEditCustomers } from "@/lib/access";
 import { formatPhone } from "@/lib/phone";
+import { compareJobsForDispatch } from "@/lib/service-window";
 import { ButtonLink, EmptyState, PageHeader } from "@/components/ui";
 import type { Customer } from "@/lib/types";
 
@@ -68,7 +69,9 @@ export default function CustomersPage() {
             ) : (
               results.map((customer) => {
                 const customerJobs = data.jobs.filter((job) => job.customerId === customer.id);
-                const nextJob = customerJobs.sort((a, b) => Date.parse(b.scheduledAt) - Date.parse(a.scheduledAt))[0];
+                const nextJob = customerJobs
+                  .filter((job) => job.status !== "complete" && job.status !== "cancelled")
+                  .sort(compareJobsForDispatch)[0];
                 return (
                   <Link key={customer.id} href={`/customers/${customer.id}`} className="record-row customer-row">
                     <div className="record-main">

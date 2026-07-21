@@ -65,7 +65,8 @@ Use the role switcher in the header to test access differences.
 
 1. Create or open the Supabase project.
 2. Open the Supabase SQL editor.
-3. Run `supabase/schema.sql`.
+3. For a new empty project, run `supabase/schema.sql`. For an existing project, run only the unapplied timestamped files in `supabase/migrations/` in order; do not rerun the bootstrap schema as an upgrade script.
+   Follow `docs/PRODUCTION_SUPABASE_RUNBOOK.md` when a migration is split around an application deployment.
 4. Copy `.env.example` to `.env.local`.
 5. Set demo mode false and fill in:
 

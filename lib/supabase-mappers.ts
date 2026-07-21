@@ -1,4 +1,5 @@
 import { normalizePhone } from "@/lib/phone";
+import { defaultServiceWindowEndAt } from "@/lib/service-window";
 import type {
   AllowedUser,
   AppState,
@@ -45,6 +46,8 @@ type JobRow = {
   assigned_tech_id: string | null;
   status: Job["status"];
   scheduled_at: string;
+  arrival_window_end_at?: string | null;
+  arrived_at?: string | null;
   service_address: string;
   description: string;
   notes: string | null;
@@ -240,6 +243,8 @@ export function jobFromRow(row: JobRow): Job {
     assignedTechId: row.assigned_tech_id ?? undefined,
     status: row.status,
     scheduledAt: row.scheduled_at,
+    arrivalWindowEndAt: row.arrival_window_end_at ?? defaultServiceWindowEndAt(row.scheduled_at) ?? row.scheduled_at,
+    arrivedAt: row.arrived_at ?? undefined,
     serviceAddress: row.service_address,
     description: row.description,
     notes: row.notes ?? "",
@@ -256,6 +261,7 @@ export function jobToRow(job: Job): DbPayload {
     assigned_tech_id: job.assignedTechId || null,
     status: job.status,
     scheduled_at: job.scheduledAt,
+    arrival_window_end_at: job.arrivalWindowEndAt,
     service_address: job.serviceAddress,
     description: job.description,
     notes: job.notes,
@@ -271,11 +277,12 @@ export function jobPatchToRow(input: Partial<Job>): DbPayload {
   if (input.assignedTechId !== undefined) row.assigned_tech_id = input.assignedTechId || null;
   if (input.status !== undefined) row.status = input.status;
   if (input.scheduledAt !== undefined) row.scheduled_at = input.scheduledAt;
+  if (input.arrivalWindowEndAt !== undefined) row.arrival_window_end_at = input.arrivalWindowEndAt;
   if (input.serviceAddress !== undefined) row.service_address = input.serviceAddress;
   if (input.description !== undefined) row.description = input.description;
   if (input.notes !== undefined) row.notes = input.notes;
   if (input.originatingCallId !== undefined) row.originating_call_id = input.originatingCallId || null;
-  if (input.completedAt !== undefined) row.completed_at = input.completedAt || null;
+  if (Object.prototype.hasOwnProperty.call(input, "completedAt")) row.completed_at = input.completedAt || null;
   return row;
 }
 

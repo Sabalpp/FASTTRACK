@@ -78,12 +78,15 @@ create table if not exists public.jobs (
   assigned_tech_id uuid references public.allowed_users(id) on delete set null,
   status text not null default 'scheduled' check (status in ('scheduled', 'in_progress', 'complete', 'cancelled')),
   scheduled_at timestamptz not null,
+  arrival_window_end_at timestamptz,
+  arrived_at timestamptz,
   service_address text not null,
   description text not null,
   notes text not null default '',
   originating_call_id uuid references public.call_logs(id) on delete set null,
   created_at timestamptz not null default now(),
-  completed_at timestamptz
+  completed_at timestamptz,
+  constraint jobs_arrival_window_order check (arrival_window_end_at is null or arrival_window_end_at > scheduled_at)
 );
 
 create table if not exists public.job_photos (
@@ -155,6 +158,9 @@ create index if not exists customers_search_text_gin on public.customers using g
 create index if not exists customers_phone_digits_idx on public.customers(phone_digits);
 create index if not exists jobs_customer_id_idx on public.jobs(customer_id);
 create index if not exists jobs_assigned_tech_id_idx on public.jobs(assigned_tech_id);
+create index if not exists jobs_dispatch_window_idx
+  on public.jobs(assigned_tech_id, status, scheduled_at, arrival_window_end_at)
+  where assigned_tech_id is not null and status in ('scheduled', 'in_progress');
 create index if not exists job_photos_job_id_idx on public.job_photos(job_id);
 create index if not exists job_line_items_job_id_idx on public.job_line_items(job_id);
 create index if not exists invoices_job_id_idx on public.invoices(job_id);
@@ -254,6 +260,113 @@ stable
 as $$
   select public.current_allowed_role() = 'tech';
 $$;
+
+create or replace function public.protect_job_workflow_fields()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actor_role text := public.current_allowed_role();
+  service_role_request boolean := coalesce(auth.role(), '') = 'service_role';
+begin
+  if tg_op = 'INSERT' then
+    if not service_role_request and new.status <> 'scheduled' then
+      raise exception 'New jobs must begin in scheduled status.' using errcode = '42501';
+    end if;
+    if not service_role_request and new.arrived_at is not null then
+      raise exception 'Arrival must be recorded after the job is created.' using errcode = '42501';
+    end if;
+    return new;
+  end if;
+
+  if actor_role = 'tech' and (
+    new.customer_id is distinct from old.customer_id
+    or new.assigned_tech_id is distinct from old.assigned_tech_id
+    or new.scheduled_at is distinct from old.scheduled_at
+    or new.arrival_window_end_at is distinct from old.arrival_window_end_at
+    or new.originating_call_id is distinct from old.originating_call_id
+  ) then
+    raise exception 'Technicians cannot change dispatch or arrival-window fields.' using errcode = '42501';
+  end if;
+
+  if actor_role = 'call_center' and new.status is distinct from old.status then
+    raise exception 'Call center users cannot change job workflow status.' using errcode = '42501';
+  end if;
+
+  if old.arrived_at is not null and not service_role_request then
+    if new.assigned_tech_id is distinct from old.assigned_tech_id
+      or new.scheduled_at is distinct from old.scheduled_at
+      or new.arrival_window_end_at is distinct from old.arrival_window_end_at then
+      raise exception 'Dispatch fields are locked after arrival is recorded.' using errcode = '42501';
+    end if;
+    if new.status = 'scheduled' then
+      raise exception 'An arrived job cannot return to scheduled status.' using errcode = '42501';
+    end if;
+  end if;
+
+  if old.arrived_at is null
+    and old.arrival_window_end_at is not null
+    and new.scheduled_at is distinct from old.scheduled_at
+    and new.arrival_window_end_at is not distinct from old.arrival_window_end_at then
+    new.arrival_window_end_at := old.arrival_window_end_at + (new.scheduled_at - old.scheduled_at);
+  end if;
+
+  if old.arrived_at is null and old.status is distinct from 'complete' and new.status = 'complete' then
+    raise exception 'Record the technician arrival before completing the job.' using errcode = '42501';
+  end if;
+
+  if new.arrived_at is distinct from old.arrived_at then
+    if old.arrived_at is not null then
+      raise exception 'The recorded arrival time is immutable.' using errcode = '42501';
+    end if;
+    if not (coalesce(actor_role in ('owner', 'tech'), false) or service_role_request) then
+      raise exception 'This role cannot record a technician arrival.' using errcode = '42501';
+    end if;
+    if new.status not in ('scheduled', 'in_progress') then
+      raise exception 'Only active jobs can record an arrival.' using errcode = '42501';
+    end if;
+    new.arrived_at := statement_timestamp();
+    new.status := 'in_progress';
+  elsif old.arrived_at is null and old.status is distinct from 'in_progress' and new.status = 'in_progress' then
+    if not (coalesce(actor_role in ('owner', 'tech'), false) or service_role_request) then
+      raise exception 'This role cannot start a job.' using errcode = '42501';
+    end if;
+    new.arrived_at := statement_timestamp();
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists protect_job_workflow_fields on public.jobs;
+create trigger protect_job_workflow_fields
+before insert or update on public.jobs
+for each row execute function public.protect_job_workflow_fields();
+
+create or replace function public.mark_job_arrived(p_job_id uuid)
+returns table(recorded_arrived_at timestamptz, job_status text)
+language sql
+volatile
+security invoker
+set search_path = public
+as $$
+  update public.jobs
+  set
+    arrived_at = coalesce(public.jobs.arrived_at, statement_timestamp()),
+    status = case when public.jobs.status = 'scheduled' then 'in_progress' else public.jobs.status end
+  where public.jobs.id = p_job_id
+    and public.jobs.status in ('scheduled', 'in_progress')
+    and (
+      public.is_owner()
+      or public.jobs.assigned_tech_id = public.current_allowed_user_id()
+    )
+  returning public.jobs.arrived_at, public.jobs.status;
+$$;
+
+revoke all on function public.mark_job_arrived(uuid) from public;
+grant execute on function public.mark_job_arrived(uuid) to authenticated;
 
 alter table public.allowed_users enable row level security;
 alter table public.customers enable row level security;

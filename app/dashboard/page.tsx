@@ -7,6 +7,8 @@ import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
 import { canScheduleJobs, canViewInvoice, canViewJob } from "@/lib/access";
 import { formatDateTime } from "@/lib/date";
+import { compareJobsForDispatch, formatServiceWindow, getServiceWindowTiming } from "@/lib/service-window";
+import { useCurrentTime } from "@/lib/use-current-time";
 import { ButtonLink, Card, EmptyState, StatusPill } from "@/components/ui";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { OperationsChart } from "@/components/OperationsChart";
@@ -29,6 +31,7 @@ const roleActions = {
 export default function DashboardPage() {
   const { currentUser } = useAuth();
   const data = useAppData();
+  const now = useCurrentTime();
   const visibleJobs = useMemo(() => data.jobs.filter((job) => canViewJob(currentUser, job)), [currentUser, data.jobs]);
   const visibleInvoices = useMemo(
     () => data.invoices.filter((invoice) => canViewInvoice(currentUser, invoice, data.jobs)),
@@ -36,14 +39,18 @@ export default function DashboardPage() {
   );
   const draftInvoices = visibleInvoices.filter((invoice) => invoice.status === "draft");
   const invoiceQueue = visibleInvoices.slice(0, 5);
-  const completedJobs = visibleJobs.filter((job) => job.status === "complete").length;
-  const activeJobs = visibleJobs.filter((job) => job.status !== "complete" && job.status !== "cancelled");
+  const activeJobs = visibleJobs
+    .filter((job) => job.status !== "complete" && job.status !== "cancelled")
+    .sort((a, b) => compareJobsForDispatch(a, b, now));
+  const lateJobs = activeJobs.filter((job) => getServiceWindowTiming(job, now).tone === "bad").length;
+  const dueSoonJobs = activeJobs.filter((job) => getServiceWindowTiming(job, now).label === "Due soon").length;
   const dashboardTitle = currentUser.role === "owner" ? "Operations" : currentUser.role === "tech" ? "Today" : "Desk";
   const queueJobs = activeJobs.slice(0, 6);
   const workItems = [
     ...queueJobs.map((job) => {
       const customer = data.customers.find((candidate) => candidate.id === job.customerId);
       const tech = data.allowedUsers.find((candidate) => candidate.id === job.assignedTechId);
+      const arrivalTiming = getServiceWindowTiming(job, now);
       return {
         id: job.id,
         href: `/jobs/${job.id}`,
@@ -51,9 +58,9 @@ export default function DashboardPage() {
         title: customer?.name ?? "Unknown customer",
         detail: job.description,
         owner: tech?.displayName ?? "Unassigned",
-        date: formatDateTime(job.scheduledAt),
-        status: job.status.replace("_", " "),
-        tone: job.status === "complete" ? "good" as const : job.status === "cancelled" ? "bad" as const : "info" as const
+        date: formatServiceWindow(job.scheduledAt, job.arrivalWindowEndAt),
+        status: arrivalTiming.label,
+        tone: arrivalTiming.tone
       };
     }),
     ...invoiceQueue.map((invoice) => {
@@ -95,7 +102,7 @@ export default function DashboardPage() {
           <div>
             <p>Open jobs</p>
             <strong>{activeJobs.length}</strong>
-            <small>{completedJobs} completed</small>
+            <small>{lateJobs} late · {dueSoonJobs} due soon</small>
           </div>
         </Link>
         {currentUser.role !== "call_center" ? (
