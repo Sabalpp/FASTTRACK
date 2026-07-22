@@ -6,6 +6,7 @@ const routeHarness = vi.hoisted(() => ({
   loadInvoiceBundle: vi.fn(),
   assertInvoicePdfIntegrity: vi.fn(),
   assertInvoiceFieldWorkflow: vi.fn(),
+  validateInvoiceWorkAuthorization: vi.fn(),
   assertSignatureDocumentCurrent: vi.fn(),
   invoiceDocumentHash: vi.fn(),
   sendInvoiceEmail: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock("@/lib/invoice-server", async (importOriginal) => {
     loadInvoiceBundle: routeHarness.loadInvoiceBundle,
     assertInvoicePdfIntegrity: routeHarness.assertInvoicePdfIntegrity,
     assertInvoiceFieldWorkflow: routeHarness.assertInvoiceFieldWorkflow,
+    validateInvoiceWorkAuthorization: routeHarness.validateInvoiceWorkAuthorization,
     assertSignatureDocumentCurrent: routeHarness.assertSignatureDocumentCurrent,
     invoiceDocumentHash: routeHarness.invoiceDocumentHash
   };
@@ -43,7 +45,7 @@ vi.mock("@/lib/supabase-mappers", async (importOriginal) => {
   return { ...actual, invoiceFromRow: routeHarness.invoiceFromRow };
 });
 
-import { PATCH } from "@/app/api/invoices/[id]/route";
+import { GET, PATCH } from "@/app/api/invoices/[id]/route";
 import { InvoiceDeliveryError } from "@/lib/invoice-delivery";
 
 const INVOICE_ID = "11111111-1111-4111-8111-111111111111";
@@ -55,6 +57,7 @@ describe("invoice send API", () => {
     for (const mock of Object.values(routeHarness)) mock.mockReset();
     routeHarness.invoiceDocumentHash.mockReturnValue("document-hash");
     routeHarness.assertInvoiceFieldWorkflow.mockReturnValue({ authorizedTier: "better" });
+    routeHarness.validateInvoiceWorkAuthorization.mockReturnValue(undefined);
     routeHarness.loadInvoiceBundle.mockResolvedValue(invoiceBundle());
     routeHarness.invoiceFromRow.mockImplementation((row) => row);
   });
@@ -84,6 +87,32 @@ describe("invoice send API", () => {
       status: "sent"
     }));
     expect(routeHarness.sendInvoiceEmail.mock.invocationCallOrder[0]).toBeLessThan(database.update.mock.invocationCallOrder[0]);
+  });
+
+  it("loads an unsigned invoice draft without consulting signatures", async () => {
+    const database = createDatabase();
+    routeHarness.requireServerActor.mockResolvedValue(actor(database));
+
+    const response = await GET(new Request(`http://localhost/api/invoices/${INVOICE_ID}`) as never, context());
+
+    expect(response.status).toBe(200);
+    expect(routeHarness.assertInvoiceFieldWorkflow).not.toHaveBeenCalled();
+    expect(database.from).not.toHaveBeenCalled();
+  });
+
+  it("reviews an unsigned invoice while keeping final send gated", async () => {
+    const database = createDatabase();
+    routeHarness.requireServerActor.mockResolvedValue(actor(database));
+
+    const response = await PATCH(reviewRequest(), context());
+
+    expect(response.status).toBe(200);
+    expect(routeHarness.validateInvoiceWorkAuthorization).toHaveBeenCalledOnce();
+    expect(routeHarness.assertInvoiceFieldWorkflow).not.toHaveBeenCalled();
+    expect(database.update).toHaveBeenCalledWith(expect.objectContaining({
+      selected_tier: "good",
+      option_label: "approved_work"
+    }));
   });
 
   it("keeps the invoice unsent when the email provider rejects it", async () => {
@@ -123,6 +152,19 @@ function request(email: string) {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ action: "send", email, requestId: REQUEST_ID })
+  }) as never;
+}
+
+function reviewRequest() {
+  return new Request(`http://localhost/api/invoices/${INVOICE_ID}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      action: "review",
+      selectedTier: "good",
+      optionLabel: "approved_work",
+      notes: "Draft review before signatures"
+    })
   }) as never;
 }
 
@@ -222,6 +264,6 @@ function invoiceBundle() {
       email: "customer@example.com"
     },
     job: { id: "job-1" },
-    items: []
+    items: [{ id: "line-1", tier: "good" }]
   };
 }

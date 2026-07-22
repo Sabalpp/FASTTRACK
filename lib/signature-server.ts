@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import {
+  assertJobAuthorizationDocumentCurrent,
   assertJobCanAcceptAuthorization,
   assertJobCanAcceptCompletionSignature,
   assertWorkAuthorizationBindingCurrent,
@@ -252,17 +253,14 @@ async function resolveTarget(
     if (!selectedTier) throw new HttpError(400, "Choose the customer-approved estimate option before signing.");
     assertJobCanAcceptAuthorization(job);
     const [
-      { count: beforePhotoCount, error: photoError },
       { data: itemRows, error: itemError },
       { data: activeCompletion, error: completionError }
     ] = await Promise.all([
-      actor.supabase.from("job_photos").select("id", { count: "exact", head: true }).eq("job_id", job.id).eq("kind", "before"),
       actor.supabase.from("job_line_items").select("*").eq("job_id", job.id).order("sort_order", { ascending: true }),
       actor.supabase.from("invoice_signatures").select("id").eq("job_id", job.id).eq("purpose", "work_completion").eq("status", "active").maybeSingle()
     ]);
-    if (photoError || itemError || completionError) throw new HttpError(503, "The before photos and estimate could not be verified.");
+    if (itemError || completionError) throw new HttpError(503, "The estimate could not be verified.");
     if (activeCompletion) throw new HttpError(409, "Reject the customer completion signature before replacing work authorization.");
-    if (!beforePhotoCount) throw new HttpError(409, "Save at least one before photo before collecting work authorization.");
     const items = (itemRows ?? []).map((row) => lineItemFromRow(row as JobLineItemRow));
     if (!items.some((item) => item.tier === selectedTier)) {
       throw new HttpError(409, "The selected estimate option has no work items.");
@@ -299,9 +297,13 @@ async function resolveTarget(
     ?? readTier((authorization.audit_metadata as Record<string, unknown> | null)?.selectedTier);
   if (!authorizedTier) throw new HttpError(409, "The saved work authorization is missing its approved estimate option.");
   const items = (itemRows ?? []).map((row) => lineItemFromRow(row as JobLineItemRow));
-  if (authorization.document_sha256 !== jobAuthorizationDocumentHash(job, items, authorizedTier)) {
-    throw new HttpError(409, "The approved work changed after authorization. Reject it and ask the customer to sign again.");
-  }
+  assertJobAuthorizationDocumentCurrent(
+    authorization.document_sha256,
+    job,
+    items,
+    authorizedTier,
+    "The approved work changed after authorization. Reject it and ask the customer to sign again."
+  );
   const authorizationBinding = workAuthorizationBindingFromSignatureRow(authorization);
   assertWorkAuthorizationBindingCurrent(authorizationBinding, items, authorizedTier);
   return {

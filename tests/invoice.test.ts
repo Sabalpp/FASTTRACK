@@ -106,6 +106,18 @@ describe("invoice totals and persistence", () => {
     expect(refreshed.notes).toBe(existing.notes);
     expect(refreshed.totalBetter).toBe(132.5);
   });
+
+  it("defaults a new unsigned draft to the first populated tier", () => {
+    const draft = buildInvoiceDraft({
+      id: "new-id",
+      jobId: "job-id",
+      invoiceNumber: "INV-000124",
+      createdBy: "owner-1",
+      items: [line("best", 1, 300, 1), line("good", 1, 100, 2)]
+    });
+
+    expect(draft.selectedTier).toBe("good");
+  });
 });
 
 function line(tier: JobLineItem["tier"], quantity: number, unitPrice: number, sortOrder: number): JobLineItem {

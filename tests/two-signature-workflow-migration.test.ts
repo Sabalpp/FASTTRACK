@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const migration = read("../supabase/migrations/20260721220000_add_two_signature_workflow.sql");
+const relaxationMigration = read("../supabase/migrations/20260722090000_relax_authorization_and_invoice_drafts.sql");
 const canonicalSchema = read("../supabase/schema.sql");
 
 describe("two-signature field-service workflow database controls", () => {
@@ -13,26 +14,25 @@ describe("two-signature field-service workflow database controls", () => {
     expect(migration).toMatch(/unique index[\s\S]+work_authorization/i);
   });
 
-  it("accepts authorization only after arrival, a before photo, and proposed work", () => {
+  it("accepts authorization before arrival or photos while still requiring proposed work", () => {
     const recordSignature = latestSection(
-      migration,
+      relaxationMigration,
       "create or replace function public.record_invoice_signature(",
-      "create or replace function public.reject_invoice_signature("
+      "revoke all on function public.record_invoice_signature("
     );
 
     expect(recordSignature).toContain("p_purpose = 'work_authorization'");
-    expect(recordSignature).toContain("target_job.arrived_at is null");
-    expect(recordSignature).toContain("public.job_photos");
-    expect(recordSignature).toMatch(/kind\s*=\s*'before'/);
+    expect(recordSignature).toContain("target_job.status in ('complete', 'cancelled')");
+    expect(recordSignature).not.toMatch(/kind\s*=\s*'before'/);
     expect(recordSignature).toContain("public.job_line_items");
     expect(recordSignature).toContain("p_selected_tier");
   });
 
   it("accepts completion acknowledgement only after authorization and an after photo", () => {
     const recordSignature = latestSection(
-      migration,
+      relaxationMigration,
       "create or replace function public.record_invoice_signature(",
-      "create or replace function public.reject_invoice_signature("
+      "revoke all on function public.record_invoice_signature("
     );
 
     expect(recordSignature).toContain("p_purpose = 'work_completion'");
@@ -58,7 +58,7 @@ describe("two-signature field-service workflow database controls", () => {
 
   it("prevents signed before/after evidence from being replaced or deleted", () => {
     const photoProtection = latestSection(
-      migration,
+      relaxationMigration,
       "create or replace function public.protect_signed_job_photos()",
       "create or replace function public.protect_work_authorization_signed_job_fields()"
     );
@@ -67,7 +67,10 @@ describe("two-signature field-service workflow database controls", () => {
     expect(photoProtection).toContain("purpose = 'work_authorization'");
     expect(photoProtection).toContain("old.kind = 'after'");
     expect(photoProtection).toContain("purpose = 'work_completion'");
-    expect(photoProtection).toContain("before insert or update or delete on public.job_photos");
+    expect(photoProtection).toContain("Before-work evidence cannot be added after work completion.");
+    expect(photoProtection).toMatch(/tg_op\s*=\s*'INSERT'\s+and new\.kind\s*=\s*'before'/);
+    expect(photoProtection).toMatch(/job\.status\s*=\s*'complete'/);
+    expect(migration).toContain("before insert or update or delete on public.job_photos");
     expect(photoProtection).toContain("case when tg_op = 'DELETE' then old else new end");
   });
 
@@ -85,19 +88,21 @@ describe("two-signature field-service workflow database controls", () => {
     expect(completion).toContain("for update");
   });
 
-  it("does not allow an invoice draft before the field workflow is complete", () => {
+  it("allows unsigned invoice drafts and defaults to the first populated tier", () => {
     const invoiceDraft = latestSection(
-      migration,
+      relaxationMigration,
       "create or replace function public.create_or_refresh_invoice_draft(",
       "create or replace function public.record_invoice_signature("
     );
 
-    expect(invoiceDraft).toMatch(/status\s*(?:<>|is distinct from)\s*'complete'/i);
-    expect(invoiceDraft).toMatch(/cannot|complete|completion/i);
+    expect(invoiceDraft).not.toMatch(/status\s*(?:<>|is distinct from)\s*'complete'/i);
+    expect(invoiceDraft).toContain("coalesce(authorized_tier, existing_tier, fallback_tier)");
+    expect(invoiceDraft).toMatch(/when 'standard' then 1[\s\S]+when 'good' then 2[\s\S]+when 'better' then 3[\s\S]+when 'best' then 4/);
   });
 
   it("keeps the canonical fresh-install schema synchronized", () => {
     expect(canonicalSchema).toContain(migration);
+    expect(canonicalSchema).toContain(relaxationMigration);
   });
 });
 

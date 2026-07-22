@@ -21,8 +21,14 @@ describe("Phase 5 invoice workspace", () => {
       paymentEditorOpen: false
     };
 
-    expect(resolveInvoiceWorkspaceAction({ ...base, fieldSignaturesReady: false }).id).toBe("return_to_job");
-    expect(resolveInvoiceWorkspaceAction({ ...base, selectedSaved: false }).id).toBe("return_to_job");
+    const unsignedDraft = resolveInvoiceWorkspaceAction({ ...base, fieldSignaturesReady: false });
+    expect(unsignedDraft.id).toBe("preview_draft_pdf");
+    expect(unsignedDraft.label).toBe("Preview draft PDF");
+    expect(unsignedDraft.helper).toContain("not saved, finalized, or emailed");
+
+    const conflictingDraft = resolveInvoiceWorkspaceAction({ ...base, selectedSaved: false });
+    expect(conflictingDraft.id).toBe("preview_draft_pdf");
+    expect(conflictingDraft.helper).toContain("cannot be finalized or emailed");
     expect(resolveInvoiceWorkspaceAction({ ...base, reviewDirty: true }).id).toBe("save_review");
     expect(resolveInvoiceWorkspaceAction(base).id).toBe("generate_pdf");
 

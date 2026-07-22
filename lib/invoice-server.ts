@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { branding } from "@/lib/branding";
+import { firstPopulatedTierForItems } from "@/lib/invoice";
 import { HttpError, assertOwnerOrAssignedTech, type ServerActor } from "@/lib/server-auth";
 import {
   customerFromRow,
@@ -71,6 +72,10 @@ export type InvoiceFieldWorkflow = {
   completionOverridden: boolean;
 };
 
+export type InvoiceWorkAuthorization = Pick<InvoiceFieldWorkflow, "authorizedTier" | "authorization"> & {
+  binding: WorkAuthorizationBinding;
+};
+
 export async function loadInvoiceBundle(actor: ServerActor, invoiceId: string): Promise<InvoiceBundle> {
   const { data: invoiceRow, error: invoiceError } = await actor.supabase
     .from("invoices")
@@ -96,11 +101,15 @@ export async function loadInvoiceBundle(actor: ServerActor, invoiceId: string): 
   if (customerError || !customerRow) throw new HttpError(503, "The invoice customer could not be loaded.");
   if (itemError) throw new HttpError(503, "The invoice line items could not be loaded.");
 
+  const items = (itemRows ?? []).map((row) => lineItemFromRow(row as JobLineItemRow));
+  const invoice = invoiceFromRow(invoiceRow as InvoiceRow);
+  invoice.selectedTier ??= firstPopulatedTierForItems(items);
+
   return {
-    invoice: invoiceFromRow(invoiceRow as InvoiceRow),
+    invoice,
     job: jobFromRow(jobRow as JobRow),
     customer: customerFromRow(customerRow as CustomerRow),
-    items: (itemRows ?? []).map((row) => lineItemFromRow(row as JobLineItemRow))
+    items
   };
 }
 
@@ -204,34 +213,22 @@ export function assertInvoiceFieldWorkflow(
   bundle: InvoiceBundle,
   signatureRows: InvoiceFieldSignatureRow[]
 ): InvoiceFieldWorkflow {
-  const authorization = signatureRows.find((signature) => (
-    signature.purpose === "work_authorization" && signature.status === "active"
-  ));
-  if (!authorization) {
-    throw new HttpError(409, "Customer work authorization is required before invoicing.");
+  const workAuthorization = validateInvoiceWorkAuthorization(bundle, signatureRows);
+  if (!workAuthorization) {
+    throw new HttpError(409, "Customer work authorization is required before finalizing this invoice.");
   }
 
-  const authorizedTier = authorization.selected_tier;
-  if (!isTier(authorizedTier)) {
-    throw new HttpError(409, "The customer work authorization is missing its approved estimate option. Collect it again.");
-  }
+  const { authorization, authorizedTier, binding: authorizationBinding } = workAuthorization;
   if (bundle.invoice.selectedTier !== authorizedTier) {
     throw new HttpError(409, "The invoice scope does not match the customer's authorized work. Refresh the invoice draft.");
   }
-  assertSignatureDocumentCurrent(
-    authorization.document_sha256,
-    jobAuthorizationDocumentHash(bundle.job, bundle.items, authorizedTier),
-    "The authorized work changed after the customer signed. Reopen the job and collect authorization again."
-  );
-  const authorizationBinding = workAuthorizationBindingFromSignatureRow(authorization);
-  assertWorkAuthorizationBindingCurrent(authorizationBinding, bundle.items, authorizedTier);
 
   const completion = signatureRows.find((signature) => (
     signature.purpose === "work_completion" && signature.status === "active"
   ));
   const completionOverridden = hasAuditedCompletionOverride(bundle.job);
   if (!completion && !completionOverridden) {
-    throw new HttpError(409, "Customer completion acknowledgment is required before invoicing.");
+    throw new HttpError(409, "Customer completion acknowledgment is required before finalizing this invoice.");
   }
   if (completion) {
     assertCompletionAuthorizationBinding(completion, authorizationBinding);
@@ -243,6 +240,36 @@ export function assertInvoiceFieldWorkflow(
   }
 
   return { authorizedTier, authorization, completion, completionOverridden };
+}
+
+/**
+ * Validate an authorization when one exists without making it a prerequisite
+ * for viewing or editing an invoice draft. Final PDF generation and delivery
+ * call assertInvoiceFieldWorkflow, which adds the completion requirement.
+ */
+export function validateInvoiceWorkAuthorization(
+  bundle: InvoiceBundle,
+  signatureRows: InvoiceFieldSignatureRow[]
+): InvoiceWorkAuthorization | undefined {
+  const authorization = signatureRows.find((signature) => (
+    signature.purpose === "work_authorization" && signature.status === "active"
+  ));
+  if (!authorization) return undefined;
+
+  const authorizedTier = authorization.selected_tier;
+  if (!isTier(authorizedTier)) {
+    throw new HttpError(409, "The customer work authorization is missing its approved estimate option. Collect it again.");
+  }
+  assertJobAuthorizationDocumentCurrent(
+    authorization.document_sha256,
+    bundle.job,
+    bundle.items,
+    authorizedTier,
+    "The authorized work changed after the customer signed. Reopen the job and collect authorization again."
+  );
+  const authorizationBinding = workAuthorizationBindingFromSignatureRow(authorization);
+  assertWorkAuthorizationBindingCurrent(authorizationBinding, bundle.items, authorizedTier);
+  return { authorizedTier, authorization, binding: authorizationBinding };
 }
 
 export function invoiceSignatureSnapshot(signatureRows: InvoiceFieldSignatureRow[]) {
@@ -311,6 +338,44 @@ export function jobAuthorizationDocumentHash(
   selectedTier: Tier,
   taxRate = branding.taxRate
 ) {
+  return jobAuthorizationDocumentHashWithArrival(job, items, selectedTier, taxRate, false);
+}
+
+/**
+ * Accept signatures created before arrival was removed from the authorization
+ * snapshot. New signatures never use this format, but existing audit records
+ * must remain verifiable after this rollout.
+ */
+export function legacyJobAuthorizationDocumentHash(
+  job: Job,
+  items: JobLineItem[],
+  selectedTier: Tier,
+  taxRate = branding.taxRate
+) {
+  return jobAuthorizationDocumentHashWithArrival(job, items, selectedTier, taxRate, true);
+}
+
+export function assertJobAuthorizationDocumentCurrent(
+  actualHash: string | null | undefined,
+  job: Job,
+  items: JobLineItem[],
+  selectedTier: Tier,
+  message: string
+) {
+  const canonicalHash = jobAuthorizationDocumentHash(job, items, selectedTier);
+  const legacyHash = legacyJobAuthorizationDocumentHash(job, items, selectedTier);
+  if (actualHash !== canonicalHash && actualHash !== legacyHash) {
+    throw new HttpError(409, message);
+  }
+}
+
+function jobAuthorizationDocumentHashWithArrival(
+  job: Job,
+  items: JobLineItem[],
+  selectedTier: Tier,
+  taxRate: number,
+  includeArrivedAt: boolean
+) {
   const selectedItems = items
     .filter((item) => item.tier === selectedTier)
     .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))
@@ -323,20 +388,22 @@ export function jobAuthorizationDocumentHash(
       sortOrder: item.sortOrder
     }));
 
+  const jobSnapshot: Record<string, string | null | undefined> = {
+    id: job.id,
+    customerId: job.customerId,
+    serviceAddress: job.serviceAddress,
+    description: job.description,
+    scheduledAt: job.scheduledAt,
+    arrivalWindowEndAt: job.arrivalWindowEndAt
+  };
+  if (includeArrivedAt) jobSnapshot.arrivedAt = job.arrivedAt ?? null;
+
   return sha256Json({
     version: 2,
     termsVersion: WORK_AUTHORIZATION_TERMS_VERSION,
     selectedTier,
     pricing: workAuthorizationPricing(items, selectedTier, taxRate),
-    job: {
-      id: job.id,
-      customerId: job.customerId,
-      serviceAddress: job.serviceAddress,
-      description: job.description,
-      scheduledAt: job.scheduledAt,
-      arrivalWindowEndAt: job.arrivalWindowEndAt,
-      arrivedAt: job.arrivedAt ?? null
-    },
+    job: jobSnapshot,
     selectedItems
   });
 }
@@ -430,8 +497,8 @@ export function assertWorkAuthorizationBindingCurrent(
 }
 
 export function assertJobCanAcceptAuthorization(job: Job) {
-  if (job.status !== "in_progress" || !job.arrivedAt) {
-    throw new HttpError(409, "Record the technician arrival before collecting work authorization.");
+  if (job.status === "complete" || job.status === "cancelled") {
+    throw new HttpError(409, "This job is closed and cannot accept work authorization.");
   }
 }
 

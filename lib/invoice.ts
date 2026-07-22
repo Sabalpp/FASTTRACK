@@ -40,7 +40,7 @@ export function buildInvoiceDraft(params: {
     id: params.existing?.id ?? params.id,
     jobId: params.jobId,
     invoiceNumber: params.existing?.invoiceNumber ?? params.invoiceNumber,
-    selectedTier: params.existing?.selectedTier,
+    selectedTier: params.existing?.selectedTier ?? firstPopulatedTierForItems(params.items),
     ...totals,
     status: params.existing?.status ?? "draft",
     optionLabel: params.existing?.optionLabel ?? "approved_work",
@@ -93,6 +93,10 @@ export function firstPopulatedTier(invoice: Invoice): Tier | undefined {
   if (invoice.totalBetter > 0) return "better";
   if (invoice.totalBest > 0) return "best";
   return undefined;
+}
+
+export function firstPopulatedTierForItems(items: JobLineItem[]): Tier | undefined {
+  return tierKeys.find((tier) => items.some((item) => item.tier === tier));
 }
 
 export const invoiceOptionLabels: Record<InvoiceOptionLabel, string> = {

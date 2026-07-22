@@ -8,6 +8,7 @@ import styles from "./InvoiceWorkspace.module.css";
 
 export type InvoiceWorkspaceActionId =
   | "save_review"
+  | "preview_draft_pdf"
   | "generate_pdf"
   | "record_sent"
   | "open_payment"
@@ -61,21 +62,12 @@ export function resolveInvoiceWorkspaceAction(input: {
   paymentStatus: InvoicePaymentStatus;
   paymentEditorOpen: boolean;
 }): InvoiceWorkspaceAction {
-  if (!input.fieldSignaturesReady) {
-    return {
-      id: "return_to_job",
-      label: "Finish field workflow",
-      title: "Field signatures needed",
-      helper: "Collect authorization before work and completion acknowledgment after work. The invoice does not add a third customer signature."
-    };
-  }
-
   if (!input.selectedSaved) {
     return {
-      id: "return_to_job",
-      label: "Refresh invoice from job",
+      id: "preview_draft_pdf",
+      label: "Preview draft PDF",
       title: "Authorized scope conflict",
-      helper: "This draft does not match the customer's signed work authorization. Refresh it from the completed job."
+      helper: "The bill remains available for review, but its draft PDF is marked with the scope conflict and cannot be finalized or emailed."
     };
   }
 
@@ -102,6 +94,15 @@ export function resolveInvoiceWorkspaceAction(input: {
       label: "Save payment record",
       title: "Confirm the payment record",
       helper: "This records a payment status only; it does not charge the customer."
+    };
+  }
+
+  if (!input.fieldSignaturesReady) {
+    return {
+      id: "preview_draft_pdf",
+      label: "Preview draft PDF",
+      title: "Signatures are still pending",
+      helper: "Preview the complete bill now. The PDF is visibly marked as a draft and is not saved, finalized, or emailed."
     };
   }
 

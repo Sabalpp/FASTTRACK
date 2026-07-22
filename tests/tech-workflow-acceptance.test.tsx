@@ -147,7 +147,7 @@ describe("technician workflow acceptance", () => {
     expect(within(nextAction).getAllByRole("button")).toHaveLength(1);
     const onMyWay = within(nextAction).getByRole("button", { name: "On my way" });
     expect(onMyWay.hasAttribute("disabled")).toBe(false);
-    expect(screen.getByRole("tab", { name: "Before" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("tab", { name: "Before" })).toHaveProperty("disabled", false);
     fireEvent.click(onMyWay);
     await waitFor(() => {
       expect(harness.data?.markJobEnRoute).toHaveBeenCalledWith(harness.jobId);

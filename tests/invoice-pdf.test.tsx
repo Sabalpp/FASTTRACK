@@ -4,18 +4,22 @@ import React from "react";
 import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
 import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { InvoicePdfDocument } from "@/components/InvoicePdfDocument";
+import {
+  CURRENT_INVOICE_APPROVAL_LABEL,
+  InvoicePdfDocument,
+  invoicePdfDocumentState
+} from "@/components/InvoicePdfDocument";
 import { totalsForItems } from "@/lib/invoice";
 import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem } from "@/lib/types";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = false;
 
 describe("invoice PDF pagination", () => {
-  it("keeps a signed service invoice on one true US Letter page", async () => {
+  it("keeps a signed service invoice unclipped across true US Letter pages", async () => {
     const items = [item(1, "Diagnostic visit and complete HVAC system evaluation"), item(2, "Approved capacitor replacement"), item(3, "System performance verification")];
     const pdf = await render(items, fieldSignatures());
 
-    expect(pdf.getPageCount()).toBe(1);
+    expect(pdf.getPageCount()).toBe(2);
     expectLetterPages(pdf);
   }, 30_000);
 
@@ -33,10 +37,51 @@ describe("invoice PDF pagination", () => {
     expect(pdf.getPageCount()).toBe(4);
     expectLetterPages(pdf);
   }, 30_000);
+
+  it("renders an unsigned bill as a visible draft instead of refusing the PDF", async () => {
+    const items = [item(1, "Current service charge for customer review")];
+    const pdf = await render(items, [], true);
+    const state = invoicePdfDocumentState(invoice(items), job, [], true);
+
+    expect(pdf.getPageCount()).toBe(1);
+    expectLetterPages(pdf);
+    expect(state.isDraft).toBe(true);
+    expect(state.banner).toContain("CUSTOMER AUTHORIZATION NOT SIGNED");
+    expect(state.banner).toContain("COMPLETION ACKNOWLEDGMENT NOT SIGNED");
+    expect(state.fieldRecord).toBe("Authorization and completion not signed");
+    expect(state.authorizationTerms).toContain("does not record approval to begin work");
+    expect(state.completionTerms).toContain("does not record acceptance of completed work");
+  }, 30_000);
+
+  it("keeps a complete signature record final unless a draft preview is explicitly requested", () => {
+    const items = [item(1, "Signed service")];
+    const finalState = invoicePdfDocumentState(invoice(items), job, fieldSignatures());
+    const previewState = invoicePdfDocumentState(invoice(items), job, fieldSignatures(), true);
+
+    expect(finalState.isDraft).toBe(false);
+    expect(finalState.fieldRecord).toBe("Authorized and completed");
+    expect(previewState.isDraft).toBe(true);
+    expect(previewState.banner).toBe("DRAFT - PREVIEW ONLY - NOT FINAL");
+  });
+
+  it("shows a current invoice approval without treating it as pre-work authorization", async () => {
+    const items = [item(1, "Current invoice charge awaiting field authorization records")];
+    const approval = signature("invoice_approval", "2026-07-20T16:30:00.000Z");
+    const state = invoicePdfDocumentState(invoice(items), job, [approval], true);
+    const pdf = await render(items, [approval], true);
+
+    expect(state.isDraft).toBe(true);
+    expect(state.missingAuthorization).toBe(true);
+    expect(state.missingCompletion).toBe(true);
+    expect(state.hasCurrentInvoiceApproval).toBe(true);
+    expect(CURRENT_INVOICE_APPROVAL_LABEL).toBe("CURRENT INVOICE APPROVAL (COLLECTED AFTER WORK)");
+    expect(pdf.getPageCount()).toBe(2);
+    expectLetterPages(pdf);
+  }, 30_000);
 });
 
-async function render(items: JobLineItem[], signatures: InvoiceSignature[]) {
-  const props = { invoice: invoice(items), job, customer, items, signatures };
+async function render(items: JobLineItem[], signatures: InvoiceSignature[], draft = false) {
+  const props = { invoice: invoice(items), job, customer, items, signatures, draft };
   const document = React.createElement(InvoicePdfDocument, props) as unknown as React.ReactElement<DocumentProps>;
   const buffer = await renderToBuffer(document);
   expect(Buffer.from(buffer).subarray(0, 4).toString()).toBe("%PDF");
@@ -88,14 +133,16 @@ function fieldSignatures(): InvoiceSignature[] {
   return [signature("work_authorization", "2026-07-20T15:00:00.000Z"), signature("work_completion", "2026-07-20T16:22:00.000Z")];
 }
 
-function signature(purpose: "work_authorization" | "work_completion", signedAt: string): InvoiceSignature {
+function signature(purpose: "work_authorization" | "work_completion" | "invoice_approval", signedAt: string): InvoiceSignature {
   return {
     id: `signature-${purpose}`,
     jobId: job.id,
+    invoiceId: purpose === "invoice_approval" ? "invoice-id" : undefined,
     purpose,
     signerName: customer.name,
     signerRole: "customer",
     status: "active",
+    imageUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
     contentSha256: "a".repeat(64),
     documentSha256: "b".repeat(64),
     signedAt,

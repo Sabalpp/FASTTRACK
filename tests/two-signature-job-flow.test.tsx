@@ -159,7 +159,7 @@ describe("two-signature technician job flow", () => {
     }));
   });
 
-  it("cannot skip the required before-photo checkpoint", async () => {
+  it("keeps the guided before-photo action required without hiding the rest of the job", async () => {
     harness.data!.jobPhotos = harness.data!.jobPhotos.filter((photo) => photo.jobId !== harness.jobId);
     const { rerender } = render(<JobDetailPage />);
     await act(async () => undefined);
@@ -167,7 +167,7 @@ describe("two-signature technician job flow", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Before" }));
     expect(screen.getByText("Photo uploader: before")).toBeTruthy();
     expect(nextActionButton()).toHaveProperty("disabled", true);
-    expect(stageTab("Estimate")).toHaveProperty("disabled", true);
+    expect(stageTab("Estimate")).toHaveProperty("disabled", false);
 
     harness.data!.jobPhotos.push(photo("before"));
     rerender(<JobDetailPage />);
@@ -197,7 +197,7 @@ describe("two-signature technician job flow", () => {
     expect(stageTab("After").getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText("Photo uploader: after")).toBeTruthy();
     expect(nextActionButton()).toHaveProperty("disabled", true);
-    expect(stageTab("Complete")).toHaveProperty("disabled", true);
+    expect(stageTab("Complete")).toHaveProperty("disabled", false);
 
     harness.data!.jobPhotos.push(photo("after"));
     rerender(<JobDetailPage />);
@@ -222,6 +222,27 @@ describe("two-signature technician job flow", () => {
     await waitFor(() => expect(harness.push).toHaveBeenCalledWith("/invoices/invoice-flow"));
   });
 
+  it("opens authorization on the first populated option without arrival or before-photo gates", async () => {
+    const targetJob = harness.data!.jobs.find((job) => job.id === harness.jobId)!;
+    targetJob.arrivedAt = undefined;
+    harness.data!.jobPhotos = harness.data!.jobPhotos.filter((photo) => photo.jobId !== harness.jobId);
+    render(<JobDetailPage />);
+
+    fireEvent.click(stageTab("Authorize"));
+    const authorization = screen.getByRole("region", { name: "Customer authorization before work" });
+    const signButton = within(authorization).getByRole("button", { name: "Authorize selected work" }) as HTMLButtonElement;
+    await waitFor(() => expect(signButton.disabled).toBe(false));
+    expect(screen.getByRole("radio", { name: /Good/ }).getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.click(signButton);
+    expect(screen.getByRole("dialog", { name: "Authorize proposed work" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save test signature" }));
+    await waitFor(() => expect(harness.saveSignature).toHaveBeenCalledWith(expect.objectContaining({
+      purpose: "work_authorization",
+      selectedTier: "good"
+    })));
+  });
+
   it("does not let an unsigned invoice draft take away technician pricing freedom", async () => {
     harness.data!.invoices.push(invoiceForJob());
     render(<JobDetailPage />);
@@ -237,7 +258,7 @@ describe("two-signature technician job flow", () => {
     await waitFor(() => expect(stageTab("After")).toHaveProperty("disabled", false));
 
     fireEvent.click(stageTab("Before"));
-    expect(screen.getByTestId("photo-uploader-before").getAttribute("data-locked")).toBe("true");
+    expect(screen.getByTestId("photo-uploader-before").getAttribute("data-locked")).toBe("false");
 
     fireEvent.click(stageTab("Estimate"));
     expect(screen.queryByText("Technician line item editor")).toBeNull();
@@ -265,6 +286,8 @@ describe("two-signature technician job flow", () => {
     await waitFor(() => expect(stageTab("After")).toHaveProperty("disabled", false));
     fireEvent.click(stageTab("After"));
     expect(screen.getByTestId("photo-uploader-after").getAttribute("data-locked")).toBe("true");
+    fireEvent.click(stageTab("Before"));
+    expect(screen.getByTestId("photo-uploader-before").getAttribute("data-locked")).toBe("true");
   });
 
   it("makes technician notes read-only after the completion signature is saved", async () => {

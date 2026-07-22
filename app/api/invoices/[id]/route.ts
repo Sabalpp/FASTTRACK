@@ -13,6 +13,7 @@ import {
   assertSignatureDocumentCurrent,
   invoiceDocumentHash,
   loadInvoiceBundle,
+  validateInvoiceWorkAuthorization,
   type InvoiceFieldSignatureRow
 } from "@/lib/invoice-server";
 import { selectedTotal } from "@/lib/invoice";
@@ -34,8 +35,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const actor = await requireServerActor(request);
     const { id } = await context.params;
     const bundle = await loadInvoiceBundle(actor, id);
-    const signatureRows = await loadInvoiceSignatureAuditRows(actor.supabase, id, bundle.job.id);
-    assertInvoiceFieldWorkflow(bundle, signatureRows);
     const { invoice } = bundle;
     return NextResponse.json({ ok: true, invoice }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
@@ -49,19 +48,20 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     requireOwner(actor);
     const { id } = await context.params;
     const bundle = await loadInvoiceBundle(actor, id);
-    const signatureRows = await loadInvoiceSignatureAuditRows(actor.supabase, id, bundle.job.id);
-    const fieldWorkflow = assertInvoiceFieldWorkflow(bundle, signatureRows);
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const action = body.action;
 
     let patch: Record<string, unknown>;
     let requiredSignedPdfPath: string | undefined;
+    let requiredAuthorizedTier: Tier | undefined;
     if (action === "review") {
       const selectedTier = body.selectedTier as Tier;
       const optionLabel = body.optionLabel as InvoiceOptionLabel;
       const notes = typeof body.notes === "string" ? body.notes.trim() : "";
       if (!tiers.includes(selectedTier)) throw new HttpError(400, "Choose a valid estimate option.");
-      if (selectedTier !== fieldWorkflow.authorizedTier) {
+      const signatureRows = await loadInvoiceSignatureAuditRows(actor.supabase, id, bundle.job.id);
+      const workAuthorization = validateInvoiceWorkAuthorization(bundle, signatureRows);
+      if (workAuthorization && selectedTier !== workAuthorization.authorizedTier) {
         throw new HttpError(409, "The invoice scope must match the customer's authorized work.");
       }
       if (!optionLabels.includes(optionLabel)) throw new HttpError(400, "Choose a valid invoice label.");
@@ -70,6 +70,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         throw new HttpError(409, "The selected estimate option has no line items.");
       }
       patch = {
+        selected_tier: selectedTier,
         option_label: optionLabel,
         notes,
         pdf_storage_path: null,
@@ -92,6 +93,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         }
       }
       patch = {
+        selected_tier: bundle.invoice.selectedTier,
         payment_status: paymentStatus,
         amount_paid: amountPaid,
         status: paymentStatus === "paid" ? "paid" : bundle.invoice.sentAt ? "sent" : "draft",
@@ -101,6 +103,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         pdf_size_bytes: null
       };
     } else if (action === "send") {
+      const signatureRows = await loadInvoiceSignatureAuditRows(actor.supabase, id, bundle.job.id);
+      const fieldWorkflow = assertInvoiceFieldWorkflow(bundle, signatureRows);
+      requiredAuthorizedTier = fieldWorkflow.authorizedTier;
       const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
       const requestId = typeof body.requestId === "string" ? body.requestId.trim().toLowerCase() : "";
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Enter a valid customer email.");
@@ -176,7 +181,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     let updateQuery = actor.supabase.from("invoices").update(patch).eq("id", id);
     if (requiredSignedPdfPath) {
       updateQuery = updateQuery
-        .eq("selected_tier", fieldWorkflow.authorizedTier)
+        .eq("selected_tier", requiredAuthorizedTier!)
         .eq("pdf_storage_path", requiredSignedPdfPath);
     }
     const { data, error } = await updateQuery.select("*").maybeSingle();

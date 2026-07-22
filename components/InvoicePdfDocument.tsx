@@ -12,6 +12,19 @@ export type InvoicePdfDocumentProps = {
   customer: Customer;
   items: JobLineItem[];
   signatures?: InvoiceSignature[];
+  draft?: boolean;
+};
+
+export type InvoicePdfDocumentState = {
+  isDraft: boolean;
+  missingAuthorization: boolean;
+  missingCompletion: boolean;
+  tierConflict: boolean;
+  hasCurrentInvoiceApproval: boolean;
+  banner: string;
+  fieldRecord: string;
+  authorizationTerms: string;
+  completionTerms: string;
 };
 
 type InvoiceViewModel = {
@@ -26,16 +39,74 @@ type InvoiceViewModel = {
   total: number;
   authorizationSignature?: InvoiceSignature;
   completionSignature?: InvoiceSignature;
+  invoiceApprovalSignature?: InvoiceSignature;
   technicianSignature?: InvoiceSignature;
+  documentState: InvoicePdfDocumentState;
 };
 
-export function InvoicePdfDocument({ invoice, job, customer, items, signatures = [] }: InvoicePdfDocumentProps) {
+export function invoicePdfDocumentState(
+  invoice: Invoice,
+  job: Job,
+  signatures: InvoiceSignature[],
+  forceDraft = false
+): InvoicePdfDocumentState {
   const activeSignatures = signatures.filter((signature) => signature.status === "active");
   const authorizationSignature = activeSignatures.find((signature) => signature.purpose === "work_authorization");
-  if (authorizationSignature?.selectedTier && invoice.selectedTier !== authorizationSignature.selectedTier) {
-    throw new Error("Invoice scope does not match the customer-authorized work.");
-  }
-  const selectedTier = authorizationSignature?.selectedTier ?? invoice.selectedTier;
+  const completionSignature = activeSignatures.find((signature) => signature.purpose === "work_completion");
+  const invoiceApprovalSignature = activeSignatures.find((signature) => signature.purpose === "invoice_approval");
+  const completionOverridden = Boolean(
+    job.completionSignatureOverrideAt
+    && job.completionSignatureOverrideBy
+    && job.completionSignatureOverrideReason?.trim()
+  );
+  const missingAuthorization = !authorizationSignature;
+  const missingCompletion = !completionSignature && !completionOverridden;
+  const tierConflict = Boolean(
+    authorizationSignature?.selectedTier
+    && invoice.selectedTier
+    && invoice.selectedTier !== authorizationSignature.selectedTier
+  );
+  const isDraft = forceDraft || missingAuthorization || missingCompletion || tierConflict;
+  const issues = [
+    missingAuthorization ? "CUSTOMER AUTHORIZATION NOT SIGNED" : undefined,
+    missingCompletion ? "COMPLETION ACKNOWLEDGMENT NOT SIGNED" : undefined,
+    tierConflict ? "SCOPE DOES NOT MATCH AUTHORIZATION" : undefined
+  ].filter((issue): issue is string => Boolean(issue));
+
+  let fieldRecord = "Authorized and completed";
+  if (tierConflict) fieldRecord = "Scope conflict - review required";
+  else if (missingAuthorization && missingCompletion) fieldRecord = "Authorization and completion not signed";
+  else if (missingAuthorization) fieldRecord = "Authorization not signed";
+  else if (missingCompletion) fieldRecord = "Completion not signed";
+
+  return {
+    isDraft,
+    missingAuthorization,
+    missingCompletion,
+    tierConflict,
+    hasCurrentInvoiceApproval: Boolean(invoiceApprovalSignature),
+    banner: `DRAFT - ${issues.length ? issues.join(" / ") : "PREVIEW ONLY - NOT FINAL"}`,
+    fieldRecord,
+    authorizationTerms: missingAuthorization
+      ? "Customer authorization has not been signed. This draft is for review only and does not record approval to begin work."
+      : `Customer authorized the listed diagnosis, parts, labor, and ${authorizationSignature.selectedTier ?? "selected"} estimate before work began. Additional charges require renewed authorization.`,
+    completionTerms: missingCompletion
+      ? "Customer completion acknowledgment has not been signed. This draft does not record acceptance of completed work."
+      : completionOverridden && !completionSignature
+        ? "Completion was recorded with an audited owner override because the customer could not sign."
+        : "Customer acknowledged satisfactory completion of the listed work after service and final job evidence."
+  };
+}
+
+export function InvoicePdfDocument({ invoice, job, customer, items, signatures = [], draft = false }: InvoicePdfDocumentProps) {
+  const activeSignatures = signatures.filter((signature) => signature.status === "active");
+  const authorizationSignature = activeSignatures.find((signature) => signature.purpose === "work_authorization");
+  const completionSignature = activeSignatures.find((signature) => signature.purpose === "work_completion");
+  const invoiceApprovalSignature = activeSignatures.find((signature) => signature.purpose === "invoice_approval");
+  const documentState = invoicePdfDocumentState(invoice, job, signatures, draft);
+  const selectedTier = documentState.isDraft
+    ? invoice.selectedTier ?? authorizationSignature?.selectedTier
+    : authorizationSignature?.selectedTier ?? invoice.selectedTier;
   const selectedInvoice = selectedTier ? { ...invoice, selectedTier } : invoice;
   const selectedItems = selectedTier
     ? items.filter((item) => item.tier === selectedTier).sort((left, right) => left.sortOrder - right.sortOrder)
@@ -56,41 +127,54 @@ export function InvoicePdfDocument({ invoice, job, customer, items, signatures =
     tax: total - subtotal,
     total,
     authorizationSignature,
-    completionSignature: activeSignatures.find((signature) => signature.purpose === "work_completion"),
-    technicianSignature: activeSignatures.find((signature) => signature.purpose === "technician_acknowledgement")
+    completionSignature,
+    invoiceApprovalSignature,
+    technicianSignature: activeSignatures.find((signature) => signature.purpose === "technician_acknowledgement"),
+    documentState
   };
 
   const addressWeight = [customer.name, customer.addressLine1, customer.addressLine2, customer.city, customer.email, job.serviceAddress]
     .filter(Boolean)
     .join(" ").length;
   const totalItemUnits = selectedItems.reduce((sum, item) => sum + itemUnits(item), 0);
-  const singlePage = totalItemUnits <= 4 && addressWeight <= 300 && (invoice.notes || job.notes).length <= 340;
+  const signatureImageUnits = [authorizationSignature, completionSignature]
+    .filter((signature) => Boolean(signature?.imageUrl)).length;
+  const draftNoticeUnits = documentState.isDraft ? 1 : 0;
+  // The additional signed-invoice record needs a deliberate summary page. Letting
+  // react-pdf wrap a nominally one-page layout would produce an unnumbered second
+  // page with an incorrect "Page 1 of 1" footer.
+  const singlePage = !invoiceApprovalSignature
+    && totalItemUnits + signatureImageUnits + draftNoticeUnits <= 4
+    && addressWeight <= 300
+    && (invoice.notes || job.notes).length <= 340;
   const itemPages = singlePage ? [selectedItems] : paginateItems(selectedItems, addressWeight > 300 ? 6 : 8, 15);
   const totalPages = singlePage ? 1 : itemPages.length + 1;
 
   return (
     <Document
-      title={`${invoice.invoiceNumber} - ${customer.name}`}
+      title={`${documentState.isDraft ? "DRAFT - " : ""}${invoice.invoiceNumber} - ${customer.name}`}
       author={branding.businessName}
-      subject="Service invoice"
+      subject={documentState.isDraft ? "Draft service invoice - not final" : "Service invoice"}
       creator="Fast Track HVAC + Plumbing"
     >
       {singlePage ? (
         <Page size="LETTER" style={styles.page}>
-          <DocumentHeader invoice={invoice} />
+          <DocumentHeader invoice={invoice} draft={documentState.isDraft} />
+          {documentState.isDraft ? <DraftNotice label={documentState.banner} /> : null}
           <InvoiceIntro model={viewModel} />
           <ServiceHeading model={viewModel} />
           <LineItemsTable items={selectedItems} />
           <InvoiceSummary model={viewModel} compact />
-          <DocumentFooter invoice={invoice} pageNumber={1} totalPages={1} />
+          <DocumentFooter invoice={invoice} pageNumber={1} totalPages={1} draft={documentState.isDraft} />
         </Page>
       ) : (
         <>
           {itemPages.map((pageItems, index) => (
             <Page key={`items-${index}`} size="LETTER" style={styles.page}>
-              <DocumentHeader invoice={invoice} />
+              <DocumentHeader invoice={invoice} draft={documentState.isDraft} />
               {index === 0 ? (
                 <>
+                  {documentState.isDraft ? <DraftNotice label={documentState.banner} /> : null}
                   <InvoiceIntro model={viewModel} />
                   <ServiceHeading model={viewModel} />
                 </>
@@ -98,14 +182,15 @@ export function InvoicePdfDocument({ invoice, job, customer, items, signatures =
                 <ContinuationHeading title="Approved work continued" invoice={invoice} />
               )}
               <LineItemsTable items={pageItems} />
-              <DocumentFooter invoice={invoice} pageNumber={index + 1} totalPages={totalPages} />
+              <DocumentFooter invoice={invoice} pageNumber={index + 1} totalPages={totalPages} draft={documentState.isDraft} />
             </Page>
           ))}
           <Page size="LETTER" style={styles.page}>
-            <DocumentHeader invoice={invoice} />
+            <DocumentHeader invoice={invoice} draft={documentState.isDraft} />
+            {documentState.isDraft ? <DraftNotice label={documentState.banner} /> : null}
             <ContinuationHeading title="Invoice summary & approval" invoice={invoice} />
             <InvoiceSummary model={viewModel} />
-            <DocumentFooter invoice={invoice} pageNumber={totalPages} totalPages={totalPages} />
+            <DocumentFooter invoice={invoice} pageNumber={totalPages} totalPages={totalPages} draft={documentState.isDraft} />
           </Page>
         </>
       )}
@@ -113,7 +198,7 @@ export function InvoicePdfDocument({ invoice, job, customer, items, signatures =
   );
 }
 
-function DocumentHeader({ invoice }: { invoice: Invoice }) {
+function DocumentHeader({ invoice, draft }: { invoice: Invoice; draft: boolean }) {
   const logoSource = typeof window === "undefined"
     ? `${process.cwd()}/public${branding.invoiceLogoPath}`
     : branding.invoiceLogoPath;
@@ -128,7 +213,7 @@ function DocumentHeader({ invoice }: { invoice: Invoice }) {
         </View>
       </View>
         <View style={styles.invoiceBlock}>
-        <Text style={styles.invoiceTitle}>INVOICE</Text>
+        <Text style={[styles.invoiceTitle, draft ? styles.draftInvoiceTitle : {}]}>{draft ? "DRAFT INVOICE" : "INVOICE"}</Text>
         <Text style={styles.invoiceNumber}>{invoice.invoiceNumber}</Text>
         <Text style={styles.invoiceDate}>{formatDate(invoice.createdAt)}</Text>
       </View>
@@ -137,10 +222,19 @@ function DocumentHeader({ invoice }: { invoice: Invoice }) {
   );
 }
 
-function DocumentFooter({ invoice, pageNumber, totalPages }: { invoice: Invoice; pageNumber: number; totalPages: number }) {
+function DraftNotice({ label }: { label: string }) {
+  return (
+    <View style={styles.draftNotice}>
+      <Text style={styles.draftNoticeTitle}>{label}</Text>
+      <Text style={styles.draftNoticeText}>This preview shows the current bill. It is not a finalized signed record and cannot be emailed as the final invoice.</Text>
+    </View>
+  );
+}
+
+function DocumentFooter({ invoice, pageNumber, totalPages, draft }: { invoice: Invoice; pageNumber: number; totalPages: number; draft: boolean }) {
   return (
     <View fixed style={styles.footer}>
-      <Text>{branding.website}  |  {invoice.invoiceNumber}</Text>
+      <Text>{draft ? "DRAFT - NOT FINAL  |  " : ""}{branding.website}  |  {invoice.invoiceNumber}</Text>
       <Text>Page {pageNumber} of {totalPages}</Text>
     </View>
   );
@@ -171,7 +265,7 @@ function InvoiceIntro({ model }: { model: InvoiceViewModel }) {
       <View style={styles.factGrid}>
         <Fact label="Issue date" value={formatDate(invoice.createdAt)} />
         <Fact label="Service date" value={formatDate(serviceDate)} />
-        <Fact label="Field record" value="Authorized + completed" />
+        <Fact label="Field record" value={model.documentState.fieldRecord} />
         <Fact label="Payment" value={paymentLabel(invoice.paymentStatus)} last />
       </View>
       <View style={styles.serviceRequestCard}>
@@ -227,8 +321,11 @@ function LineItemsTable({ items }: { items: JobLineItem[] }) {
 }
 
 function InvoiceSummary({ model, compact = false }: { model: InvoiceViewModel; compact?: boolean }) {
-  const { invoice, job, authorizationSignature, completionSignature, technicianSignature } = model;
-  const completionOverride = !completionSignature && job.completionSignatureOverrideAt && job.completionSignatureOverrideReason
+  const { invoice, job, authorizationSignature, completionSignature, invoiceApprovalSignature, technicianSignature } = model;
+  const completionOverride = !completionSignature
+    && job.completionSignatureOverrideAt
+    && job.completionSignatureOverrideBy
+    && job.completionSignatureOverrideReason
     ? { at: job.completionSignatureOverrideAt, reason: job.completionSignatureOverrideReason }
     : undefined;
   return (
@@ -263,15 +360,16 @@ function InvoiceSummary({ model, compact = false }: { model: InvoiceViewModel; c
           <FieldSignatureBlock
             signature={authorizationSignature}
             title="AUTHORIZATION OF REPAIR"
-            terms={`Customer authorized the listed diagnosis, parts, labor, and ${model.selectedTier ?? "selected"} estimate before work began. Additional charges require renewed authorization.`}
+            terms={model.documentState.authorizationTerms}
           />
           <FieldSignatureBlock
             signature={completionSignature}
             override={completionOverride}
             title="COMPLETION OF WORK"
-            terms="Customer acknowledged satisfactory completion of the listed work after service and final job evidence."
+            terms={model.documentState.completionTerms}
           />
         </View>
+        {invoiceApprovalSignature ? <CurrentInvoiceApproval signature={invoiceApprovalSignature} /> : null}
         {technicianSignature ? (
           <View style={styles.technicianAck}>
             <Text style={styles.technicianAckLabel}>Technician / company acknowledgment</Text>
@@ -283,6 +381,25 @@ function InvoiceSummary({ model, compact = false }: { model: InvoiceViewModel; c
       <View style={styles.thankYou}>
         <Text style={styles.thankYouTitle}>Thank you for choosing Fast Track.</Text>
         <Text style={styles.thankYouText}>Questions? Call {branding.phone} or email {branding.email}.</Text>
+      </View>
+    </View>
+  );
+}
+
+export const CURRENT_INVOICE_APPROVAL_LABEL = "CURRENT INVOICE APPROVAL (COLLECTED AFTER WORK)";
+
+function CurrentInvoiceApproval({ signature }: { signature: InvoiceSignature }) {
+  return (
+    <View style={styles.currentInvoiceApproval}>
+      <View style={styles.currentInvoiceApprovalCopy}>
+        <Text style={styles.currentInvoiceApprovalTitle}>{CURRENT_INVOICE_APPROVAL_LABEL}</Text>
+        <Text style={styles.currentInvoiceApprovalTerms}>This signature acknowledges the current invoice and balance only. It is not pre-work authorization and does not change the missing field record above.</Text>
+        <Text style={styles.currentInvoiceApprovalMeta}>{signature.signerName}  |  {formatDateTime(signature.signedAt)}</Text>
+      </View>
+      <View style={styles.currentInvoiceApprovalSignature}>
+        {signature.imageUrl ? <Image src={signature.imageUrl} style={styles.currentInvoiceApprovalImage} /> : <Text style={styles.signaturePending}>Signature image unavailable</Text>}
+        <View style={styles.signatureLine} />
+        <Text style={styles.signatureName}>{signature.signerName}</Text>
       </View>
     </View>
   );
@@ -398,9 +515,13 @@ const styles = StyleSheet.create({
   brandContact: { color: colors.muted, fontSize: 7.2, marginBottom: 1 },
   invoiceBlock: { alignItems: "flex-end", minWidth: 92 },
   invoiceTitle: { color: colors.brand, fontSize: 17, fontWeight: 700, letterSpacing: 1.1, lineHeight: 1.05 },
+  draftInvoiceTitle: { color: "#B45309", fontSize: 14 },
   invoiceNumber: { color: colors.muted, fontSize: 8.5, marginTop: 3, lineHeight: 1.1 },
   invoiceDate: { color: colors.muted, fontSize: 7.2, marginTop: 2 },
   headerRule: { position: "absolute", left: 0, right: 0, bottom: 0, height: 3, backgroundColor: colors.accent },
+  draftNotice: { marginBottom: 7, paddingVertical: 5, paddingHorizontal: 8, borderWidth: 1, borderColor: "#FDBA74", borderRadius: 5, backgroundColor: "#FFF7ED" },
+  draftNoticeTitle: { color: "#9A3412", fontSize: 7.2, fontWeight: 700, letterSpacing: 0.25, marginBottom: 2 },
+  draftNoticeText: { color: "#7C2D12", fontSize: 6.8, lineHeight: 1.25 },
   invoiceIntro: { flexDirection: "row", marginBottom: 6 },
   partyColumn: { width: "50%", paddingRight: 16 },
   kicker: { color: colors.accent, fontSize: 6.8, fontWeight: 700, letterSpacing: 0.75, marginBottom: 4 },
@@ -464,6 +585,13 @@ const styles = StyleSheet.create({
   technicianAck: { flexDirection: "row", justifyContent: "space-between", paddingTop: 5 },
   technicianAckLabel: { color: colors.muted, fontSize: 6.5, fontWeight: 700 },
   technicianAckText: { color: colors.ink, fontSize: 6.5 },
+  currentInvoiceApproval: { flexDirection: "row", marginTop: 5, padding: 6, borderWidth: 1, borderColor: "#FDBA74", borderRadius: 6, backgroundColor: "#FFF7ED" },
+  currentInvoiceApprovalCopy: { width: "66%", paddingRight: 8 },
+  currentInvoiceApprovalTitle: { color: "#9A3412", fontSize: 6.8, fontWeight: 700, marginBottom: 2 },
+  currentInvoiceApprovalTerms: { color: "#7C2D12", fontSize: 5.8, lineHeight: 1.25 },
+  currentInvoiceApprovalMeta: { color: colors.ink, fontSize: 6.2, fontWeight: 700, marginTop: 3 },
+  currentInvoiceApprovalSignature: { width: "34%", justifyContent: "center" },
+  currentInvoiceApprovalImage: { width: 120, height: 19, objectFit: "contain", alignSelf: "center" },
   thankYou: { alignItems: "center", paddingTop: 1 },
   thankYouTitle: { color: colors.brand, fontSize: 9.5, fontWeight: 700, marginBottom: 1 },
   thankYouText: { color: colors.muted, fontSize: 6.9 },

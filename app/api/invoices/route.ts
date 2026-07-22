@@ -13,8 +13,8 @@ export async function POST(request: NextRequest) {
     if (!isUuid(jobId)) throw new HttpError(400, "A valid job is required.");
 
     const job = await loadJobForActor(actor, jobId);
-    if (job.status !== "complete") {
-      throw new HttpError(409, "Complete the field workflow before building an invoice.");
+    if (job.status === "cancelled") {
+      throw new HttpError(409, "A cancelled job cannot create a new invoice draft.");
     }
     const { count, error: countError } = await actor.supabase
       .from("job_line_items")

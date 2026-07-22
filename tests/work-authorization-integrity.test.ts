@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertJobAuthorizationDocumentCurrent,
   assertJobCanAcceptAuthorization,
-  jobAuthorizationDocumentHash
+  jobAuthorizationDocumentHash,
+  legacyJobAuthorizationDocumentHash
 } from "@/lib/invoice-server";
 import type { Job, JobLineItem, Tier } from "@/lib/types";
 
 describe("customer work-authorization integrity", () => {
-  it("requires an arrived, in-progress job before authorization", () => {
-    expect(() => assertJobCanAcceptAuthorization(job({ status: "scheduled", arrivedAt: undefined }))).toThrow(/arrival/i);
-    expect(() => assertJobCanAcceptAuthorization(job({ status: "cancelled", arrivedAt: "2026-07-21T14:05:00.000Z" }))).toThrow(/arrival/i);
-    expect(() => assertJobCanAcceptAuthorization(job())).not.toThrow();
+  it("allows authorization before arrival while rejecting closed jobs", () => {
+    expect(() => assertJobCanAcceptAuthorization(job({ status: "scheduled", arrivedAt: undefined }))).not.toThrow();
+    expect(() => assertJobCanAcceptAuthorization(job({ status: "in_progress", arrivedAt: undefined }))).not.toThrow();
+    expect(() => assertJobCanAcceptAuthorization(job({ status: "complete" }))).toThrow(/closed/i);
+    expect(() => assertJobCanAcceptAuthorization(job({ status: "cancelled" }))).toThrow(/closed/i);
   });
 
   it.each([
@@ -19,7 +22,6 @@ describe("customer work-authorization integrity", () => {
     ["service address", (input: AuthorizationInput) => { input.job.serviceAddress = "99 Changed Street"; }],
     ["service request", (input: AuthorizationInput) => { input.job.description = "Different requested work"; }],
     ["arrival window", (input: AuthorizationInput) => { input.job.arrivalWindowEndAt = "2026-07-21T18:30:00.000Z"; }],
-    ["arrival time", (input: AuthorizationInput) => { input.job.arrivedAt = "2026-07-21T14:10:00.000Z"; }],
     ["selected item identity", (input: AuthorizationInput) => { input.items[0].id = "line-changed"; }],
     ["selected item description", (input: AuthorizationInput) => { input.items[0].description = "Different repair"; }],
     ["selected item quantity", (input: AuthorizationInput) => { input.items[0].quantity = 3; }],
@@ -32,6 +34,39 @@ describe("customer work-authorization integrity", () => {
     mutate(changed);
 
     expect(hash(changed)).not.toBe(hash(original));
+  });
+
+  it("keeps a pre-work authorization current when the technician later arrives", () => {
+    const beforeArrival = authorizationInput();
+    beforeArrival.job.arrivedAt = undefined;
+    const afterArrival = structuredClone(beforeArrival);
+    afterArrival.job.arrivedAt = "2026-07-21T14:10:00.000Z";
+
+    expect(hash(afterArrival)).toBe(hash(beforeArrival));
+  });
+
+  it("accepts the legacy arrival-bound hash for already-signed records", () => {
+    const input = authorizationInput();
+    const legacyHash = legacyJobAuthorizationDocumentHash(input.job, input.items, input.selectedTier);
+
+    expect(legacyHash).not.toBe(hash(input));
+    expect(() => assertJobAuthorizationDocumentCurrent(
+      legacyHash,
+      input.job,
+      input.items,
+      input.selectedTier,
+      "stale"
+    )).not.toThrow();
+
+    const changed = structuredClone(input);
+    changed.job.serviceAddress = "99 Changed Street";
+    expect(() => assertJobAuthorizationDocumentCurrent(
+      legacyHash,
+      changed.job,
+      changed.items,
+      changed.selectedTier,
+      "stale"
+    )).toThrow(/stale/i);
   });
 
   it("does not invalidate the chosen scope when an unselected alternative changes", () => {

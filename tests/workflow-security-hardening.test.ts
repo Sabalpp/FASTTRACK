@@ -5,6 +5,7 @@ import {
   assertInvoiceFieldWorkflow,
   jobAuthorizationDocumentHash,
   jobCompletionDocumentHash,
+  legacyJobAuthorizationDocumentHash,
   workAuthorizationPricing,
   type InvoiceBundle,
   type InvoiceFieldSignatureRow,
@@ -45,6 +46,16 @@ describe("field workflow security hardening", () => {
 
     expect(() => assertCompletionAuthorizationBinding(completion, binding)).toThrow(/not bound/i);
     expect(() => assertInvoiceFieldWorkflow(bundle, [authorization, completion])).toThrow(/not bound/i);
+  });
+
+  it("keeps existing arrival-bound authorization records valid", () => {
+    const bundle = fixture();
+    const authorization = authorizationRow(bundle);
+    authorization.document_sha256 = legacyJobAuthorizationDocumentHash(bundle.job, bundle.items, "standard");
+    const binding = bindingFrom(authorization);
+    const completion = completionRow(bundle.job, binding);
+
+    expect(() => assertInvoiceFieldWorkflow(bundle, [authorization, completion])).not.toThrow();
   });
 
   it("derives authorization money from the technician's exact selected work at the branded tax rate", () => {
