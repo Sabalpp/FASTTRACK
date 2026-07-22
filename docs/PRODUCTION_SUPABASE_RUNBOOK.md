@@ -24,13 +24,38 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=YOUR_BROWSER_KEY
 # Optional legacy fallback. Leave blank if using the publishable key above.
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVER_ONLY_SERVICE_ROLE_OR_SECRET_KEY
+SUPABASE_DB_URL=postgresql://postgres.PROJECT_REF:PERCENT_ENCODED_PASSWORD@HOST:6543/postgres
 NEXT_PUBLIC_ENABLE_GOOGLE_AUTH=true
 NEXT_PUBLIC_REQUIRE_OWNER_MFA=false
 NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=
 CALLRAIL_WEBHOOK_SECRET=
+TRANSACTIONAL_EMAIL_PROVIDER=auto
+SENDGRID_API_KEY=
+SENDGRID_REGION=global
 RESEND_API_KEY=
-INVOICE_FROM_EMAIL=invoices@fasttrackdmv.org
+TRANSACTIONAL_FROM_EMAIL=Fast Track <notifications@fasttrackdmv.org>
+INVOICE_FROM_EMAIL=Fast Track <invoices@fasttrackdmv.org>
+APPOINTMENT_FROM_EMAIL=Fast Track <appointments@fasttrackdmv.org>
+INVOICE_SMS_LINK_TTL_SECONDS=604800
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_API_KEY_SID=
+TWILIO_API_KEY_SECRET=
+TWILIO_MESSAGING_SERVICE_SID=
+TWILIO_FROM_NUMBER=
+TWILIO_WEBHOOK_PUBLIC_URL=https://YOUR_DOMAIN.example/api/webhooks/twilio
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_MODE=test
+STRIPE_CURRENCY=usd
+STRIPE_CHECKOUT_EXPIRY_MINUTES=31
+NEXT_PUBLIC_APP_URL=https://YOUR_DOMAIN.example
 ```
+
+Use a public Mapbox token that can call Geocoding v6 and render the Static
+Images suggestion map. The selected address is retrieved with permanent
+geocoding before it is saved, so the Mapbox account must be eligible for
+permanent storage. Temporary suggestions are never persisted.
 
 Notes:
 
@@ -39,7 +64,76 @@ Notes:
 - Keep demo mode false for real Supabase testing.
 - Keep `NEXT_PUBLIC_REQUIRE_OWNER_MFA=false` for first production testing. Turn it on only after the owner has enrolled a TOTP/authenticator factor in Supabase Auth.
 
+## Transactional Email And SMS Activation
+
+Provider activation is environment-only; no source edit or feature toggle is
+needed after credentials are available. Copy the messaging block from
+`.env.local.production.example` into the matching Vercel environments.
+
+- `TRANSACTIONAL_EMAIL_PROVIDER=auto` chooses Twilio SendGrid when
+  `SENDGRID_API_KEY` is present, then falls back to Resend when
+  `RESEND_API_KEY` is present. Set the selector explicitly only when both keys
+  exist and one provider must be forced.
+- Verify each configured `TRANSACTIONAL_FROM_EMAIL`, `INVOICE_FROM_EMAIL`, or
+  `APPOINTMENT_FROM_EMAIL` sender with the selected provider. SendGrid uses the
+  official v3 Mail Send API; credentials remain server-only.
+- For Twilio SMS, configure either a Messaging Service SID or an owned E.164
+  sender number. Production should use an API key SID/secret for outbound API
+  calls; `TWILIO_AUTH_TOKEN` is still required to verify Twilio webhooks.
+- Register the exact `TWILIO_WEBHOOK_PUBLIC_URL` with the Twilio Messaging
+  Service for incoming messages and Advanced Opt-Out. The deployed default is
+  `/api/webhooks/twilio` on the production origin.
+- Invoice texts contain a signed link to the existing private PDF. The default
+  expiry is seven days; `INVOICE_SMS_LINK_TTL_SECONDS` accepts 300 through
+  2592000 seconds.
+
+The current `email_notifications_enabled` preference and audited SMS opt-in are
+transactional permissions for appointment and invoice updates only. They do
+not authorize promotional or marketing email/SMS; add separate consent fields
+and workflows before any future campaign feature.
+
+External account work is still required: sender/domain verification, Twilio
+number or Messaging Service provisioning, applicable messaging registration,
+and webhook registration. Do not paste provider secrets into source files.
+
+## Stripe Card, Cash, And Check Activation
+
+Card collection uses Stripe-hosted Checkout, so card numbers and CVV never
+enter Fast Track. App activation is environment-only:
+
+1. Paste `STRIPE_SECRET_KEY` into Vercel.
+2. Register `https://fasttrack-delta.vercel.app/api/webhooks/stripe` in Stripe.
+3. Subscribe it to `checkout.session.completed`,
+   `checkout.session.async_payment_succeeded`,
+   `checkout.session.async_payment_failed`, `checkout.session.expired`, and
+   `refund.created`, `refund.updated`, and `refund.failed`.
+4. Paste that endpoint's signing secret into `STRIPE_WEBHOOK_SECRET`.
+5. Use `STRIPE_MODE=test` with test keys for acceptance. Switch the mode, secret
+   key, and webhook secret together to `live` only for real collection.
+6. Keep `STRIPE_CURRENCY=usd`, set `NEXT_PUBLIC_APP_URL` to the production
+   origin, and redeploy.
+
+Both Stripe secrets are intentionally required before Checkout can open. Cash
+and check collection use the same immutable ledger without external provider
+credentials. An open card checkout reserves the balance, so the invoice price
+and manual payments stay frozen until Stripe confirms completion or expiry.
+
 ## Supabase SQL Setup
+
+For an existing Fast Track database, paste `SUPABASE_DB_URL` into `.env.local`
+and run the checked migration wrapper. It validates the URL and always performs
+a dry run before the real push:
+
+```bash
+npm run db:migrate:dry-run
+npm run db:migrate
+npm run db:status
+```
+
+The current rollout applies, in order, the authorization/draft relaxation,
+audited optional photo checkpoints, invoice-delivery fencing, and the Stripe /
+cash / check payment ledger. Do not remove the hosted demo lock until the
+migration list shows all four 20260722 migrations.
 
 Fastest path for today's setup:
 
@@ -54,6 +148,9 @@ Fastest path for today's setup:
    - `parts`
    - `job_line_items`
    - `invoices`
+   - `invoice_delivery_audit`
+   - `invoice_payments`
+   - `stripe_webhook_events`
    - `call_logs`
    - `call_log_events`
 5. Confirm this RPC exists:
@@ -102,7 +199,7 @@ set role = excluded.role,
 Role behavior:
 
 - `owner`: all records, parts, users, invoices, send actions.
-- `tech`: assigned jobs, job photos, line items, invoice draft work.
+- `tech`: assigned jobs, job photos, line items, invoice draft work, and card / cash / check collection for assigned invoices.
 - `call_center`: customers and jobs, no photos/parts/invoices/money.
 
 Owner user management:
@@ -196,19 +293,20 @@ Run this after every schema/env/deploy change:
 5. Create a job for that customer.
 6. Assign a tech.
 7. Tech signs in and sees only assigned job.
-8. Tech uploads a job photo from iPad/phone.
-9. Refresh. Photo still appears through a signed URL.
+8. Tech uploads a job photo from iPad/phone, or explicitly confirms a skipped checkpoint.
+9. Refresh. The photo or audited skip still appears.
 10. Tech adds line items.
 11. Owner opens the invoice draft.
-12. Owner marks invoice sent.
-13. Desk/call-center signs in and cannot access parts, invoice money, or photos.
+12. Confirm job photos appear in the invoice preview and generated PDF.
+13. Owner sends the invoice by email and, with current SMS consent, by text.
+14. Assigned tech collects a Stripe test card payment and records test cash/check receipts.
+15. Desk/call-center signs in and cannot access parts, invoice money, or photos.
 
 ## Known Gaps Before Real Client Launch
 
 - Need schema addition for multiple appliance/equipment records.
-- Need production invoice PDF generation and storage.
-- Need email sending with Resend or another provider.
-- Need payment processor decision. Do not store card number/CVV.
+- Need separate, explicit marketing consent and campaign tooling before any promotional email or SMS.
+- Need Stripe Terminal only if Fast Track later chooses a physical iPad card reader; hosted Checkout is the current card path.
 - Need final Fast Track branding, logo, license, and legal text verification.
 - Need owner MFA enrollment if owner account handles sensitive access.
 - Need CallRail signature verification before accepting real webhook traffic.

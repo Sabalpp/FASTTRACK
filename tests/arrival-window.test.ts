@@ -1,12 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
+  arrivalWindowDurationFromTimes,
   arrivalWindowDraftFromRange,
+  arrivalWindowEndTime,
   formatArrivalWindowRange,
   formatArrivalWindowTimeZone,
   resolveArrivalWindow
 } from "@/lib/arrival-window";
 
 describe("arrival-window timezone contract", () => {
+  it("derives editable end controls from the compatible duration draft", () => {
+    expect(arrivalWindowEndTime({
+      localDate: "2026-07-21",
+      localStartTime: "23:00",
+      durationMinutes: 180
+    })).toBe("02:00");
+    expect(arrivalWindowDurationFromTimes("23:00", "02:00")).toBe(180);
+    expect(arrivalWindowDurationFromTimes("09:00", "09:00")).toBe(24 * 60);
+    expect(arrivalWindowDurationFromTimes("", "12:00")).toBeUndefined();
+  });
+
   it("interprets summer input in America/New_York and derives a fixed 180-minute UTC range", () => {
     const result = resolveArrivalWindow({
       localDate: "2026-07-21",

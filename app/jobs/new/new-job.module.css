@@ -177,6 +177,34 @@
   font-weight: 700;
 }
 
+.settingsNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  border: 1px solid #e5d6ad;
+  border-radius: 9px;
+  background: #fffaf0;
+  color: #715d2f;
+  padding: 9px 11px;
+  font-size: .76rem;
+  font-weight: 680;
+  line-height: 1.4;
+}
+
+.settingsNotice button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  border: 1px solid #d9c795;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  padding: 0 11px;
+  font: inherit;
+  cursor: pointer;
+}
+
 @media (max-width: 760px) {
   .section {
     padding: 18px 16px;
@@ -207,5 +235,10 @@
   .actions button {
     width: 100%;
     min-width: 0;
+  }
+
+  .settingsNotice {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

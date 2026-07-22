@@ -4,7 +4,7 @@ import React from "react";
 import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
 import { InvoicePdfDocument } from "../components/InvoicePdfDocument";
 import { totalsForItems } from "../lib/invoice";
-import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem } from "../lib/types";
+import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem, JobPhoto } from "../lib/types";
 
 async function main() {
 const outputDirectory = path.resolve("output/pdf");
@@ -85,7 +85,18 @@ const completionSignature: InvoiceSignature = {
 
 const fieldSignatures = [authorizationSignature, completionSignature];
 
-const samples: Array<{ filename: string; customer: Customer; job: Job; items: JobLineItem[]; invoice: Invoice; signatures: InvoiceSignature[] }> = [];
+const samplePhotoDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+const samplePhotos: JobPhoto[] = Array.from({ length: 5 }, (_, index) => ({
+  id: `99999999-9999-4999-8999-${String(index).padStart(12, "0")}`,
+  jobId: job.id,
+  kind: index % 2 === 0 ? "before" : "after",
+  storagePath: samplePhotoDataUrl,
+  caption: index % 2 === 0 ? "Equipment condition before service" : "Completed repair after cleanup",
+  uploadedAt: `2026-07-20T15:0${index}:00.000Z`,
+  uploadedBy: "22222222-2222-4222-8222-222222222222"
+}));
+
+const samples: Array<{ filename: string; customer: Customer; job: Job; items: JobLineItem[]; invoice: Invoice; signatures: InvoiceSignature[]; photos?: JobPhoto[] }> = [];
 
 samples.push({
   filename: "one-page-invoice.pdf",
@@ -103,6 +114,51 @@ samples.push({
   items: baseItems,
   invoice: makeInvoice(baseItems),
   signatures: fieldSignatures
+});
+
+samples.push({
+  filename: "photo-evidence-invoice.pdf",
+  customer,
+  job,
+  items: baseItems,
+  invoice: makeInvoice(baseItems),
+  signatures: fieldSignatures,
+  photos: samplePhotos
+});
+
+samples.push({
+  filename: "skipped-photo-checkpoints-invoice.pdf",
+  customer,
+  job: {
+    ...job,
+    beforePhotosSkippedAt: "2026-07-20T14:05:00.000Z",
+    beforePhotosSkippedBy: "22222222-2222-4222-8222-222222222222",
+    afterPhotosSkippedAt: "2026-07-20T16:15:00.000Z",
+    afterPhotosSkippedBy: "22222222-2222-4222-8222-222222222222"
+  },
+  items: baseItems,
+  invoice: makeInvoice(baseItems),
+  signatures: fieldSignatures
+});
+
+samples.push({
+  filename: "combined-photo-and-skip-invoice.pdf",
+  customer,
+  job: {
+    ...job,
+    beforePhotosSkippedAt: "2026-07-20T14:05:00.000Z",
+    beforePhotosSkippedBy: "22222222-2222-4222-8222-222222222222",
+    afterPhotosSkippedAt: "2026-07-20T16:15:00.000Z",
+    afterPhotosSkippedBy: "22222222-2222-4222-8222-222222222222"
+  },
+  items: baseItems,
+  invoice: makeInvoice(baseItems),
+  signatures: fieldSignatures,
+  photos: samplePhotos.slice(0, 4).map((photo) => ({
+    ...photo,
+    kind: "other" as const,
+    caption: "Supporting field evidence with a bounded caption that remains inside the reserved photo card area. ".repeat(3)
+  }))
 });
 
 const multiPageItems = Array.from({ length: 34 }, (_, index) => item(

@@ -4,6 +4,7 @@ import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { InvoicePdfDocument } from "@/components/InvoicePdfDocument";
+import { MAX_JOB_PHOTO_UPLOAD_BYTES } from "@/lib/job-photos";
 import {
   assertInvoicePdfIntegrity,
   assertInvoiceFieldWorkflow,
@@ -16,6 +17,7 @@ import {
   type InvoiceFieldSignatureRow
 } from "@/lib/invoice-server";
 import { HttpError, requireServerActor, routeErrorResponse } from "@/lib/server-auth";
+import type { JobPhoto, PhotoKind } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +32,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const { invoice, customer } = bundle;
     if (!invoice.pdfStoragePath) throw new HttpError(404, "No generated PDF is saved for this invoice.");
     if (!invoice.pdfGeneratedAt) throw new HttpError(409, "The saved invoice PDF is missing generation metadata. Generate it again.");
+    if (invoice.pdfWorkflowRevision === undefined || invoice.pdfWorkflowRevision !== (bundle.job.workflowRevision ?? 0)) {
+      throw new HttpError(409, "Job photos or field evidence changed after this PDF was generated. Generate it again.");
+    }
 
     const signatureRows = await loadInvoiceSignatureRows(actor.supabase, id, bundle.job.id);
     assertInvoiceFieldWorkflow(bundle, signatureRows);
@@ -58,11 +63,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const actor = await requireServerActor(request);
     const { id } = await context.params;
     const bundle = await loadInvoiceBundle(actor, id);
-    const signatureRows = await loadInvoiceSignatureRows(actor.supabase, id, bundle.job.id);
+    const [signatureRows, photoRows] = await Promise.all([
+      loadInvoiceSignatureRows(actor.supabase, id, bundle.job.id),
+      loadInvoicePhotoRows(actor.supabase, bundle.job.id)
+    ]);
     const fieldWorkflow = assertInvoiceFieldWorkflow(bundle, signatureRows);
     assertTechnicianAcknowledgementCurrent(bundle, signatureRows);
     const signatureSnapshot = invoiceSignatureSnapshot(signatureRows);
+    const photoSnapshot = invoicePhotoSnapshot(photoRows);
     const currentDocumentHash = invoiceDocumentHash(bundle);
+    const currentWorkflowRevision = bundle.job.workflowRevision ?? 0;
     const activeSignatureRows = signatureRows.filter((row) => row.status === "active");
 
     const signatures = await Promise.all(activeSignatureRows.map(async (row) => signatureFromRow(
@@ -76,16 +86,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
         contentSha256: row.content_sha256
       })
     )));
-    const document = React.createElement(InvoicePdfDocument, { ...bundle, signatures }) as unknown as React.ReactElement<DocumentProps>;
+    const photos = await loadInvoicePhotoImages(actor.supabase, photoRows);
+    const document = React.createElement(InvoicePdfDocument, { ...bundle, photos, signatures }) as unknown as React.ReactElement<DocumentProps>;
     const pdfBuffer = await renderToBuffer(document);
     const pdfBytes = Buffer.from(pdfBuffer);
     const bundleBeforeStore = await loadInvoiceBundle(actor, id);
-    const signatureRowsBeforeStore = await loadInvoiceSignatureRows(actor.supabase, id, bundle.job.id);
+    const [signatureRowsBeforeStore, photoRowsBeforeStore] = await Promise.all([
+      loadInvoiceSignatureRows(actor.supabase, id, bundle.job.id),
+      loadInvoicePhotoRows(actor.supabase, bundle.job.id)
+    ]);
     assertInvoiceFieldWorkflow(bundleBeforeStore, signatureRowsBeforeStore);
     assertTechnicianAcknowledgementCurrent(bundleBeforeStore, signatureRowsBeforeStore);
     if (
       invoiceDocumentHash(bundleBeforeStore) !== currentDocumentHash
       || invoiceSignatureSnapshot(signatureRowsBeforeStore) !== signatureSnapshot
+      || invoicePhotoSnapshot(photoRowsBeforeStore) !== photoSnapshot
+      || (bundleBeforeStore.job.workflowRevision ?? 0) !== currentWorkflowRevision
     ) {
       throw new HttpError(409, "The invoice changed while the PDF was being generated. Review and try again.");
     }
@@ -106,7 +122,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       pdf_version: version,
       pdf_generated_at: generatedAt,
       pdf_sha256: pdfSha256,
-      pdf_size_bytes: pdfBytes.byteLength
+      pdf_size_bytes: pdfBytes.byteLength,
+      pdf_workflow_revision: currentWorkflowRevision
     })
       .eq("id", id)
       .eq("selected_tier", fieldWorkflow.authorizedTier)
@@ -121,9 +138,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const bundleAfterStore = await loadInvoiceBundle(actor, id);
-    const signatureRowsAfterStore = await loadInvoiceSignatureRows(actor.supabase, id, bundle.job.id);
+    const [signatureRowsAfterStore, photoRowsAfterStore] = await Promise.all([
+      loadInvoiceSignatureRows(actor.supabase, id, bundle.job.id),
+      loadInvoicePhotoRows(actor.supabase, bundle.job.id)
+    ]);
     const storedPdfIsCurrent = invoiceDocumentHash(bundleAfterStore) === currentDocumentHash
       && invoiceSignatureSnapshot(signatureRowsAfterStore) === signatureSnapshot
+      && invoicePhotoSnapshot(photoRowsAfterStore) === photoSnapshot
+      && (bundleAfterStore.job.workflowRevision ?? 0) === currentWorkflowRevision
       && bundleAfterStore.invoice.pdfStoragePath === uploadedPath
       && bundleAfterStore.invoice.pdfSha256 === pdfSha256
       && bundleAfterStore.invoice.pdfSizeBytes === pdfBytes.byteLength;
@@ -132,7 +154,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         pdf_storage_path: null,
         pdf_generated_at: null,
         pdf_sha256: null,
-        pdf_size_bytes: null
+        pdf_size_bytes: null,
+        pdf_workflow_revision: null
       }).eq("id", id).eq("pdf_storage_path", uploadedPath);
       await actor.supabase.storage.from("invoices").remove([uploadedPath]);
       uploadedPath = undefined;
@@ -147,6 +170,76 @@ export async function POST(request: NextRequest, context: RouteContext) {
   } catch (error) {
     return routeErrorResponse(error);
   }
+}
+
+type StoredInvoicePhotoRow = {
+  id: string;
+  job_id: string;
+  storage_path: string;
+  kind: PhotoKind;
+  caption: string | null;
+  uploaded_by: string | null;
+  uploaded_at: string;
+};
+
+async function loadInvoicePhotoRows(supabase: SupabaseClient, jobId: string): Promise<StoredInvoicePhotoRow[]> {
+  const { data, error } = await supabase.from("job_photos")
+    .select("id,job_id,storage_path,kind,caption,uploaded_by,uploaded_at")
+    .eq("job_id", jobId)
+    .order("uploaded_at", { ascending: true });
+  if (error) throw new HttpError(503, "Saved job photos could not be loaded for the invoice.");
+  return (data ?? []) as StoredInvoicePhotoRow[];
+}
+
+async function loadInvoicePhotoImages(
+  supabase: SupabaseClient,
+  rows: StoredInvoicePhotoRow[]
+): Promise<JobPhoto[]> {
+  const photos: JobPhoto[] = [];
+  let embeddedBytes = 0;
+  const maxEmbeddedBytes = 4 * MAX_JOB_PHOTO_UPLOAD_BYTES;
+  for (const row of rows) {
+    let imageSource = `unavailable:${row.id}`;
+    const { data, error } = await supabase.storage.from("job-photos").download(row.storage_path);
+    if (!error && data && data.size <= MAX_JOB_PHOTO_UPLOAD_BYTES && embeddedBytes + data.size <= maxEmbeddedBytes) {
+      const bytes = Buffer.from(await data.arrayBuffer());
+      const mimeType = supportedPhotoMimeType(bytes);
+      if (mimeType) {
+        imageSource = `data:${mimeType};base64,${bytes.toString("base64")}`;
+        embeddedBytes += bytes.byteLength;
+      }
+    }
+    photos.push({
+      id: row.id,
+      jobId: row.job_id,
+      storagePath: imageSource,
+      kind: row.kind,
+      caption: row.caption ?? undefined,
+      uploadedBy: row.uploaded_by ?? "",
+      uploadedAt: row.uploaded_at
+    });
+  }
+  return photos;
+}
+
+function invoicePhotoSnapshot(rows: StoredInvoicePhotoRow[]) {
+  return createHash("sha256").update(JSON.stringify(rows.map((row) => ({
+    id: row.id,
+    jobId: row.job_id,
+    storagePath: row.storage_path,
+    kind: row.kind,
+    caption: row.caption,
+    uploadedBy: row.uploaded_by,
+    uploadedAt: row.uploaded_at
+  })))).digest("hex");
+}
+
+function supportedPhotoMimeType(bytes: Buffer) {
+  const isPng = bytes.byteLength >= 8
+    && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value);
+  if (isPng) return "image/png";
+  if (bytes.byteLength >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  return undefined;
 }
 
 type StoredInvoiceSignatureRow = InvoiceFieldSignatureRow & {

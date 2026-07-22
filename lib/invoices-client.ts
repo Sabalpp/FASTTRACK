@@ -1,6 +1,7 @@
 import { protectedFetch, protectedJson } from "@/lib/protected-api-client";
 import { createId } from "@/lib/id";
-import type { Invoice, InvoiceOptionLabel, InvoicePaymentStatus, Job, Tier } from "@/lib/types";
+import type { InvoiceDeliveryChannel, InvoiceDeliveryResult } from "@/lib/invoice-delivery";
+import type { Invoice, InvoiceOptionLabel, Job, Tier } from "@/lib/types";
 
 export async function createProtectedInvoiceDraft(jobId: string) {
   const result = await protectedJson<{ invoice: Invoice }>("/api/invoices", {
@@ -29,29 +30,20 @@ export async function saveProtectedInvoiceReview(invoiceId: string, input: {
   return result.invoice;
 }
 
-export async function saveProtectedInvoicePayment(invoiceId: string, input: {
-  paymentStatus: InvoicePaymentStatus;
-  amountPaid: number;
-}) {
-  const result = await protectedJson<{ invoice: Invoice }>(`/api/invoices/${invoiceId}`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action: "payment", ...input })
-  });
-  return result.invoice;
-}
-
 export async function markProtectedInvoiceSent(
   invoiceId: string,
-  email: string,
+  input: {
+    channel: InvoiceDeliveryChannel;
+    email?: string;
+    phone?: string;
+  },
   requestId = createId()
 ) {
-  const result = await protectedJson<{ invoice: Invoice }>(`/api/invoices/${invoiceId}`, {
+  return protectedJson<{ invoice: Invoice; delivery: InvoiceDeliveryResult }>(`/api/invoices/${invoiceId}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action: "send", email, requestId })
+    body: JSON.stringify({ action: "send", ...input, requestId })
   });
-  return result.invoice;
 }
 
 export async function loadProtectedInvoicePdf(invoiceId: string) {

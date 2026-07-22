@@ -2,7 +2,8 @@
   min-width: 0;
 }
 
-.lockedState {
+.lockedState,
+.skippedState {
   display: flex;
   gap: 12px;
   align-items: flex-start;
@@ -13,7 +14,8 @@
   background: #f1f6f7;
 }
 
-.lockedState > span {
+.lockedState > span,
+.skippedState > span {
   display: grid;
   flex: 0 0 auto;
   width: 38px;
@@ -24,20 +26,32 @@
   background: #315c68;
 }
 
-.lockedState div {
+.lockedState div,
+.skippedState div {
   min-width: 0;
 }
 
-.lockedState strong {
+.lockedState strong,
+.skippedState strong {
   display: block;
   font-size: 0.88rem;
 }
 
-.lockedState p {
+.lockedState p,
+.skippedState p {
   margin: 4px 0 0;
   color: #62737b;
   font-size: 0.78rem;
   line-height: 1.45;
+}
+
+.skippedState {
+  border-color: #d9d2b9;
+  background: #faf8ef;
+}
+
+.skippedState > span {
+  background: #776b3b;
 }
 
 .captureControl {
@@ -83,6 +97,88 @@
 
 .captureButton > svg {
   flex: 0 0 auto;
+}
+
+.skipPanel {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #d8e0e3;
+  border-radius: 12px;
+  background: #f8fafb;
+}
+
+.skipOffer,
+.skipPrompt {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.skipOffer > div,
+.skipPrompt > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.skipOffer strong,
+.skipPrompt strong {
+  color: #30434b;
+  font-size: 0.8rem;
+}
+
+.skipOffer span,
+.skipPrompt span,
+.skipNote {
+  color: #718087;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.skipButton,
+.skipCancel,
+.skipConfirm {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.skipButton,
+.skipCancel {
+  border: 1px solid #b8c8cd;
+  color: #3e5961;
+  background: #fff;
+}
+
+.skipConfirm {
+  border: 1px solid #8b6430;
+  color: #fff;
+  background: #8b6430;
+}
+
+.skipButton:disabled,
+.skipCancel:disabled,
+.skipConfirm:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.skipActions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.skipNote {
+  margin: 0;
 }
 
 .captureButton span,
@@ -174,7 +270,10 @@
 
 .removeSelection:focus-visible,
 .kindControl button:focus-visible,
-.saveButton:focus-visible {
+.saveButton:focus-visible,
+.skipButton:focus-visible,
+.skipCancel:focus-visible,
+.skipConfirm:focus-visible {
   outline: 3px solid rgba(21, 63, 75, 0.22);
   outline-offset: 2px;
 }
@@ -322,6 +421,18 @@
   .saveButton {
     width: 100%;
     min-height: 50px;
+  }
+
+  .skipOffer,
+  .skipPrompt {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .skipButton,
+  .skipActions,
+  .skipActions button {
+    width: 100%;
   }
 }
 

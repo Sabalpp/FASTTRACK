@@ -50,9 +50,10 @@ vi.mock("@/components/AddressAutocomplete", () => ({
 }));
 
 vi.mock("@/components/PhotoUploader", () => ({
-  PhotoUploader: ({ lockedKind, checkpointLocked }: { lockedKind?: string; checkpointLocked?: boolean }) => (
+  PhotoUploader: ({ lockedKind, checkpointLocked, checkpointSkipped, onSkipCheckpoint, skipDisabled }: { lockedKind?: string; checkpointLocked?: boolean; checkpointSkipped?: boolean; onSkipCheckpoint?: () => Promise<void>; skipDisabled?: boolean }) => (
     <div data-testid={`photo-uploader-${lockedKind}`} data-locked={checkpointLocked ? "true" : "false"}>
       <span>Photo uploader: {lockedKind}</span>
+      {checkpointSkipped ? <span>Photo skipped: {lockedKind}</span> : onSkipCheckpoint ? <button type="button" disabled={skipDisabled} onClick={() => void onSkipCheckpoint()}>Skip {lockedKind} photo</button> : null}
     </div>
   )
 }));
@@ -159,7 +160,7 @@ describe("two-signature technician job flow", () => {
     }));
   });
 
-  it("keeps the guided before-photo action required without hiding the rest of the job", async () => {
+  it("lets the technician explicitly skip the before photo without hiding later job stages", async () => {
     harness.data!.jobPhotos = harness.data!.jobPhotos.filter((photo) => photo.jobId !== harness.jobId);
     const { rerender } = render(<JobDetailPage />);
     await act(async () => undefined);
@@ -168,17 +169,21 @@ describe("two-signature technician job flow", () => {
     expect(screen.getByText("Photo uploader: before")).toBeTruthy();
     expect(nextActionButton()).toHaveProperty("disabled", true);
     expect(stageTab("Estimate")).toHaveProperty("disabled", false);
+    expect(stageTab("Authorize")).toHaveProperty("disabled", false);
+    expect(stageTab("Invoice")).toHaveProperty("disabled", false);
 
-    harness.data!.jobPhotos.push(photo("before"));
+    fireEvent.click(screen.getByRole("button", { name: "Skip before photo" }));
+    await waitFor(() => expect(harness.data!.skipPhotoCheckpoint).toHaveBeenCalledWith(harness.jobId, "before"));
     rerender(<JobDetailPage />);
 
+    expect(screen.getByText("Photo skipped: before")).toBeTruthy();
     expect(nextActionButton()).toHaveProperty("disabled", false);
     fireEvent.click(nextActionButton());
     expect(stageTab("Estimate").getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText("Technician line item editor")).toBeTruthy();
   });
 
-  it("drives authorization, after evidence, completion signature, and invoice strictly forward", async () => {
+  it("drives authorization, an audited after-photo skip, completion signature, and invoice strictly forward", async () => {
     const { rerender } = render(<JobDetailPage />);
 
     fireEvent.click(stageTab("Estimate"));
@@ -199,8 +204,10 @@ describe("two-signature technician job flow", () => {
     expect(nextActionButton()).toHaveProperty("disabled", true);
     expect(stageTab("Complete")).toHaveProperty("disabled", false);
 
-    harness.data!.jobPhotos.push(photo("after"));
+    fireEvent.click(screen.getByRole("button", { name: "Skip after photo" }));
+    await waitFor(() => expect(harness.data!.skipPhotoCheckpoint).toHaveBeenCalledWith(harness.jobId, "after"));
     rerender(<JobDetailPage />);
+    expect(screen.getByText("Photo skipped: after")).toBeTruthy();
     fireEvent.click(nextActionButton());
     expect(stageTab("Complete").getAttribute("aria-selected")).toBe("true");
 
@@ -334,6 +341,19 @@ function buildData() {
     const target = state.jobs.find((job) => job.id === id);
     if (target) Object.assign(target, patch);
   });
+  const skipPhotoCheckpoint = vi.fn(async (id: string, kind: "before" | "after") => {
+    const target = state.jobs.find((job) => job.id === id);
+    if (!target) throw new Error("Job not found");
+    const recordedAt = "2026-07-21T16:35:00.000Z";
+    if (kind === "before") {
+      target.beforePhotosSkippedAt = recordedAt;
+      target.beforePhotosSkippedBy = harness.currentUser!.id;
+    } else {
+      target.afterPhotosSkippedAt = recordedAt;
+      target.afterPhotosSkippedBy = harness.currentUser!.id;
+    }
+    return target;
+  });
   return {
     ...state,
     loaded: true,
@@ -349,6 +369,7 @@ function buildData() {
     updateJob,
     markJobEnRoute: vi.fn(async () => undefined),
     markJobArrived: vi.fn(async () => undefined),
+    skipPhotoCheckpoint,
     addPhoto: vi.fn(),
     addLineItem: vi.fn(),
     updateLineItem: vi.fn(),

@@ -63,6 +63,10 @@ export type Job = {
   originatingCallId?: string;
   createdAt: string;
   completedAt?: string | null;
+  beforePhotosSkippedAt?: string;
+  beforePhotosSkippedBy?: string;
+  afterPhotosSkippedAt?: string;
+  afterPhotosSkippedBy?: string;
   completionSignatureOverrideAt?: string;
   completionSignatureOverrideBy?: string;
   completionSignatureOverrideReason?: string;
@@ -129,6 +133,8 @@ export type Invoice = {
   pdfGeneratedAt?: string;
   pdfSha256?: string;
   pdfSizeBytes?: number;
+  /** Job evidence revision captured when the saved PDF was rendered. */
+  pdfWorkflowRevision?: number;
   sentToEmail?: string;
   sentAt?: string;
   createdAt: string;

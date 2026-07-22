@@ -10,7 +10,7 @@ import {
   invoicePdfDocumentState
 } from "@/components/InvoicePdfDocument";
 import { totalsForItems } from "@/lib/invoice";
-import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem } from "@/lib/types";
+import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem, JobPhoto } from "@/lib/types";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = false;
 
@@ -78,14 +78,80 @@ describe("invoice PDF pagination", () => {
     expect(pdf.getPageCount()).toBe(2);
     expectLetterPages(pdf);
   }, 30_000);
+
+  it("adds stable, unclipped evidence pages when job photos exist", async () => {
+    const items = [item(1, "Completed repair with before-and-after field evidence")];
+    const pdf = await render(items, fieldSignatures(), false, Array.from({ length: 5 }, (_, index) => photo(index)));
+
+    expect(pdf.getPageCount()).toBe(4);
+    expectLetterPages(pdf);
+  }, 30_000);
+
+  it("bounds legacy photo captions so fixed evidence pages cannot overflow", async () => {
+    const items = [item(1, "Completed repair with legacy photo captions")];
+    const legacyCaption = "Detailed field evidence ".repeat(240);
+    const pdf = await render(items, fieldSignatures(), false, Array.from({ length: 4 }, (_, index) => photo(index, legacyCaption)));
+
+    expect(pdf.getPageCount()).toBe(3);
+    expectLetterPages(pdf);
+  }, 30_000);
+
+  it("shows audited photo skips on a dedicated evidence page even when no image exists", async () => {
+    const items = [item(1, "Completed repair with audited photo checkpoint skips")];
+    const skippedJob: Job = {
+      ...job,
+      beforePhotosSkippedAt: "2026-07-20T14:05:00.000Z",
+      beforePhotosSkippedBy: "tech-id",
+      afterPhotosSkippedAt: "2026-07-20T16:15:00.000Z",
+      afterPhotosSkippedBy: "tech-id"
+    };
+    const pdf = await render(items, fieldSignatures(), false, [], skippedJob);
+
+    expect(pdf.getPageCount()).toBe(3);
+    expectLetterPages(pdf);
+  }, 30_000);
+
+  it("reserves first-page space when maximum captions and audited skips appear together", async () => {
+    const items = [item(1, "Completed repair with photos and audited checkpoint notes")];
+    const skippedJob: Job = {
+      ...job,
+      beforePhotosSkippedAt: "2026-07-20T14:05:00.000Z",
+      beforePhotosSkippedBy: "tech-id",
+      afterPhotosSkippedAt: "2026-07-20T16:15:00.000Z",
+      afterPhotosSkippedBy: "tech-id"
+    };
+    const maxCaption = "Maximum field caption ".repeat(20);
+    const pdf = await render(
+      items,
+      fieldSignatures(),
+      false,
+      Array.from({ length: 4 }, (_, index) => ({ ...photo(index, maxCaption), kind: "other" as const })),
+      skippedJob
+    );
+
+    expect(pdf.getPageCount()).toBe(4);
+    expectLetterPages(pdf);
+  }, 30_000);
 });
 
-async function render(items: JobLineItem[], signatures: InvoiceSignature[], draft = false) {
-  const props = { invoice: invoice(items), job, customer, items, signatures, draft };
+async function render(items: JobLineItem[], signatures: InvoiceSignature[], draft = false, photos: JobPhoto[] = [], renderJob = job) {
+  const props = { invoice: invoice(items), job: renderJob, customer, items, photos, signatures, draft };
   const document = React.createElement(InvoicePdfDocument, props) as unknown as React.ReactElement<DocumentProps>;
   const buffer = await renderToBuffer(document);
   expect(Buffer.from(buffer).subarray(0, 4).toString()).toBe("%PDF");
   return PDFDocument.load(Buffer.from(buffer));
+}
+
+function photo(index: number, caption?: string): JobPhoto {
+  return {
+    id: `photo-${index}`,
+    jobId: job.id,
+    kind: index % 2 === 0 ? "before" : "after",
+    storagePath: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    caption: caption ?? (index % 2 === 0 ? "Equipment condition before service" : "Completed repair after cleanup"),
+    uploadedAt: `2026-07-20T15:0${index}:00.000Z`,
+    uploadedBy: "tech-id"
+  };
 }
 
 function expectLetterPages(pdf: PDFDocument) {

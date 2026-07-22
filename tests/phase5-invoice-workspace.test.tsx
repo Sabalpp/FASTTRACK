@@ -12,6 +12,7 @@ describe("Phase 5 invoice workspace", () => {
   it("uses the two field signatures and never asks for a third customer invoice signature", () => {
     const base = {
       canManageInvoice: true,
+      canCollectPayment: true,
       selectedSaved: true,
       reviewDirty: false,
       fieldSignaturesReady: true,
@@ -24,11 +25,11 @@ describe("Phase 5 invoice workspace", () => {
     const unsignedDraft = resolveInvoiceWorkspaceAction({ ...base, fieldSignaturesReady: false });
     expect(unsignedDraft.id).toBe("preview_draft_pdf");
     expect(unsignedDraft.label).toBe("Preview draft PDF");
-    expect(unsignedDraft.helper).toContain("not saved, finalized, or emailed");
+    expect(unsignedDraft.helper).toContain("not saved, finalized, or delivered");
 
     const conflictingDraft = resolveInvoiceWorkspaceAction({ ...base, selectedSaved: false });
     expect(conflictingDraft.id).toBe("preview_draft_pdf");
-    expect(conflictingDraft.helper).toContain("cannot be finalized or emailed");
+    expect(conflictingDraft.helper).toContain("cannot be finalized or delivered");
     expect(resolveInvoiceWorkspaceAction({ ...base, reviewDirty: true }).id).toBe("save_review");
     expect(resolveInvoiceWorkspaceAction(base).id).toBe("generate_pdf");
 
@@ -38,7 +39,7 @@ describe("Phase 5 invoice workspace", () => {
       pdfGenerated: true
     });
     expect(delivery.id).toBe("record_sent");
-    expect(delivery.label).toBe("Email invoice PDF");
+    expect(delivery.label).toBe("Deliver invoice");
     expect(delivery.helper).toContain("marked sent only after the provider accepts it");
 
     const payment = resolveInvoiceWorkspaceAction({
@@ -48,7 +49,8 @@ describe("Phase 5 invoice workspace", () => {
       deliveryRecorded: true
     });
     expect(payment.id).toBe("open_payment");
-    expect(payment.label).toBe("Record payment");
+    expect(payment.label).toBe("Collect payment");
+    expect(payment.helper).toContain("Stripe Checkout");
 
     const savePayment = resolveInvoiceWorkspaceAction({
       ...base,
@@ -57,8 +59,8 @@ describe("Phase 5 invoice workspace", () => {
       deliveryRecorded: true,
       paymentEditorOpen: true
     });
-    expect(savePayment.id).toBe("save_payment");
-    expect(savePayment.helper).toContain("does not charge");
+    expect(savePayment.id).toBe("open_payment");
+    expect(savePayment.label).toBe("Payment options open");
 
     const savePaymentBeforeDelivery = resolveInvoiceWorkspaceAction({
       ...base,
@@ -67,7 +69,16 @@ describe("Phase 5 invoice workspace", () => {
       deliveryRecorded: false,
       paymentEditorOpen: true
     });
-    expect(savePaymentBeforeDelivery.id).toBe("save_payment");
+    expect(savePaymentBeforeDelivery.id).toBe("record_sent");
+
+    expect(resolveInvoiceWorkspaceAction({
+      ...base,
+      canManageInvoice: false,
+      canCollectPayment: true,
+      selectedSaved: true,
+      pdfGenerated: true,
+      deliveryRecorded: true
+    }).id).toBe("open_payment");
 
     expect(resolveInvoiceWorkspaceAction({
       ...base,

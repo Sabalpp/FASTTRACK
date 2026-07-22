@@ -41,6 +41,8 @@ import { useCurrentTime } from "@/lib/use-current-time";
 import { dispatchJobConfirmations, fetchJobConfirmations } from "@/lib/appointment-confirmations-client";
 import { completeProtectedJob, createProtectedInvoiceDraft } from "@/lib/invoices-client";
 import { demoMode } from "@/lib/runtime";
+import { DEFAULT_SCHEDULING_SETTINGS } from "@/lib/scheduling-settings";
+import { loadSchedulingSettings } from "@/lib/scheduling-settings-client";
 import { loadSignatures, rejectSignature, saveSignature } from "@/lib/signatures-client";
 import type { AppointmentNotificationSummary, InvoiceSignature, Job, JobStatus, SignaturePurpose, Tier } from "@/lib/types";
 import styles from "./JobDetail.module.css";
@@ -64,6 +66,7 @@ export default function JobDetailPage() {
   const [jobDescription, setJobDescription] = useState(job?.description ?? "");
   const [serviceAddress, setServiceAddress] = useState(job?.serviceAddress ?? "");
   const [arrivalWindowDraft, setArrivalWindowDraft] = useState(() => arrivalWindowDraftFromRange(job?.scheduledAt, job?.arrivalWindowEndAt));
+  const [schedulingSettings, setSchedulingSettings] = useState({ ...DEFAULT_SCHEDULING_SETTINGS });
   const [arrivalBusy, setArrivalBusy] = useState(false);
   const [arrivalError, setArrivalError] = useState<string | undefined>();
   const [confirmations, setConfirmations] = useState<AppointmentNotificationSummary[]>([]);
@@ -87,7 +90,7 @@ export default function JobDetailPage() {
   const handledSigningLink = useRef<string | undefined>(undefined);
   const now = useCurrentTime();
   const confirmationPollingNeeded = shouldPollConfirmationStatus(confirmations, now);
-  const arrivalWindowResolution = resolveArrivalWindow(arrivalWindowDraft);
+  const arrivalWindowResolution = resolveArrivalWindow(arrivalWindowDraft, schedulingSettings.timeZone);
   const scheduledAtIso = arrivalWindowResolution.status === "valid" ? arrivalWindowResolution.startAt : undefined;
   const arrivalWindowEndAtIso = arrivalWindowResolution.status === "valid" ? arrivalWindowResolution.endAt : undefined;
   const validWindow = arrivalWindowResolution.status === "valid";
@@ -105,6 +108,18 @@ export default function JobDetailPage() {
     }) : [],
     [arrivalWindowEndAtIso, assignedTechId, data.jobs, dispatchChanged, job, scheduledAtIso, status]
   );
+
+  useEffect(() => {
+    let active = true;
+    void loadSchedulingSettings()
+      .then((settings) => {
+        if (active) setSchedulingSettings(settings);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!job) return;
@@ -288,6 +303,18 @@ export default function JobDetailPage() {
   const selectedAuthorizationItems = items.filter((item) => item.tier === selectedAuthorizationTier);
   const beforePhotos = photos.filter((photo) => photo.kind === "before");
   const afterPhotos = photos.filter((photo) => photo.kind === "after");
+  const beforePhotoSkipped = Boolean(job.beforePhotosSkippedAt && job.beforePhotosSkippedBy);
+  const afterPhotoSkipped = Boolean(job.afterPhotosSkippedAt && job.afterPhotosSkippedBy);
+  const beforeCheckpointSatisfied = beforePhotos.length > 0 || beforePhotoSkipped;
+  const afterCheckpointSatisfied = afterPhotos.length > 0 || afterPhotoSkipped;
+  const beforeSkipActor = data.allowedUsers.find((user) => user.id === job.beforePhotosSkippedBy);
+  const afterSkipActor = data.allowedUsers.find((user) => user.id === job.afterPhotosSkippedBy);
+  const beforeSkipSummary = beforePhotoSkipped
+    ? `Recorded ${formatDateTime(job.beforePhotosSkippedAt!)} by ${beforeSkipActor?.displayName ?? "a field user"}. No before photo can be added after this choice.`
+    : undefined;
+  const afterSkipSummary = afterPhotoSkipped
+    ? `Recorded ${formatDateTime(job.afterPhotosSkippedAt!)} by ${afterSkipActor?.displayName ?? "a field user"}. No after photo can be added after this choice.`
+    : undefined;
   const signatureCheckpointUnavailable = signatureLoading || Boolean(signatureError);
   const completionFieldsLocked = signatureCheckpointUnavailable
     || Boolean(completionSignature)
@@ -344,8 +371,8 @@ export default function JobDetailPage() {
       setSaveError("Collect the customer's work authorization before completing this job.");
       return false;
     }
-    if (completingJob && afterPhotos.length === 0) {
-      setSaveError("Save at least one after photo before completing this job.");
+    if (completingJob && !afterCheckpointSatisfied) {
+      setSaveError("Save an after photo or explicitly skip it before completing this job.");
       return false;
     }
     if (completingJob && !completionSignature && !ownerOverrideReady) {
@@ -539,10 +566,10 @@ export default function JobDetailPage() {
   };
   const stageCompletion: Partial<Record<JobStage, boolean>> = {
     overview: Boolean(job.arrivedAt),
-    photos: beforePhotos.length > 0,
+    photos: beforeCheckpointSatisfied,
     work: items.length > 0,
     approval: Boolean(authorizationSignature),
-    after: afterPhotos.length > 0,
+    after: afterCheckpointSatisfied,
     completion: Boolean(completionSignature) || job.status === "complete",
     invoice: Boolean(invoice)
   };
@@ -552,15 +579,15 @@ export default function JobDetailPage() {
   const primaryHidden = dispatchEditing || currentUser.role === "call_center";
   const disabledStages: JobStage[] = [];
   const primaryDisabled = activeStage === "photos"
-    ? beforePhotos.length === 0
+    ? !beforeCheckpointSatisfied
     : activeStage === "work"
       ? items.length === 0
       : activeStage === "approval"
         ? signatureCheckpointUnavailable || selectedAuthorizationItems.length === 0 || status === "complete" || status === "cancelled"
         : activeStage === "after"
-          ? afterPhotos.length === 0
+          ? !afterCheckpointSatisfied
           : activeStage === "completion"
-            ? signatureCheckpointUnavailable || !authorizationSignature || afterPhotos.length === 0 || status === "cancelled" || saveBusy
+            ? signatureCheckpointUnavailable || !authorizationSignature || !afterCheckpointSatisfied || status === "cancelled" || saveBusy
             : activeStage === "invoice"
               ? items.length === 0 || invoiceBusy
               : arrivalBusy || saveBusy;
@@ -575,13 +602,13 @@ export default function JobDetailPage() {
             ? arrivalBusy ? "Recording arrival…" : "Arrived — start job"
             : "Continue to photos"
     : activeStage === "photos"
-      ? beforePhotos.length === 0 ? "Add a before photo" : "Build estimate"
+      ? !beforeCheckpointSatisfied ? "Add or skip before photo" : "Build estimate"
       : activeStage === "work"
         ? items.length === 0 ? "Add work to continue" : "Review with customer"
         : activeStage === "approval"
           ? authorizationSignature ? "Begin approved work" : "Authorize work"
           : activeStage === "after"
-            ? afterPhotos.length === 0 ? "Add an after photo" : "Review completed work"
+            ? !afterCheckpointSatisfied ? "Add or skip after photo" : "Review completed work"
             : activeStage === "completion"
               ? completionSignature
                 ? job.status === "complete" ? "Continue to invoice" : saveBusy ? "Completing…" : "Complete job"
@@ -614,7 +641,7 @@ export default function JobDetailPage() {
       return;
     }
     if (activeStage === "photos") {
-      if (beforePhotos.length > 0) setActiveStage("work");
+      if (beforeCheckpointSatisfied) setActiveStage("work");
       return;
     }
     if (activeStage === "work") {
@@ -630,7 +657,7 @@ export default function JobDetailPage() {
       return;
     }
     if (activeStage === "after") {
-      if (afterPhotos.length > 0) setActiveStage("completion");
+      if (afterCheckpointSatisfied) setActiveStage("completion");
       return;
     }
     if (activeStage === "completion") {
@@ -754,7 +781,7 @@ export default function JobDetailPage() {
         {activeStage !== "overview" || dispatchEditing ? (
           <div className={styles.stageHeader}>
             <div><p>{dispatchEditing ? "Dispatch" : stage.label}</p><h2>{dispatchEditing ? "Edit job details" : stageTitle(activeStage)}</h2><span>{dispatchEditing ? "Update the customer-facing service details, arrival window, and assignment." : stageDescription(activeStage)}</span></div>
-            {activeStage === "overview" ? null : <span className={styles.stageCount}>{stageStatusLabel(activeStage, { beforeCount: beforePhotos.length, afterCount: afterPhotos.length, itemCount: items.length, authorized: Boolean(authorizationSignature), completed: Boolean(completionSignature), invoice: Boolean(invoice) })}</span>}
+            {activeStage === "overview" ? null : <span className={styles.stageCount}>{stageStatusLabel(activeStage, { beforeCount: beforePhotos.length, beforeSkipped: beforePhotoSkipped, afterCount: afterPhotos.length, afterSkipped: afterPhotoSkipped, itemCount: items.length, authorized: Boolean(authorizationSignature), completed: Boolean(completionSignature), invoice: Boolean(invoice) })}</span>}
           </div>
         ) : null}
 
@@ -768,7 +795,14 @@ export default function JobDetailPage() {
                 </Field>
               </div>
               <div className={styles.dispatchGrid}>
-                <ArrivalWindowField value={arrivalWindowDraft} onChange={setArrivalWindowDraft} required />
+                <ArrivalWindowField
+                  value={arrivalWindowDraft}
+                  onChange={setArrivalWindowDraft}
+                  required
+                  timeZone={schedulingSettings.timeZone}
+                  defaultDurationMinutes={schedulingSettings.defaultArrivalWindowMinutes}
+                  schedulingIncrementMinutes={schedulingSettings.schedulingIncrementMinutes}
+                />
                 <Field label="Assigned technician">
                   <select value={assignedTechId} onChange={(event) => setAssignedTechId(event.target.value)}>
                     <option value="">Unassigned</option>
@@ -821,7 +855,7 @@ export default function JobDetailPage() {
         {activeStage === "photos" ? (
           canSeePhotos(currentUser.role) ? (
             <div className={styles.stageBody}>
-              <div className={styles.checkpointNotice}><strong>Required before work begins</strong><span>Capture the existing condition so the customer and technician share the same starting point.</span></div>
+              <div className={styles.checkpointNotice}><strong>Recommended before work begins</strong><span>Capture the existing condition when possible. If a photo is not appropriate, explicitly skip it so the job keeps an audit record.</span></div>
               <PhotoUploader
                 jobId={job.id}
                 uploadedBy={currentUser.id}
@@ -829,6 +863,11 @@ export default function JobDetailPage() {
                 checkpointLocked={completionFieldsLocked}
                 lockedTitle={signatureCheckpointUnavailable ? "Checking signed checkpoint" : "Before photos locked by completed work"}
                 lockedMessage={signatureError ? "Saved signature status is unavailable. Retry the signature check before changing checkpoint evidence." : signatureLoading ? "Saved signatures are loading. Evidence stays locked until that check finishes." : "This job has a completion record, so its before-work evidence is now permanent."}
+                checkpointSkipped={beforePhotoSkipped}
+                checkpointSkipSummary={beforeSkipSummary}
+                onSkipCheckpoint={() => data.skipPhotoCheckpoint(jobId, "before").then(() => undefined)}
+                skipDisabled={!job.arrivedAt || status !== "in_progress" || beforePhotos.length > 0}
+                skipDisabledMessage={beforePhotos.length > 0 ? "A saved before photo already satisfies this checkpoint." : !job.arrivedAt || status !== "in_progress" ? "Record arrival before skipping the before photo." : undefined}
               />
               {beforePhotos.length > 0 ? (
                 <section className={styles.photoGallery} aria-label="Saved before-work photos">
@@ -878,7 +917,7 @@ export default function JobDetailPage() {
         {activeStage === "after" ? (
           canSeePhotos(currentUser.role) ? (
             <div className={styles.stageBody}>
-              <div className={styles.checkpointNotice}><strong>Finish the approved work, then document it</strong><span>Capture at least one clear after photo before asking the customer to confirm completion.</span></div>
+              <div className={styles.checkpointNotice}><strong>Finish the approved work, then document it</strong><span>Capture a clear after photo when possible. If a photo is not appropriate, explicitly skip it before customer completion confirmation.</span></div>
               <PhotoUploader
                 jobId={job.id}
                 uploadedBy={currentUser.id}
@@ -886,6 +925,11 @@ export default function JobDetailPage() {
                 checkpointLocked={completionFieldsLocked}
                 lockedTitle={signatureCheckpointUnavailable ? "Checking signed checkpoint" : "After photos locked by completed work"}
                 lockedMessage={signatureError ? "Saved signature status is unavailable. Retry the signature check before changing checkpoint evidence." : signatureLoading ? "Saved signatures are loading. Evidence stays locked until that check finishes." : job.status === "complete" || job.completedAt || job.completionSignatureOverrideAt ? "This job is complete, so its after-work evidence is part of the permanent record." : "The customer confirmed completion against this evidence. An owner must reject that confirmation before after-work evidence can change."}
+                checkpointSkipped={afterPhotoSkipped}
+                checkpointSkipSummary={afterSkipSummary}
+                onSkipCheckpoint={() => data.skipPhotoCheckpoint(jobId, "after").then(() => undefined)}
+                skipDisabled={!authorizationSignature || afterPhotos.length > 0 || !job.arrivedAt || status !== "in_progress"}
+                skipDisabledMessage={afterPhotos.length > 0 ? "A saved after photo already satisfies this checkpoint." : !authorizationSignature ? "Collect customer work authorization before skipping the after photo." : !job.arrivedAt || status !== "in_progress" ? "Only an arrived job in progress can skip the after photo." : undefined}
               />
               {afterPhotos.length > 0 ? (
                 <section className={styles.photoGallery} aria-label="Saved after-work photos">
@@ -901,8 +945,8 @@ export default function JobDetailPage() {
           currentUser.role !== "call_center" ? (
             <div className={styles.stageBody}>
               <section className={styles.approvalPanel}>
-                <div className={styles.approvalIntro}><span><PenLine size={21} aria-hidden="true" /></span><div><h3>Confirm the completed work</h3><p>Review the finished work and after photo together, then let the customer sign on this iPad.</p></div></div>
-                <SignatureStatusCard title="Customer completion confirmation" signature={completionSignature} rejectedSignature={rejectedCompletionSignature} loading={signatureLoading} error={signatureError} drawLabel="Confirm completed work" onDraw={() => setSignatureDialogPurpose("work_completion")} onRetry={() => void refreshJobSignatures()} canReject={currentUser.role === "owner" && job.status !== "complete"} onReject={completionSignature ? (reason) => rejectJobSignature(completionSignature, reason) : undefined} drawDisabled={signatureCheckpointUnavailable || !authorizationSignature || afterPhotos.length === 0 || job.status === "complete" || job.status === "cancelled"} />
+                <div className={styles.approvalIntro}><span><PenLine size={21} aria-hidden="true" /></span><div><h3>Confirm the completed work</h3><p>{afterPhotoSkipped ? "Review the finished work together. The missing after photo is explicitly recorded on this job, then the customer can sign on this iPad." : "Review the finished work and after photo together, then let the customer sign on this iPad."}</p></div></div>
+                <SignatureStatusCard title="Customer completion confirmation" signature={completionSignature} rejectedSignature={rejectedCompletionSignature} loading={signatureLoading} error={signatureError} drawLabel="Confirm completed work" onDraw={() => setSignatureDialogPurpose("work_completion")} onRetry={() => void refreshJobSignatures()} canReject={currentUser.role === "owner" && job.status !== "complete"} onReject={completionSignature ? (reason) => rejectJobSignature(completionSignature, reason) : undefined} drawDisabled={signatureCheckpointUnavailable || !authorizationSignature || !afterCheckpointSatisfied || job.status === "complete" || job.status === "cancelled"} />
                 <p className={styles.inlineNote}>{completionSignature ? "Completion is signed. Save the completed job, then build the invoice." : "This is a separate confirmation from the authorization signed before work."}</p>
               </section>
               {!signatureCheckpointUnavailable && !completionSignature && currentUser.role === "owner" && job.status !== "complete" ? (
@@ -937,7 +981,7 @@ export default function JobDetailPage() {
 
       {!primaryHidden ? (
         <aside className={styles.stickyAction} aria-label="Next job action">
-          <div><small>Next action</small><strong>{primaryHelper(activeStage, { canMarkEnRoute, canRecordArrival, authorizationSignature: Boolean(authorizationSignature), completionSignature: Boolean(completionSignature), invoice: Boolean(invoice), jobComplete: job.status === "complete", jobCancelled: job.status === "cancelled" })}</strong></div>
+          <div><small>Next action</small><strong>{primaryHelper(activeStage, { canMarkEnRoute, canRecordArrival, beforeCheckpointSatisfied, afterCheckpointSatisfied, authorizationSignature: Boolean(authorizationSignature), completionSignature: Boolean(completionSignature), invoice: Boolean(invoice), jobComplete: job.status === "complete", jobCancelled: job.status === "cancelled" })}</strong></div>
           <button type="button" className={styles.primaryAction} onClick={() => void handlePrimaryAction()} disabled={primaryDisabled}>{activeStage === "overview" && currentUser.role === "call_center" ? <Save size={18} aria-hidden="true" /> : (activeStage === "approval" && !authorizationSignature) || (activeStage === "completion" && !completionSignature) ? <PenLine size={18} aria-hidden="true" /> : null}{primaryLabel}<ChevronRight size={18} aria-hidden="true" /></button>
         </aside>
       ) : null}
@@ -983,17 +1027,17 @@ function stageTitle(stage: JobStage): string {
 
 function stageDescription(stage: JobStage): string {
   if (stage === "overview") return "Confirm who, where, and when before the technician starts.";
-  if (stage === "photos") return "Document the starting condition before proposing or beginning work.";
+  if (stage === "photos") return "Document the starting condition or explicitly record that the photo was skipped.";
   if (stage === "work") return "Create the scope and price with full technician flexibility.";
   if (stage === "approval") return "The customer chooses and signs the exact scope before work begins.";
-  if (stage === "after") return "Document the finished work before customer completion confirmation.";
+  if (stage === "after") return "Document the finished work or explicitly record that the photo was skipped.";
   if (stage === "completion") return "Capture a separate confirmation that the approved work is complete.";
   return "Create or open the invoice using the work already saved.";
 }
 
 function primaryHelper(
   stage: JobStage,
-  state: { canMarkEnRoute: boolean; canRecordArrival: boolean; authorizationSignature: boolean; completionSignature: boolean; invoice: boolean; jobComplete: boolean; jobCancelled: boolean }
+  state: { canMarkEnRoute: boolean; canRecordArrival: boolean; beforeCheckpointSatisfied: boolean; afterCheckpointSatisfied: boolean; authorizationSignature: boolean; completionSignature: boolean; invoice: boolean; jobComplete: boolean; jobCancelled: boolean }
 ): string {
   if (stage === "overview") {
     if (state.jobCancelled) return "Return to your service schedule";
@@ -1001,21 +1045,21 @@ function primaryHelper(
     if (state.canMarkEnRoute) return "Mark the trip started before you leave";
     return state.canRecordArrival ? "Record the real arrival time and begin work" : "Move to photo documentation";
   }
-  if (stage === "photos") return "Save at least one before photo";
+  if (stage === "photos") return state.beforeCheckpointSatisfied ? "Continue to the estimate" : "Save a before photo or explicitly skip it";
   if (stage === "work") return "Review the proposed scope and total with the customer";
   if (stage === "approval") {
     return state.authorizationSignature ? "The signed scope is locked; begin the approved work" : "Pass the iPad to the customer before work begins";
   }
-  if (stage === "after") return "Save proof of the completed work";
+  if (stage === "after") return state.afterCheckpointSatisfied ? "Continue to customer completion" : "Save an after photo or explicitly skip it";
   if (stage === "completion") return state.completionSignature ? "Complete the job and continue to invoicing" : "Review the finished work, then pass the iPad to the customer";
   return state.invoice ? "Continue in the invoice workspace" : "Use the saved customer and work details";
 }
 
-function stageStatusLabel(stage: JobStage, state: { beforeCount: number; afterCount: number; itemCount: number; authorized: boolean; completed: boolean; invoice: boolean }): string {
-  if (stage === "photos") return state.beforeCount > 0 ? `${state.beforeCount} saved` : "Required";
+function stageStatusLabel(stage: JobStage, state: { beforeCount: number; beforeSkipped: boolean; afterCount: number; afterSkipped: boolean; itemCount: number; authorized: boolean; completed: boolean; invoice: boolean }): string {
+  if (stage === "photos") return state.beforeCount > 0 ? `${state.beforeCount} saved` : state.beforeSkipped ? "Skipped" : "Optional";
   if (stage === "work") return `${state.itemCount} ${state.itemCount === 1 ? "item" : "items"}`;
   if (stage === "approval") return state.authorized ? "Authorized" : "Signature required";
-  if (stage === "after") return state.afterCount > 0 ? `${state.afterCount} saved` : "Required";
+  if (stage === "after") return state.afterCount > 0 ? `${state.afterCount} saved` : state.afterSkipped ? "Skipped" : "Optional";
   if (stage === "completion") return state.completed ? "Signed" : "Signature required";
   return state.invoice ? "Draft ready" : "Not built";
 }

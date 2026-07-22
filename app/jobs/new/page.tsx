@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
@@ -11,6 +11,8 @@ import { RoleGate } from "@/components/RoleGate";
 import { Button, Field } from "@/components/ui";
 import { emptyArrivalWindowDraft, resolveArrivalWindow } from "@/lib/arrival-window";
 import { dispatchJobConfirmations } from "@/lib/appointment-confirmations-client";
+import { DEFAULT_SCHEDULING_SETTINGS } from "@/lib/scheduling-settings";
+import { loadSchedulingSettings } from "@/lib/scheduling-settings-client";
 import {
   findTechnicianWindowConflicts
 } from "@/lib/service-window";
@@ -41,11 +43,38 @@ function NewJobClient() {
     description: ""
   });
   const [arrivalWindow, setArrivalWindow] = useState(emptyArrivalWindowDraft);
+  const arrivalWindowTouched = useRef(false);
+  const [schedulingSettings, setSchedulingSettings] = useState({ ...DEFAULT_SCHEDULING_SETTINGS });
+  const [settingsLoadError, setSettingsLoadError] = useState<string>();
+  const [settingsRequestVersion, setSettingsRequestVersion] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | undefined>();
   const [scheduleWithoutConfirmation, setScheduleWithoutConfirmation] = useState(false);
 
-  const arrivalWindowResolution = resolveArrivalWindow(arrivalWindow);
+  useEffect(() => {
+    let active = true;
+    setSettingsLoadError(undefined);
+    void loadSchedulingSettings()
+      .then((settings) => {
+        if (!active) return;
+        setSchedulingSettings(settings);
+        if (!arrivalWindowTouched.current) {
+          setArrivalWindow((current) => ({
+            ...current,
+            durationMinutes: settings.defaultArrivalWindowMinutes
+          }));
+        }
+      })
+      .catch((error) => {
+        if (!active) return;
+        setSettingsLoadError(error instanceof Error ? error.message : "Scheduling defaults could not be loaded.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [settingsRequestVersion]);
+
+  const arrivalWindowResolution = resolveArrivalWindow(arrivalWindow, schedulingSettings.timeZone);
   const scheduledAtIso = arrivalWindowResolution.status === "valid" ? arrivalWindowResolution.startAt : undefined;
   const arrivalWindowEndAtIso = arrivalWindowResolution.status === "valid" ? arrivalWindowResolution.endAt : undefined;
   const validWindow = arrivalWindowResolution.status === "valid";
@@ -67,6 +96,7 @@ function NewJobClient() {
   }
 
   function updateArrivalWindow(value: typeof arrivalWindow) {
+    arrivalWindowTouched.current = true;
     setArrivalWindow(value);
   }
 
@@ -135,8 +165,22 @@ function NewJobClient() {
                 {techs.map((tech) => <option key={tech.id} value={tech.id}>{tech.displayName}</option>)}
               </select>
             </Field>
-            <ArrivalWindowField value={arrivalWindow} onChange={updateArrivalWindow} required hideLegend />
+            <ArrivalWindowField
+              value={arrivalWindow}
+              onChange={updateArrivalWindow}
+              required
+              hideLegend
+              timeZone={schedulingSettings.timeZone}
+              defaultDurationMinutes={schedulingSettings.defaultArrivalWindowMinutes}
+              schedulingIncrementMinutes={schedulingSettings.schedulingIncrementMinutes}
+            />
           </div>
+          {settingsLoadError ? (
+            <div className={styles.settingsNotice} role="status">
+              <span>Using the standard 3-hour arrival window because owner defaults could not be loaded.</span>
+              <button type="button" onClick={() => setSettingsRequestVersion((version) => version + 1)}>Try again</button>
+            </div>
+          ) : null}
           {conflicts.length > 0 ? (
             <div className={styles.windowConflict} role="status">
               <strong>Overlapping customer arrival windows</strong>

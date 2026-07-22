@@ -3,14 +3,16 @@ import React from "react";
 import { branding } from "@/lib/branding";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { balanceDue, invoiceOptionLabels, selectedSubtotal, selectedTotal } from "@/lib/invoice";
+import { displayJobPhotoCaption } from "@/lib/job-photos";
 import { money, percent } from "@/lib/money";
-import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem, Tier } from "@/lib/types";
+import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem, JobPhoto, Tier } from "@/lib/types";
 
 export type InvoicePdfDocumentProps = {
   invoice: Invoice;
   job: Job;
   customer: Customer;
   items: JobLineItem[];
+  photos?: JobPhoto[];
   signatures?: InvoiceSignature[];
   draft?: boolean;
 };
@@ -98,7 +100,7 @@ export function invoicePdfDocumentState(
   };
 }
 
-export function InvoicePdfDocument({ invoice, job, customer, items, signatures = [], draft = false }: InvoicePdfDocumentProps) {
+export function InvoicePdfDocument({ invoice, job, customer, items, photos = [], signatures = [], draft = false }: InvoicePdfDocumentProps) {
   const activeSignatures = signatures.filter((signature) => signature.status === "active");
   const authorizationSignature = activeSignatures.find((signature) => signature.purpose === "work_authorization");
   const completionSignature = activeSignatures.find((signature) => signature.purpose === "work_completion");
@@ -140,15 +142,24 @@ export function InvoicePdfDocument({ invoice, job, customer, items, signatures =
   const signatureImageUnits = [authorizationSignature, completionSignature]
     .filter((signature) => Boolean(signature?.imageUrl)).length;
   const draftNoticeUnits = documentState.isDraft ? 1 : 0;
+  const sortedPhotos = sortInvoicePhotos(photos);
+  const skippedPhotoCheckpoints = jobPhotoCheckpointSkips(job);
+  const hasPhotoRecord = sortedPhotos.length > 0 || skippedPhotoCheckpoints.length > 0;
+  const photoPages = sortedPhotos.length > 0
+    ? paginatePhotos(sortedPhotos, skippedPhotoCheckpoints.length > 0 ? 2 : 4)
+    : skippedPhotoCheckpoints.length > 0
+      ? [[]]
+      : [];
   // The additional signed-invoice record needs a deliberate summary page. Letting
   // react-pdf wrap a nominally one-page layout would produce an unnumbered second
   // page with an incorrect "Page 1 of 1" footer.
-  const singlePage = !invoiceApprovalSignature
+  const singlePage = !hasPhotoRecord
+    && !invoiceApprovalSignature
     && totalItemUnits + signatureImageUnits + draftNoticeUnits <= 4
     && addressWeight <= 300
     && (invoice.notes || job.notes).length <= 340;
   const itemPages = singlePage ? [selectedItems] : paginateItems(selectedItems, addressWeight > 300 ? 6 : 8, 15);
-  const totalPages = singlePage ? 1 : itemPages.length + 1;
+  const totalPages = singlePage ? 1 : itemPages.length + photoPages.length + 1;
 
   return (
     <Document
@@ -183,6 +194,21 @@ export function InvoicePdfDocument({ invoice, job, customer, items, signatures =
               )}
               <LineItemsTable items={pageItems} />
               <DocumentFooter invoice={invoice} pageNumber={index + 1} totalPages={totalPages} draft={documentState.isDraft} />
+            </Page>
+          ))}
+          {photoPages.map((pagePhotos, index) => (
+            <Page key={`photos-${index}`} size="LETTER" style={styles.page}>
+              <DocumentHeader invoice={invoice} draft={documentState.isDraft} />
+              {documentState.isDraft ? <DraftNotice label={documentState.banner} /> : null}
+              <ContinuationHeading title={index === 0 ? "Job photo record" : "Job photos continued"} invoice={invoice} />
+              {index === 0 ? <PhotoCheckpointAudit checkpoints={skippedPhotoCheckpoints} /> : null}
+              <PhotoEvidenceGrid photos={pagePhotos} />
+              <DocumentFooter
+                invoice={invoice}
+                pageNumber={itemPages.length + index + 1}
+                totalPages={totalPages}
+                draft={documentState.isDraft}
+              />
             </Page>
           ))}
           <Page size="LETTER" style={styles.page}>
@@ -316,6 +342,47 @@ function LineItemsTable({ items }: { items: JobLineItem[] }) {
       )) : (
         <View style={styles.emptyRow}><Text style={styles.emptyText}>No approved work items are selected.</Text></View>
       )}
+    </View>
+  );
+}
+
+function PhotoEvidenceGrid({ photos }: { photos: JobPhoto[] }) {
+  if (photos.length === 0) {
+    return <Text style={styles.photoEmpty}>No image was stored for the audited skipped checkpoint.</Text>;
+  }
+  return (
+    <View style={styles.photoGrid}>
+      {photos.map((photo) => {
+        const renderable = /^(data:image\/(png|jpe?g);base64,|https?:\/\/|blob:)/i.test(photo.storagePath);
+        return (
+          <View key={photo.id} wrap={false} style={styles.photoCard}>
+            <View style={styles.photoImageArea}>
+              {renderable
+                ? <Image src={photo.storagePath} style={styles.photoImage} />
+                : <Text style={styles.photoUnavailable}>Photo preview unavailable</Text>}
+            </View>
+            <View style={styles.photoCopy}>
+              <Text style={styles.photoKind}>{photoKindLabel(photo.kind)}</Text>
+              <Text style={styles.photoCaption}>{displayJobPhotoCaption(photo.caption)}</Text>
+              <Text style={styles.photoMeta}>{formatDateTime(photo.uploadedAt)}</Text>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function PhotoCheckpointAudit({ checkpoints }: { checkpoints: ReturnType<typeof jobPhotoCheckpointSkips> }) {
+  if (checkpoints.length === 0) return null;
+  return (
+    <View style={styles.photoSkipList}>
+      {checkpoints.map((checkpoint) => (
+        <View key={checkpoint.kind} style={styles.photoSkipRow} wrap={false}>
+          <Text style={styles.photoSkipTitle}>{checkpoint.kind === "before" ? "BEFORE PHOTO SKIPPED" : "AFTER PHOTO SKIPPED"}</Text>
+          <Text style={styles.photoSkipCopy}>Audited field decision recorded {formatDateTime(checkpoint.at)}. The technician continued without storing this checkpoint image.</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -475,6 +542,38 @@ function paginateItems(items: JobLineItem[], firstCapacity: number, continuation
   return pages;
 }
 
+function paginatePhotos(photos: JobPhoto[], firstPageCapacity = 4) {
+  const pages: JobPhoto[][] = [photos.slice(0, firstPageCapacity)];
+  for (let index = firstPageCapacity; index < photos.length; index += 4) pages.push(photos.slice(index, index + 4));
+  return pages;
+}
+
+function sortInvoicePhotos(photos: JobPhoto[]) {
+  const kindOrder = { before: 0, after: 1, other: 2 } as const;
+  return [...photos].sort((left, right) => (
+    kindOrder[left.kind] - kindOrder[right.kind]
+    || Date.parse(left.uploadedAt) - Date.parse(right.uploadedAt)
+    || left.id.localeCompare(right.id)
+  ));
+}
+
+function jobPhotoCheckpointSkips(job: Job) {
+  const checkpoints: Array<{ kind: "before" | "after"; at: string }> = [];
+  if (job.beforePhotosSkippedAt && job.beforePhotosSkippedBy) {
+    checkpoints.push({ kind: "before", at: job.beforePhotosSkippedAt });
+  }
+  if (job.afterPhotosSkippedAt && job.afterPhotosSkippedBy) {
+    checkpoints.push({ kind: "after", at: job.afterPhotosSkippedAt });
+  }
+  return checkpoints;
+}
+
+function photoKindLabel(kind: JobPhoto["kind"]) {
+  if (kind === "before") return "BEFORE WORK";
+  if (kind === "after") return "AFTER WORK";
+  return "JOB PHOTO";
+}
+
 function itemUnits(item: JobLineItem) {
   return Math.max(1, Math.ceil(item.description.length / 110));
 }
@@ -553,6 +652,20 @@ const styles = StyleSheet.create({
   amountColumn: { width: "17%", textAlign: "right" },
   emptyRow: { padding: 12, alignItems: "center" },
   emptyText: { color: colors.muted, fontSize: 8 },
+  photoGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignContent: "flex-start" },
+  photoCard: { width: "49%", marginBottom: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 6, overflow: "hidden", backgroundColor: colors.soft },
+  photoImageArea: { height: 190, alignItems: "center", justifyContent: "center", backgroundColor: "#E8EEF0" },
+  photoImage: { width: "100%", height: "100%", objectFit: "cover" },
+  photoUnavailable: { color: colors.muted, fontSize: 8 },
+  photoCopy: { paddingVertical: 6, paddingHorizontal: 8 },
+  photoKind: { color: colors.accent, fontSize: 6.4, fontWeight: 700, letterSpacing: 0.6, marginBottom: 2 },
+  photoCaption: { color: colors.ink, fontSize: 8, fontWeight: 700, marginBottom: 2 },
+  photoMeta: { color: colors.muted, fontSize: 6.4 },
+  photoEmpty: { color: colors.muted, fontSize: 9, marginTop: 10 },
+  photoSkipList: { marginBottom: 10 },
+  photoSkipRow: { borderWidth: 1, borderColor: colors.line, backgroundColor: "#FFF7ED", borderRadius: 5, paddingVertical: 7, paddingHorizontal: 9, marginBottom: 6 },
+  photoSkipTitle: { color: colors.accent, fontSize: 7, fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 },
+  photoSkipCopy: { color: colors.ink, fontSize: 7.2, lineHeight: 1.35 },
   compactSummary: { marginTop: 0 },
   summaryPageBody: { paddingTop: 4 },
   summaryArea: { flexDirection: "row", marginBottom: 6 },

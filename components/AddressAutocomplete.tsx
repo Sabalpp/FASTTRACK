@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { createId } from "@/lib/id";
+import { useEffect, useId, useRef, useState } from "react";
 
 type AddressSelection = {
   formatted: string;
@@ -20,33 +19,34 @@ type Suggestion = {
   placeId?: string;
   fullAddress?: string;
   placeFormatted?: string;
-};
-
-type MapboxSuggestResponse = {
-  suggestions?: Array<{
-    mapbox_id: string;
-    name: string;
-    full_address?: string;
-    place_formatted?: string;
-  }>;
+  selection?: AddressSelection;
+  longitude?: number;
+  latitude?: number;
 };
 
 type MapboxFeature = {
+  id?: string;
+  geometry?: {
+    coordinates?: [number, number];
+  };
   properties?: {
+    mapbox_id?: string;
     name?: string;
+    name_preferred?: string;
     address?: string;
     full_address?: string;
+    place_formatted?: string;
     context?: {
-      place?: { name?: string };
-      locality?: { name?: string };
-      district?: { name?: string };
-      region?: { name?: string; region_code?: string };
-      postcode?: { name?: string };
+      place?: { name?: string; name_preferred?: string };
+      locality?: { name?: string; name_preferred?: string };
+      district?: { name?: string; name_preferred?: string };
+      region?: { name?: string; name_preferred?: string; region_code?: string };
+      postcode?: { name?: string; name_preferred?: string };
     };
   };
 };
 
-type MapboxRetrieveResponse = {
+type MapboxForwardResponse = {
   features?: MapboxFeature[];
 };
 
@@ -105,6 +105,9 @@ const NOVA_BOUNDS = {
   east: -76.86,
   west: -77.92
 };
+const NOVA_PROXIMITY = "-77.45,38.85";
+const MIN_QUERY_LENGTH = 3;
+const SEARCH_DEBOUNCE_MS = 250;
 
 declare global {
   interface Window {
@@ -130,7 +133,7 @@ export function AddressAutocomplete({
 }) {
   const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN?.trim();
-  const configuredProvider: AddressProvider = googleKey ? "google" : mapboxToken ? "mapbox" : "manual";
+  const configuredProvider: AddressProvider = mapboxToken ? "mapbox" : googleKey ? "google" : "manual";
   const [provider, setProvider] = useState<AddressProvider>(configuredProvider);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen] = useState(false);
@@ -140,7 +143,6 @@ export function AddressAutocomplete({
   const [retryNonce, setRetryNonce] = useState(0);
   const listboxId = useId();
   const statusId = useId();
-  const sessionToken = useMemo(() => createId(), []);
   const skipSearchValuesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -169,7 +171,7 @@ export function AddressAutocomplete({
       return;
     }
 
-    if (query.length < 3 || provider === "manual") {
+    if (query.length < MIN_QUERY_LENGTH || provider === "manual") {
       setSuggestions([]);
       setOpen(false);
       setBusy(false);
@@ -183,6 +185,34 @@ export function AddressAutocomplete({
     const timeout = window.setTimeout(() => {
       setBusy(true);
       setSearchStatus("loading");
+      if (provider === "mapbox" && mapboxToken) {
+        void suggestMapboxAddresses(mapboxToken, query, controller.signal)
+          .then((nextSuggestions) => {
+            if (!active) return;
+            setSuggestions(nextSuggestions);
+            setOpen(nextSuggestions.length > 0);
+            setActiveIndex(-1);
+            setSearchStatus(nextSuggestions.length > 0 ? "results" : "empty");
+          })
+          .catch((error) => {
+            if (!active || (error as Error).name === "AbortError") return;
+            console.warn("Mapbox address suggestions are unavailable.");
+            setSuggestions([]);
+            setOpen(false);
+            setActiveIndex(-1);
+            if (googleKey) {
+              setProvider("google");
+              setSearchStatus("loading");
+            } else {
+              setSearchStatus("unavailable");
+            }
+          })
+          .finally(() => {
+            if (active) setBusy(false);
+          });
+        return;
+      }
+
       if (provider === "google" && googleKey) {
         void suggestGoogleAddresses(googleKey, query)
           .then((nextSuggestions) => {
@@ -198,48 +228,20 @@ export function AddressAutocomplete({
             setSuggestions([]);
             setOpen(false);
             setActiveIndex(-1);
-            if (mapboxToken) {
-              setProvider("mapbox");
-              setSearchStatus("loading");
-            } else {
-              setSearchStatus("unavailable");
-            }
-          })
-          .finally(() => {
-            if (active) setBusy(false);
-          });
-        return;
-      }
-
-      if (provider === "mapbox" && mapboxToken) {
-        void suggestMapboxAddresses(mapboxToken, sessionToken, query, controller.signal)
-          .then((nextSuggestions) => {
-            if (!active) return;
-            setSuggestions(nextSuggestions);
-            setOpen(nextSuggestions.length > 0);
-            setActiveIndex(-1);
-            setSearchStatus(nextSuggestions.length > 0 ? "results" : "empty");
-          })
-          .catch((error) => {
-            if (!active || (error as Error).name === "AbortError") return;
-            console.warn("Address suggestions are unavailable.");
-            setSuggestions([]);
-            setOpen(false);
-            setActiveIndex(-1);
             setSearchStatus("unavailable");
           })
           .finally(() => {
             if (active) setBusy(false);
           });
       }
-    }, 220);
+    }, SEARCH_DEBOUNCE_MS);
 
     return () => {
       active = false;
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [disabled, googleKey, mapboxToken, provider, retryNonce, sessionToken, value]);
+  }, [disabled, googleKey, mapboxToken, provider, retryNonce, value]);
 
   async function selectSuggestion(suggestion: Suggestion) {
     setOpen(false);
@@ -249,7 +251,7 @@ export function AddressAutocomplete({
       const selection = suggestion.provider === "google" && googleKey
         ? await retrieveGoogleAddress(googleKey, suggestion)
         : suggestion.provider === "mapbox" && mapboxToken
-          ? await retrieveMapboxAddress(mapboxToken, sessionToken, suggestion)
+          ? await retrieveMapboxAddress(mapboxToken, suggestion)
           : fallbackAddress(suggestion);
       skipSearchValuesRef.current = new Set([selection.formatted.trim(), selection.addressLine1.trim()]);
       onChange(selection.formatted);
@@ -257,13 +259,9 @@ export function AddressAutocomplete({
       setSuggestions([]);
       setSearchStatus("idle");
     } catch (error) {
-      console.warn("The selected address could not be fully retrieved; using its displayed address.");
-      const fallback = fallbackAddress(suggestion);
-      skipSearchValuesRef.current = new Set([fallback.formatted.trim(), fallback.addressLine1.trim()]);
-      onChange(fallback.formatted);
-      onSelect?.(fallback);
+      console.warn("The selected address could not be verified for permanent storage.");
       setSuggestions([]);
-      setSearchStatus("idle");
+      setSearchStatus("unavailable");
     }
   }
 
@@ -298,6 +296,9 @@ export function AddressAutocomplete({
       : searchStatus === "unavailable"
         ? "Address suggestions are unavailable. You can still enter the address manually."
         : undefined;
+  const suggestionMapUrl = provider === "mapbox" && mapboxToken && open
+    ? buildMapboxSuggestionMapUrl(mapboxToken, suggestions)
+    : undefined;
 
   return (
     <div className="address-autocomplete">
@@ -326,23 +327,45 @@ export function AddressAutocomplete({
         aria-busy={busy}
       />
       {provider !== "manual" && open && suggestions.length > 0 ? (
-        <div className="address-suggestions" id={listboxId} role="listbox" aria-label="Suggested addresses">
-          {suggestions.map((suggestion, index) => (
-            <button
-              key={suggestion.id}
-              id={`${listboxId}-option-${index}`}
-              type="button"
-              role="option"
-              aria-selected={activeIndex === index}
-              className={activeIndex === index ? "active" : undefined}
-              onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => setActiveIndex(index)}
-              onClick={() => void selectSuggestion(suggestion)}
+        <div className="address-suggestions">
+          {suggestionMapUrl ? (
+            <img
+              className="address-suggestion-map"
+              src={suggestionMapUrl}
+              alt="Map showing the suggested addresses"
+              width={600}
+              height={220}
+            />
+          ) : null}
+          <div id={listboxId} role="listbox" aria-label="Suggested addresses">
+            {suggestions.map((suggestion, index) => (
+              <button
+                key={suggestion.id}
+                id={`${listboxId}-option-${index}`}
+                type="button"
+                role="option"
+                aria-selected={activeIndex === index}
+                className={activeIndex === index ? "active" : undefined}
+                onPointerDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setActiveIndex(index)}
+                onClick={() => void selectSuggestion(suggestion)}
+              >
+                <strong>{suggestion.name}</strong>
+                <span>{suggestion.secondary}</span>
+              </button>
+            ))}
+          </div>
+          {provider === "mapbox" ? (
+            <a
+              className="address-attribution"
+              href="https://www.mapbox.com/"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Address search powered by Mapbox (opens in a new tab)"
             >
-              <strong>{suggestion.name}</strong>
-              <span>{suggestion.secondary}</span>
-            </button>
-          ))}
+              Search powered by Mapbox
+            </a>
+          ) : null}
         </div>
       ) : null}
       {busy ? <span className="address-busy" aria-hidden="true" /> : null}
@@ -464,40 +487,101 @@ function loadGoogleMaps(apiKey: string): Promise<GoogleMapsApi> {
   return window.__fastTrackGoogleMapsPromise;
 }
 
-async function suggestMapboxAddresses(token: string, sessionToken: string, query: string, signal: AbortSignal): Promise<Suggestion[]> {
-  const url = new URL("https://api.mapbox.com/search/searchbox/v1/suggest");
-  url.searchParams.set("q", query);
-  url.searchParams.set("access_token", token);
-  url.searchParams.set("session_token", sessionToken);
-  url.searchParams.set("country", "US");
-  url.searchParams.set("types", "address");
+async function suggestMapboxAddresses(token: string, query: string, signal: AbortSignal): Promise<Suggestion[]> {
+  const searchText = normalizeMapboxQuery(query);
+  if (!searchText) return [];
+
+  const url = mapboxForwardUrl(token);
+  url.searchParams.set("q", searchText);
+  url.searchParams.set("autocomplete", "true");
+  url.searchParams.set("permanent", "false");
   url.searchParams.set("limit", "5");
-  url.searchParams.set("language", "en");
-  url.searchParams.set("proximity", "-77.45,38.85");
 
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error("Address search failed.");
-  const payload = await response.json() as MapboxSuggestResponse;
-  return (payload.suggestions ?? []).map((suggestion) => ({
-    id: suggestion.mapbox_id,
-    provider: "mapbox",
-    mapboxId: suggestion.mapbox_id,
-    name: suggestion.name,
-    secondary: suggestion.full_address ?? suggestion.place_formatted,
-    fullAddress: suggestion.full_address,
-    placeFormatted: suggestion.place_formatted
-  }));
+  const payload = await response.json() as MapboxForwardResponse;
+  return (payload.features ?? []).flatMap((feature) => {
+    const properties = feature.properties;
+    const mapboxId = properties?.mapbox_id ?? feature.id;
+    const name = properties?.name_preferred ?? properties?.name ?? properties?.address;
+    if (!mapboxId || !name) return [];
+
+    const suggestion: Suggestion = {
+      id: mapboxId,
+      provider: "mapbox",
+      mapboxId,
+      name,
+      secondary: properties?.place_formatted ?? properties?.full_address,
+      fullAddress: properties?.full_address,
+      placeFormatted: properties?.place_formatted,
+      longitude: feature.geometry?.coordinates?.[0],
+      latitude: feature.geometry?.coordinates?.[1]
+    };
+    const selection = parseMapboxAddress(feature, suggestion);
+    return [{ ...suggestion, name: selection.addressLine1, fullAddress: selection.formatted, selection }];
+  });
 }
 
-async function retrieveMapboxAddress(token: string, sessionToken: string, suggestion: Suggestion): Promise<AddressSelection> {
-  if (!suggestion.mapboxId) return fallbackAddress(suggestion);
-  const url = new URL(`https://api.mapbox.com/search/searchbox/v1/retrieve/${suggestion.mapboxId}`);
+function buildMapboxSuggestionMapUrl(token: string, suggestions: Suggestion[]): string | undefined {
+  const points = suggestions.flatMap((suggestion) => (
+    Number.isFinite(suggestion.longitude) && Number.isFinite(suggestion.latitude)
+      ? [{
+          type: "Feature" as const,
+          geometry: {
+            type: "Point" as const,
+            coordinates: [suggestion.longitude, suggestion.latitude]
+          },
+          properties: {}
+        }]
+      : []
+  ));
+  if (points.length === 0) return undefined;
+
+  const overlay = encodeURIComponent(JSON.stringify({
+    type: "FeatureCollection",
+    features: points
+  }));
+  const url = new URL(`https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/geojson(${overlay})/auto/600x220`);
   url.searchParams.set("access_token", token);
-  url.searchParams.set("session_token", sessionToken);
+  url.searchParams.set("padding", "36");
+  return url.toString();
+}
+
+async function retrieveMapboxAddress(token: string, suggestion: Suggestion): Promise<AddressSelection> {
+  if (!suggestion.mapboxId) return fallbackAddress(suggestion);
+
+  // The selected address is persisted on customer/job records, so resolve the
+  // Mapbox ID once with permanent storage enabled before handing it to callers.
+  const url = mapboxForwardUrl(token);
+  url.searchParams.set("q", suggestion.mapboxId);
+  url.searchParams.set("autocomplete", "false");
+  url.searchParams.set("permanent", "true");
+  url.searchParams.set("limit", "1");
+
   const response = await fetch(url);
   if (!response.ok) throw new Error("Address retrieve failed.");
-  const payload = await response.json() as MapboxRetrieveResponse;
+  const payload = await response.json() as MapboxForwardResponse;
   return parseMapboxAddress(payload.features?.[0], suggestion);
+}
+
+function mapboxForwardUrl(token: string) {
+  const url = new URL("https://api.mapbox.com/search/geocode/v6/forward");
+  url.searchParams.set("access_token", token);
+  url.searchParams.set("country", "us");
+  url.searchParams.set("types", "address");
+  url.searchParams.set("language", "en");
+  url.searchParams.set("proximity", NOVA_PROXIMITY);
+  return url;
+}
+
+function normalizeMapboxQuery(query: string) {
+  return query
+    .replace(/;/g, " ")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 20)
+    .join(" ")
+    .slice(0, 256);
 }
 
 function parseGoogleAddress(place: GooglePlaceResult, suggestion: Suggestion): AddressSelection {
@@ -518,12 +602,30 @@ function parseGoogleAddress(place: GooglePlaceResult, suggestion: Suggestion): A
 function parseMapboxAddress(feature: MapboxFeature | undefined, suggestion: Suggestion): AddressSelection {
   const properties = feature?.properties;
   const context = properties?.context;
-  const addressLine1 = properties?.name ?? properties?.address ?? suggestion.name;
-  const city = context?.place?.name ?? context?.locality?.name ?? context?.district?.name ?? "";
-  const state = (context?.region?.region_code ?? context?.region?.name ?? "").replace(/^US-/, "").toUpperCase();
-  const zip = context?.postcode?.name ?? "";
-  const formatted = properties?.full_address ?? suggestion.fullAddress ?? [addressLine1, city, state, zip].filter(Boolean).join(", ");
+  const priorSelection = suggestion.selection;
+  const addressLine1 = properties?.name_preferred
+    ?? properties?.name
+    ?? properties?.address
+    ?? priorSelection?.addressLine1
+    ?? suggestion.name;
+  const city = mapboxContextName(context?.place)
+    || mapboxContextName(context?.locality)
+    || mapboxContextName(context?.district)
+    || priorSelection?.city
+    || "";
+  const state = ((context?.region?.region_code ?? mapboxContextName(context?.region)) || priorSelection?.state || "")
+    .replace(/^US-/i, "")
+    .toUpperCase();
+  const zip = mapboxContextName(context?.postcode) || priorSelection?.zip || "";
+  const formatted = properties?.full_address
+    ?? priorSelection?.formatted
+    ?? suggestion.fullAddress
+    ?? [addressLine1, city, state, zip].filter(Boolean).join(", ");
   return { formatted, addressLine1, city, state, zip };
+}
+
+function mapboxContextName(context: { name?: string; name_preferred?: string } | undefined) {
+  return context?.name_preferred ?? context?.name ?? "";
 }
 
 function component(components: GoogleAddressComponent[], type: string, field: "long_name" | "short_name") {
@@ -531,6 +633,7 @@ function component(components: GoogleAddressComponent[], type: string, field: "l
 }
 
 function fallbackAddress(suggestion: Suggestion): AddressSelection {
+  if (suggestion.selection) return suggestion.selection;
   const formatted = suggestion.fullAddress ?? [suggestion.name, suggestion.placeFormatted ?? suggestion.secondary].filter(Boolean).join(", ");
   return {
     formatted,

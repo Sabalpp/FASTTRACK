@@ -85,6 +85,13 @@ describe("AppShell account menu", () => {
     expect(screen.getByRole("heading", { name: "Operations" })).toBeTruthy();
   });
 
+  it("puts owner scheduling settings in the account menu", () => {
+    render(<AppShell><main>Dashboard</main></AppShell>);
+
+    fireEvent.click(screen.getByLabelText("Open account menu"));
+    expect(screen.getByRole("link", { name: "Scheduling" })).toHaveProperty("href", "http://localhost:3000/settings/scheduling");
+  });
+
   it("dismisses on Escape, outside input, viewport gestures, and navigation", () => {
     const view = render(<AppShell><main>Dashboard</main></AppShell>);
     const trigger = screen.getByLabelText("Open account menu");

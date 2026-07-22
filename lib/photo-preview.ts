@@ -16,9 +16,12 @@ export async function createPhotoPreview(file: File): Promise<string> {
     const context = canvas.getContext("2d");
     if (!context) throw new Error("Photo preview is unavailable on this device.");
     context.drawImage(image, 0, 0, width, height);
-    return canvas.toDataURL("image/jpeg", PREVIEW_QUALITY);
+    const preview = canvas.toDataURL("image/jpeg", PREVIEW_QUALITY);
+    if (!preview.startsWith("data:image/jpeg")) throw new Error("The selected photo could not be converted to JPEG.");
+    return preview;
   } catch {
-    return readFileAsDataUrl(file);
+    if (/^image\/(jpe?g|png)$/i.test(file.type)) return readFileAsDataUrl(file);
+    throw new Error("This camera photo could not be converted to JPEG. Choose a JPG or PNG image, or take a screenshot and upload it.");
   } finally {
     URL.revokeObjectURL(objectUrl);
   }

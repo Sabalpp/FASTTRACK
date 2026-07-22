@@ -23,8 +23,8 @@ describe("appointment provider configuration", () => {
     });
 
     expect(configuration).toEqual({
-      email: { configured: true, missing: [] },
-      sms: { configured: true, credentialMode: "api_key", missing: [] }
+      email: { configured: true, provider: "resend", missing: [] },
+      sms: { configured: true, provider: "twilio", credentialMode: "api_key", missing: [] }
     });
     expect(JSON.stringify(configuration)).not.toContain("private-secret");
   });
@@ -62,7 +62,13 @@ describe("Resend appointment email adapter", () => {
       fetchImpl
     });
 
-    expect(result).toEqual({ provider: "resend", messageId: "email_123", status: "accepted" });
+    expect(result).toEqual({
+      provider: "resend",
+      messageId: "email_123",
+      status: "accepted",
+      channel: "email",
+      destination: "customer@example.com"
+    });
     expect(fetchImpl).toHaveBeenCalledOnce();
     const [url, init] = vi.mocked(fetchImpl).mock.calls[0];
     const headers = new Headers(init?.headers);
@@ -166,7 +172,13 @@ describe("Twilio appointment SMS adapter", () => {
       fetchImpl
     });
 
-    expect(result).toEqual({ provider: "twilio", messageId: `SM${"d".repeat(32)}`, status: "accepted" });
+    expect(result).toEqual({
+      provider: "twilio",
+      messageId: `SM${"d".repeat(32)}`,
+      status: "accepted",
+      channel: "sms",
+      destination: "+17035551212"
+    });
     const [url, init] = vi.mocked(fetchImpl).mock.calls[0];
     const headers = new Headers(init?.headers);
     const form = new URLSearchParams(String(init?.body));

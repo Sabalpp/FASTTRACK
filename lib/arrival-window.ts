@@ -33,13 +33,36 @@ export function emptyArrivalWindowDraft(): ArrivalWindowDraft {
   };
 }
 
+export function arrivalWindowEndTime(draft: ArrivalWindowDraft): string {
+  const startMinutes = parseLocalTimeMinutes(draft.localStartTime);
+  if (startMinutes === undefined || !Number.isInteger(draft.durationMinutes) || draft.durationMinutes <= 0) return "";
+
+  const endMinutes = (startMinutes + draft.durationMinutes) % (24 * 60);
+  return `${pad(Math.floor(endMinutes / 60))}:${pad(endMinutes % 60)}`;
+}
+
+export function arrivalWindowDurationFromTimes(
+  localStartTime: string,
+  localEndTime: string
+): number | undefined {
+  const startMinutes = parseLocalTimeMinutes(localStartTime);
+  const endMinutes = parseLocalTimeMinutes(localEndTime);
+  if (startMinutes === undefined || endMinutes === undefined) return undefined;
+
+  const sameOrNextDayMinutes = endMinutes - startMinutes;
+  return sameOrNextDayMinutes > 0 ? sameOrNextDayMinutes : sameOrNextDayMinutes + 24 * 60;
+}
+
 export function resolveArrivalWindow(
   draft: ArrivalWindowDraft,
   timeZone = ARRIVAL_WINDOW_TIME_ZONE
 ): ArrivalWindowResolution {
   if (!draft.localDate || !draft.localStartTime) return { status: "incomplete" };
   if (!Number.isInteger(draft.durationMinutes) || draft.durationMinutes < 15 || draft.durationMinutes > 12 * 60) {
-    return { status: "invalid", error: "The arrival-window length is invalid." };
+    return {
+      status: "invalid",
+      error: "End time must be at least 15 minutes and no more than 12 hours after the start time."
+    };
   }
 
   const localParts = parseLocalDateTime(draft.localDate, draft.localStartTime);
@@ -176,6 +199,15 @@ function parseLocalDateTime(localDate: string, localTime: string): LocalDateTime
     return undefined;
   }
   return parts;
+}
+
+function parseLocalTimeMinutes(localTime: string): number | undefined {
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(localTime);
+  if (!timeMatch) return undefined;
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  if (hour > 23 || minute > 59) return undefined;
+  return hour * 60 + minute;
 }
 
 function localDateTimeCandidates(parts: LocalDateTimeParts, timeZone: string): number[] | Error {

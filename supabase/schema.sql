@@ -4908,3 +4908,2384 @@ grant execute on function public.record_invoice_signature(
   text, text, text, integer, integer, integer,
   text, text, timestamptz, uuid, jsonb
 ) to service_role;
+-- Allow an assigned field technician (or owner) to explicitly continue without
+-- a before/after photo while retaining an immutable actor-and-time audit record.
+
+alter table public.jobs
+  add column if not exists before_photos_skipped_at timestamptz,
+  add column if not exists before_photos_skipped_by uuid,
+  add column if not exists after_photos_skipped_at timestamptz,
+  add column if not exists after_photos_skipped_by uuid;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'job_photos_caption_length_check'
+      and conrelid = 'public.job_photos'::regclass
+  ) then
+    alter table public.job_photos
+      add constraint job_photos_caption_length_check
+      check (caption is null or char_length(caption) <= 240) not valid;
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'jobs_before_photos_skipped_by_fkey'
+      and conrelid = 'public.jobs'::regclass
+  ) then
+    alter table public.jobs
+      add constraint jobs_before_photos_skipped_by_fkey
+      foreign key (before_photos_skipped_by) references public.allowed_users(id) on delete restrict;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'jobs_after_photos_skipped_by_fkey'
+      and conrelid = 'public.jobs'::regclass
+  ) then
+    alter table public.jobs
+      add constraint jobs_after_photos_skipped_by_fkey
+      foreign key (after_photos_skipped_by) references public.allowed_users(id) on delete restrict;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'jobs_before_photo_skip_audit_check'
+      and conrelid = 'public.jobs'::regclass
+  ) then
+    alter table public.jobs
+      add constraint jobs_before_photo_skip_audit_check check (
+        (before_photos_skipped_at is null) = (before_photos_skipped_by is null)
+      );
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'jobs_after_photo_skip_audit_check'
+      and conrelid = 'public.jobs'::regclass
+  ) then
+    alter table public.jobs
+      add constraint jobs_after_photo_skip_audit_check check (
+        (after_photos_skipped_at is null) = (after_photos_skipped_by is null)
+      );
+  end if;
+end
+$$;
+
+create or replace function public.protect_signed_job_photos()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  previous_job_id uuid := case when tg_op in ('UPDATE', 'DELETE') then old.job_id else null end;
+  next_job_id uuid := case when tg_op in ('INSERT', 'UPDATE') then new.job_id else null end;
+  locked_job_id uuid;
+begin
+  for locked_job_id in
+    select job.id
+    from public.jobs job
+    where job.id in (previous_job_id, next_job_id)
+    order by job.id
+    for update
+  loop
+    null;
+  end loop;
+
+  if tg_op = 'UPDATE' and (
+    new.job_id is distinct from old.job_id
+    or new.storage_path is distinct from old.storage_path
+    or new.uploaded_by is distinct from old.uploaded_by
+    or new.uploaded_at is distinct from old.uploaded_at
+  ) then
+    raise exception 'Job photo identity, storage path, and uploader attribution are immutable.' using errcode = '42501';
+  end if;
+
+  if tg_op = 'INSERT' and coalesce(auth.role(), '') <> 'service_role'
+    and new.uploaded_by is distinct from public.current_allowed_user_id() then
+    raise exception 'The photo uploader must match the signed-in Fast Track user.' using errcode = '42501';
+  end if;
+
+  if tg_op in ('INSERT', 'UPDATE') and (
+    new.storage_path not like (new.job_id::text || '/%')
+    or position('..' in new.storage_path) > 0
+  ) then
+    raise exception 'Job photo storage paths must remain inside the parent job folder.' using errcode = '23514';
+  end if;
+
+  if tg_op in ('INSERT', 'UPDATE') and new.kind = 'before' and exists (
+    select 1 from public.jobs job
+    where job.id = next_job_id and job.before_photos_skipped_at is not null
+  ) then
+    raise exception 'A before photo cannot be added after that checkpoint was explicitly skipped.' using errcode = '42501';
+  end if;
+
+  if tg_op in ('INSERT', 'UPDATE') and new.kind = 'after' and exists (
+    select 1 from public.jobs job
+    where job.id = next_job_id and job.after_photos_skipped_at is not null
+  ) then
+    raise exception 'An after photo cannot be added after that checkpoint was explicitly skipped.' using errcode = '42501';
+  end if;
+
+  -- Authorization may precede the first before photo, but any saved before
+  -- evidence remains immutable once it exists and is signed against the job.
+  if (
+    (tg_op in ('UPDATE', 'DELETE') and old.kind = 'before')
+    or (tg_op = 'UPDATE' and new.kind = 'before')
+  ) and exists (
+    select 1 from public.invoice_signatures signature
+    where (signature.job_id = previous_job_id or signature.job_id = next_job_id)
+      and signature.purpose = 'work_authorization'
+      and signature.status = 'active'
+  ) then
+    raise exception 'Reject the saved customer work authorization before changing before-work evidence.' using errcode = '42501';
+  end if;
+
+  if tg_op = 'INSERT' and new.kind = 'before' and (
+    exists (
+      select 1 from public.invoice_signatures signature
+      where signature.job_id = next_job_id
+        and signature.purpose = 'work_completion'
+        and signature.status = 'active'
+    )
+    or exists (
+      select 1 from public.jobs job
+      where job.id = next_job_id and job.status = 'complete'
+    )
+  ) then
+    raise exception 'Before-work evidence cannot be added after work completion.' using errcode = '42501';
+  end if;
+
+  if (
+    (tg_op in ('UPDATE', 'DELETE') and old.kind = 'after')
+    or (tg_op in ('INSERT', 'UPDATE') and new.kind = 'after')
+  ) and exists (
+    select 1 from public.invoice_signatures signature
+    where (signature.job_id = previous_job_id or signature.job_id = next_job_id)
+      and signature.purpose = 'work_completion'
+      and signature.status = 'active'
+  ) then
+    raise exception 'Reject the saved completion signature before changing after-work evidence.' using errcode = '42501';
+  end if;
+
+  if (
+    (tg_op in ('UPDATE', 'DELETE') and old.kind = 'after')
+    or (tg_op in ('INSERT', 'UPDATE') and new.kind = 'after')
+  ) and exists (
+    select 1 from public.jobs job
+    where (job.id = previous_job_id or job.id = next_job_id)
+      and job.status = 'complete'
+  ) then
+    raise exception 'After-work evidence is frozen when the job is complete, including owner-overridden completion.' using errcode = '42501';
+  end if;
+
+  perform set_config('fasttrack.internal_workflow_revision_bump', 'on', true);
+  update public.jobs job
+  set workflow_revision = job.workflow_revision + 1
+  where job.id in (previous_job_id, next_job_id);
+  perform set_config('fasttrack.internal_workflow_revision_bump', 'off', true);
+
+  return case when tg_op = 'DELETE' then old else new end;
+end;
+$$;
+
+create or replace function public.protect_work_authorization_signed_job_fields()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actor_id uuid := public.current_allowed_user_id();
+  actor_role text := public.current_allowed_role();
+  authorization_bound_fields_changed boolean;
+  completion_bound_fields_changed boolean;
+  before_skip_changed boolean;
+  after_skip_changed boolean;
+  photo_checkpoint_changed boolean;
+begin
+  if tg_op = 'INSERT' then
+    if coalesce(auth.role(), '') <> 'service_role' and (
+      new.before_photos_skipped_at is not null
+      or new.before_photos_skipped_by is not null
+      or new.after_photos_skipped_at is not null
+      or new.after_photos_skipped_by is not null
+    ) then
+      raise exception 'Photo checkpoints must be skipped through the protected workflow.' using errcode = '42501';
+    end if;
+    return new;
+  end if;
+
+  authorization_bound_fields_changed :=
+    new.customer_id is distinct from old.customer_id
+    or new.service_address is distinct from old.service_address
+    or new.description is distinct from old.description
+    or new.scheduled_at is distinct from old.scheduled_at
+    or new.arrival_window_end_at is distinct from old.arrival_window_end_at;
+  completion_bound_fields_changed :=
+    authorization_bound_fields_changed
+    or new.arrived_at is distinct from old.arrived_at
+    or new.notes is distinct from old.notes;
+  before_skip_changed :=
+    new.before_photos_skipped_at is distinct from old.before_photos_skipped_at
+    or new.before_photos_skipped_by is distinct from old.before_photos_skipped_by;
+  after_skip_changed :=
+    new.after_photos_skipped_at is distinct from old.after_photos_skipped_at
+    or new.after_photos_skipped_by is distinct from old.after_photos_skipped_by;
+  photo_checkpoint_changed := before_skip_changed or after_skip_changed;
+
+  if authorization_bound_fields_changed and exists (
+    select 1 from public.invoice_signatures signature
+    where signature.job_id = old.id
+      and signature.purpose = 'work_authorization'
+      and signature.status = 'active'
+  ) then
+    raise exception 'Reject the saved customer work authorization before changing authorized job details.' using errcode = '42501';
+  end if;
+
+  if completion_bound_fields_changed and exists (
+    select 1 from public.invoice_signatures signature
+    where signature.job_id = old.id
+      and signature.purpose = 'work_completion'
+      and signature.status = 'active'
+  ) then
+    raise exception 'Reject the saved customer completion signature before changing completed-work details.' using errcode = '42501';
+  end if;
+
+  if photo_checkpoint_changed then
+    if current_setting('fasttrack.internal_photo_checkpoint_skip', true) is distinct from 'on' then
+      raise exception 'Photo checkpoints must be skipped through the protected workflow.' using errcode = '42501';
+    end if;
+    if before_skip_changed and after_skip_changed then
+      raise exception 'Skip one photo checkpoint at a time.' using errcode = '23514';
+    end if;
+    if actor_id is null or actor_role not in ('owner', 'tech') then
+      raise exception 'Only an active owner or assigned technician can skip a job photo.' using errcode = '42501';
+    end if;
+    if actor_role = 'tech' and old.assigned_tech_id is distinct from actor_id then
+      raise exception 'Only the assigned technician can skip this job photo.' using errcode = '42501';
+    end if;
+    if old.status <> 'in_progress' or old.arrived_at is null then
+      raise exception 'Only an arrived job in progress can skip a job photo.' using errcode = '42501';
+    end if;
+    if exists (
+      select 1 from public.invoice_signatures signature
+      where signature.job_id = old.id
+        and signature.purpose = 'work_completion'
+        and signature.status = 'active'
+    ) then
+      raise exception 'The photo checkpoint is locked by the customer completion signature.' using errcode = '42501';
+    end if;
+
+    if before_skip_changed then
+      if old.before_photos_skipped_at is not null or old.before_photos_skipped_by is not null then
+        raise exception 'The recorded before-photo skip is immutable.' using errcode = '42501';
+      end if;
+      if exists (
+        select 1 from public.job_photos photo
+        where photo.job_id = old.id and photo.kind = 'before'
+      ) then
+        raise exception 'A saved before photo already satisfies this checkpoint.' using errcode = '42501';
+      end if;
+      new.before_photos_skipped_at := statement_timestamp();
+      new.before_photos_skipped_by := actor_id;
+    end if;
+
+    if after_skip_changed then
+      if old.after_photos_skipped_at is not null or old.after_photos_skipped_by is not null then
+        raise exception 'The recorded after-photo skip is immutable.' using errcode = '42501';
+      end if;
+      if exists (
+        select 1 from public.job_photos photo
+        where photo.job_id = old.id and photo.kind = 'after'
+      ) then
+        raise exception 'A saved after photo already satisfies this checkpoint.' using errcode = '42501';
+      end if;
+      if not exists (
+        select 1 from public.invoice_signatures signature
+        where signature.job_id = old.id
+          and signature.purpose = 'work_authorization'
+          and signature.status = 'active'
+      ) then
+        raise exception 'Collect customer work authorization before skipping the after photo.' using errcode = '42501';
+      end if;
+      new.after_photos_skipped_at := statement_timestamp();
+      new.after_photos_skipped_by := actor_id;
+    end if;
+  end if;
+
+  if completion_bound_fields_changed or photo_checkpoint_changed then
+    new.workflow_revision := old.workflow_revision + 1;
+  elsif new.workflow_revision is distinct from old.workflow_revision then
+    if not (
+      current_setting('fasttrack.internal_workflow_revision_bump', true) = 'on'
+      and pg_trigger_depth() > 1
+      and new.workflow_revision = old.workflow_revision + 1
+    ) then
+      raise exception 'The workflow revision is server managed.' using errcode = '42501';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists protect_work_authorization_signed_job_fields on public.jobs;
+create trigger protect_work_authorization_signed_job_fields
+before insert or update on public.jobs
+for each row execute function public.protect_work_authorization_signed_job_fields();
+
+create or replace function public.skip_job_photo_checkpoint(p_job_id uuid, p_kind text)
+returns public.jobs
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  actor_id uuid := public.current_allowed_user_id();
+  actor_role text := public.current_allowed_role();
+  target_job public.jobs;
+  result public.jobs;
+begin
+  if coalesce(auth.role(), '') <> 'authenticated'
+    or actor_id is null
+    or actor_role not in ('owner', 'tech') then
+    raise exception 'Only an active owner or assigned technician can skip a job photo.' using errcode = '42501';
+  end if;
+  if p_kind not in ('before', 'after') then
+    raise exception 'Choose a before or after photo checkpoint.' using errcode = '23514';
+  end if;
+
+  select * into target_job
+  from public.jobs
+  where id = p_job_id
+  for update;
+  if not found then
+    raise exception 'Job not found.' using errcode = 'P0002';
+  end if;
+  if actor_role = 'tech' and target_job.assigned_tech_id is distinct from actor_id then
+    raise exception 'Only the assigned technician can skip this job photo.' using errcode = '42501';
+  end if;
+  if target_job.status <> 'in_progress' or target_job.arrived_at is null then
+    raise exception 'Only an arrived job in progress can skip a job photo.' using errcode = '42501';
+  end if;
+
+  if p_kind = 'before'
+    and target_job.before_photos_skipped_at is not null
+    and target_job.before_photos_skipped_by is not null then
+    return target_job;
+  end if;
+  if p_kind = 'after'
+    and target_job.after_photos_skipped_at is not null
+    and target_job.after_photos_skipped_by is not null then
+    return target_job;
+  end if;
+
+  if exists (
+    select 1 from public.job_photos photo
+    where photo.job_id = p_job_id and photo.kind = p_kind
+  ) then
+    raise exception 'A saved % photo already satisfies this checkpoint.', p_kind using errcode = '42501';
+  end if;
+  if exists (
+    select 1 from public.invoice_signatures signature
+    where signature.job_id = p_job_id
+      and signature.purpose = 'work_completion'
+      and signature.status = 'active'
+  ) then
+    raise exception 'The photo checkpoint is locked by the customer completion signature.' using errcode = '42501';
+  end if;
+  if p_kind = 'after' and not exists (
+    select 1 from public.invoice_signatures signature
+    where signature.job_id = p_job_id
+      and signature.purpose = 'work_authorization'
+      and signature.status = 'active'
+  ) then
+    raise exception 'Collect customer work authorization before skipping the after photo.' using errcode = '42501';
+  end if;
+
+  perform set_config('fasttrack.internal_photo_checkpoint_skip', 'on', true);
+  if p_kind = 'before' then
+    update public.jobs
+    set before_photos_skipped_at = statement_timestamp(), before_photos_skipped_by = actor_id
+    where id = p_job_id
+    returning * into result;
+  else
+    update public.jobs
+    set after_photos_skipped_at = statement_timestamp(), after_photos_skipped_by = actor_id
+    where id = p_job_id
+    returning * into result;
+  end if;
+  perform set_config('fasttrack.internal_photo_checkpoint_skip', 'off', true);
+
+  return result;
+end;
+$$;
+
+revoke all on function public.skip_job_photo_checkpoint(uuid, text) from public, anon, authenticated;
+grant execute on function public.skip_job_photo_checkpoint(uuid, text) to authenticated;
+
+-- Server signature persistence rechecks the same after-photo-or-audited-skip
+-- invariant while holding the parent job lock.
+create or replace function public.record_invoice_signature(
+  p_id uuid,
+  p_invoice_id uuid,
+  p_job_id uuid,
+  p_purpose text,
+  p_selected_tier text,
+  p_expected_workflow_revision bigint,
+  p_authorization_signature_id uuid,
+  p_expected_authorization_document_sha256 text,
+  p_authorization_terms_version text,
+  p_authorization_subtotal numeric,
+  p_authorization_tax_rate numeric,
+  p_authorization_tax_amount numeric,
+  p_authorization_total numeric,
+  p_signer_name text,
+  p_signer_role text,
+  p_storage_path text,
+  p_width integer,
+  p_height integer,
+  p_byte_size integer,
+  p_content_sha256 text,
+  p_document_sha256 text,
+  p_signed_at timestamptz,
+  p_collected_by uuid,
+  p_audit_metadata jsonb
+)
+returns public.invoice_signatures
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  result public.invoice_signatures;
+  target_job public.jobs;
+  current_authorization public.invoice_signatures;
+  calculated_subtotal numeric(12,2);
+  calculated_tax_amount numeric(12,2);
+  calculated_total numeric(12,2);
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Server role required.' using errcode = '42501';
+  end if;
+
+  select * into target_job
+  from public.jobs
+  where id = p_job_id
+  for update;
+
+  if not found then
+    raise exception 'Job not found.' using errcode = 'P0002';
+  end if;
+
+  if target_job.workflow_revision is distinct from p_expected_workflow_revision then
+    raise exception 'The job workflow changed while the signature was being prepared. Review and try again.' using errcode = '40001';
+  end if;
+
+  if p_purpose = 'work_authorization' then
+    if target_job.status in ('complete', 'cancelled') then
+      raise exception 'Closed jobs cannot accept work authorization.' using errcode = '42501';
+    end if;
+  elsif p_purpose = 'work_completion' then
+    if target_job.status <> 'in_progress' or target_job.arrived_at is null then
+      raise exception 'Only an arrived job in progress can accept a completion signature.' using errcode = '42501';
+    end if;
+  end if;
+
+  if p_purpose = 'work_authorization' then
+    if p_selected_tier not in ('standard', 'good', 'better', 'best') then
+      raise exception 'Choose a valid estimate option before authorization.' using errcode = '23514';
+    end if;
+    if not exists (
+      select 1 from public.job_line_items
+      where job_id = p_job_id and tier = p_selected_tier
+    ) then
+      raise exception 'The selected estimate option must contain proposed work.' using errcode = '42501';
+    end if;
+
+    if p_authorization_signature_id is not null or p_expected_authorization_document_sha256 is not null then
+      raise exception 'A work authorization cannot point to another authorization.' using errcode = '23514';
+    end if;
+    if p_authorization_terms_version is distinct from 'fast-track-work-authorization-v1' then
+      raise exception 'The work-authorization terms version is not current.' using errcode = '23514';
+    end if;
+    if p_authorization_tax_rate is null or p_authorization_tax_rate < 0 or p_authorization_tax_rate > 1 then
+      raise exception 'The work-authorization tax rate is invalid.' using errcode = '23514';
+    end if;
+
+    select coalesce(round(sum(quantity * unit_price), 2), 0)
+    into calculated_subtotal
+    from public.job_line_items
+    where job_id = p_job_id and tier = p_selected_tier;
+    calculated_tax_amount := round(calculated_subtotal * p_authorization_tax_rate, 2);
+    calculated_total := calculated_subtotal + calculated_tax_amount;
+
+    if p_authorization_subtotal is distinct from calculated_subtotal
+      or p_authorization_tax_amount is distinct from calculated_tax_amount
+      or p_authorization_total is distinct from calculated_total then
+      raise exception 'The signed authorization totals do not match the current selected work.' using errcode = '40001';
+    end if;
+
+    if exists (
+      select 1 from public.invoice_signatures signature
+      where signature.job_id = p_job_id
+        and signature.purpose = 'work_completion'
+        and signature.status = 'active'
+    ) then
+      raise exception 'Reject the active completion signature before replacing work authorization.' using errcode = '42501';
+    end if;
+  elsif p_purpose = 'work_completion' then
+    select * into current_authorization
+    from public.invoice_signatures signature
+    where signature.id = p_authorization_signature_id
+      and signature.job_id = p_job_id
+      and signature.purpose = 'work_authorization'
+      and signature.status = 'active'
+    for update;
+    if current_authorization.id is null then
+      raise exception 'Customer work authorization is required before completion.' using errcode = '42501';
+    end if;
+    if p_selected_tier is distinct from current_authorization.selected_tier
+      or p_expected_authorization_document_sha256 is distinct from current_authorization.document_sha256 then
+      raise exception 'The completion signature does not match the active authorized scope.' using errcode = '40001';
+    end if;
+    if current_authorization.authorization_terms_version is distinct from 'fast-track-work-authorization-v1'
+      or current_authorization.authorization_subtotal is null
+      or current_authorization.authorization_tax_rate is null
+      or current_authorization.authorization_tax_amount is null
+      or current_authorization.authorization_total is null then
+      raise exception 'The active authorization is missing its price-and-terms snapshot.' using errcode = '42501';
+    end if;
+    if p_authorization_terms_version is not null
+      or p_authorization_subtotal is not null
+      or p_authorization_tax_rate is not null
+      or p_authorization_tax_amount is not null
+      or p_authorization_total is not null then
+      raise exception 'Completion must reference, not replace, the signed authorization snapshot.' using errcode = '23514';
+    end if;
+    if (
+      target_job.after_photos_skipped_at is null
+      or target_job.after_photos_skipped_by is null
+    ) and not exists (
+      select 1 from public.job_photos
+      where job_id = p_job_id and kind = 'after'
+    ) then
+      raise exception 'An after photo or an audited skip is required before completion.' using errcode = '42501';
+    end if;
+  elsif p_selected_tier is not null
+    or p_authorization_signature_id is not null
+    or p_expected_authorization_document_sha256 is not null
+    or p_authorization_terms_version is not null
+    or p_authorization_subtotal is not null
+    or p_authorization_tax_rate is not null
+    or p_authorization_tax_amount is not null
+    or p_authorization_total is not null then
+    raise exception 'This signature type cannot bind a field-work authorization.' using errcode = '23514';
+  end if;
+
+  if p_invoice_id is not null and not exists (
+    select 1 from public.invoices where id = p_invoice_id and job_id = p_job_id
+  ) then
+    raise exception 'Invoice and job do not match.' using errcode = '23503';
+  end if;
+
+  update public.invoice_signatures
+  set
+    status = 'rejected',
+    rejected_at = statement_timestamp(),
+    rejected_by = p_collected_by,
+    rejection_reason = 'Replaced by a newly collected signature.'
+  where status = 'active'
+    and purpose = p_purpose
+    and (
+      (p_purpose in ('work_authorization', 'work_completion') and job_id = p_job_id)
+      or (p_purpose not in ('work_authorization', 'work_completion') and invoice_id = p_invoice_id)
+    );
+
+  insert into public.invoice_signatures (
+    id, invoice_id, job_id, purpose, selected_tier, authorization_signature_id,
+    authorization_terms_version, authorization_subtotal, authorization_tax_rate,
+    authorization_tax_amount, authorization_total, signer_name, signer_role, status,
+    storage_path, mime_type, width, height, byte_size, content_sha256,
+    document_sha256, signed_at, collected_by, audit_metadata
+  ) values (
+    p_id, p_invoice_id, p_job_id, p_purpose, p_selected_tier, p_authorization_signature_id,
+    p_authorization_terms_version, p_authorization_subtotal, p_authorization_tax_rate,
+    p_authorization_tax_amount, p_authorization_total, trim(p_signer_name), p_signer_role, 'active',
+    p_storage_path, 'image/png', p_width, p_height, p_byte_size, p_content_sha256,
+    p_document_sha256, p_signed_at, p_collected_by, coalesce(p_audit_metadata, '{}'::jsonb)
+  ) returning * into result;
+
+  if p_purpose = 'invoice_approval' then
+    update public.invoices
+    set approval_status = 'signed', approved_at = p_signed_at
+    where id = p_invoice_id;
+  end if;
+
+  return result;
+end;
+$$;
+
+revoke all on function public.record_invoice_signature(
+  uuid, uuid, uuid, text, text, bigint, uuid, text, text, numeric, numeric, numeric, numeric,
+  text, text, text, integer, integer, integer,
+  text, text, timestamptz, uuid, jsonb
+) from public, anon, authenticated;
+grant execute on function public.record_invoice_signature(
+  uuid, uuid, uuid, text, text, bigint, uuid, text, text, numeric, numeric, numeric, numeric,
+  text, text, text, integer, integer, integer,
+  text, text, timestamptz, uuid, jsonb
+) to service_role;
+
+create or replace function public.complete_job_with_signature(
+  p_job_id uuid,
+  p_expected_status text,
+  p_expected_customer_id uuid,
+  p_expected_assigned_tech_id uuid,
+  p_expected_service_address text,
+  p_expected_description text,
+  p_expected_notes text,
+  p_expected_arrived_at timestamptz,
+  p_expected_signature_id uuid,
+  p_expected_signature_document_sha256 text,
+  p_override_by uuid,
+  p_override_reason text
+)
+returns public.jobs
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  current_job public.jobs;
+  current_authorization public.invoice_signatures;
+  current_signature public.invoice_signatures;
+  result public.jobs;
+  normalized_override_reason text := nullif(trim(coalesce(p_override_reason, '')), '');
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Server role required.' using errcode = '42501';
+  end if;
+
+  select * into current_job from public.jobs where id = p_job_id for update;
+  if not found then raise exception 'Job not found.' using errcode = 'P0002'; end if;
+
+  if current_job.status is distinct from p_expected_status
+    or current_job.customer_id is distinct from p_expected_customer_id
+    or current_job.assigned_tech_id is distinct from p_expected_assigned_tech_id
+    or current_job.service_address is distinct from p_expected_service_address
+    or current_job.description is distinct from p_expected_description
+    or coalesce(current_job.notes, '') is distinct from coalesce(p_expected_notes, '')
+    or current_job.arrived_at is distinct from p_expected_arrived_at then
+    raise exception 'The job changed while completion was being recorded. Review and try again.' using errcode = '40001';
+  end if;
+
+  if current_job.status <> 'in_progress' or current_job.arrived_at is null then
+    raise exception 'Only an arrived job in progress can be completed.' using errcode = '42501';
+  end if;
+
+  select * into current_authorization
+  from public.invoice_signatures
+  where job_id = p_job_id and purpose = 'work_authorization' and status = 'active'
+  for update;
+  if current_authorization.id is null then
+    raise exception 'Customer work authorization is required before completion.' using errcode = '42501';
+  end if;
+  if current_authorization.authorization_terms_version is distinct from 'fast-track-work-authorization-v1'
+    or current_authorization.authorization_subtotal is null
+    or current_authorization.authorization_tax_rate is null
+    or current_authorization.authorization_tax_amount is null
+    or current_authorization.authorization_total is null then
+    raise exception 'Customer work authorization is missing its price-and-terms snapshot.' using errcode = '42501';
+  end if;
+
+  if (
+    current_job.after_photos_skipped_at is null
+    or current_job.after_photos_skipped_by is null
+  ) and not exists (
+    select 1 from public.job_photos
+    where job_id = p_job_id and kind = 'after'
+  ) then
+    raise exception 'An after photo or an audited skip is required before completion.' using errcode = '42501';
+  end if;
+
+  select * into current_signature
+  from public.invoice_signatures
+  where job_id = p_job_id and purpose = 'work_completion' and status = 'active'
+  for update;
+
+  if p_expected_signature_id is not null then
+    if p_override_by is not null or normalized_override_reason is not null then
+      raise exception 'A signed completion cannot also use an owner override.' using errcode = '23514';
+    end if;
+    if current_signature.id is null
+      or current_signature.id is distinct from p_expected_signature_id
+      or current_signature.document_sha256 is distinct from p_expected_signature_document_sha256
+      or current_signature.authorization_signature_id is distinct from current_authorization.id
+      or current_signature.selected_tier is distinct from current_authorization.selected_tier then
+      raise exception 'The customer completion signature changed. Review and try again.' using errcode = '40001';
+    end if;
+  else
+    if current_signature.id is not null then
+      raise exception 'A customer completion signature was added. Review and try again.' using errcode = '40001';
+    end if;
+    if p_override_by is null or normalized_override_reason is null
+      or char_length(normalized_override_reason) < 10
+      or char_length(normalized_override_reason) > 500 then
+      raise exception 'Owner override requires a clear reason of 10 to 500 characters.' using errcode = '23514';
+    end if;
+    if not exists (
+      select 1 from public.allowed_users owner_user
+      where owner_user.id = p_override_by and owner_user.active and owner_user.role = 'owner'
+    ) then
+      raise exception 'Only an active owner can override the customer completion signature.' using errcode = '42501';
+    end if;
+  end if;
+
+  update public.jobs
+  set
+    status = 'complete',
+    completed_at = statement_timestamp(),
+    completion_signature_override_at = case when p_expected_signature_id is null then statement_timestamp() else null end,
+    completion_signature_override_by = case when p_expected_signature_id is null then p_override_by else null end,
+    completion_signature_override_reason = case when p_expected_signature_id is null then normalized_override_reason else null end
+  where id = p_job_id
+  returning * into result;
+
+  return result;
+end;
+$$;
+
+revoke all on function public.complete_job_with_signature(
+  uuid, text, uuid, uuid, text, text, text, timestamptz, uuid, text, uuid, text
+) from public, anon, authenticated;
+grant execute on function public.complete_job_with_signature(
+  uuid, text, uuid, uuid, text, text, text, timestamptz, uuid, text, uuid, text
+) to service_role;
+
+create or replace function public.enforce_job_completion_signature()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actor_role text := public.current_allowed_role();
+  actor_id uuid := public.current_allowed_user_id();
+  service_role_request boolean := coalesce(auth.role(), '') = 'service_role';
+begin
+  if new.completion_signature_override_at is distinct from old.completion_signature_override_at
+    or new.completion_signature_override_by is distinct from old.completion_signature_override_by
+    or new.completion_signature_override_reason is distinct from old.completion_signature_override_reason then
+    if not service_role_request and actor_role <> 'owner' then
+      raise exception 'Only an owner can override the customer completion signature.' using errcode = '42501';
+    end if;
+    if new.completion_signature_override_at is not null and (
+      new.completion_signature_override_by is null
+      or nullif(trim(new.completion_signature_override_reason), '') is null
+    ) then
+      raise exception 'A completion-signature override requires an owner and reason.' using errcode = '23514';
+    end if;
+    if not service_role_request and new.completion_signature_override_by is distinct from actor_id then
+      raise exception 'The override owner must match the signed-in owner.' using errcode = '42501';
+    end if;
+  end if;
+
+  if old.status is distinct from 'complete' and new.status = 'complete' then
+    if not exists (
+      select 1 from public.invoice_signatures signature
+      where signature.job_id = new.id
+        and signature.purpose = 'work_authorization'
+        and signature.status = 'active'
+    ) then
+      raise exception 'Collect customer work authorization before completing this job.' using errcode = '42501';
+    end if;
+    if (
+      new.after_photos_skipped_at is null
+      or new.after_photos_skipped_by is null
+    ) and not exists (
+      select 1 from public.job_photos
+      where job_id = new.id and kind = 'after'
+    ) then
+      raise exception 'Save an after photo or explicitly skip it before completing this job.' using errcode = '42501';
+    end if;
+    if exists (
+      select 1
+      from public.invoice_signatures completion
+      join public.invoice_signatures work_auth
+        on work_auth.id = completion.authorization_signature_id
+       and work_auth.job_id = completion.job_id
+       and work_auth.purpose = 'work_authorization'
+       and work_auth.status = 'active'
+       and work_auth.selected_tier = completion.selected_tier
+      where completion.job_id = new.id
+        and completion.purpose = 'work_completion'
+        and completion.status = 'active'
+    ) then
+      return new;
+    end if;
+
+    if new.completion_signature_override_at is not null
+      and new.completion_signature_override_by is not null
+      and nullif(trim(new.completion_signature_override_reason), '') is not null
+      and (service_role_request or actor_role = 'owner') then
+      return new;
+    end if;
+
+    raise exception 'Collect the customer completion signature before completing this job.' using errcode = '42501';
+  end if;
+
+  return new;
+end;
+$$;
+-- Durable invoice delivery fencing. A request UUID can create at most one
+-- provider attempt. Processing rows intentionally have no lease or reclaim
+-- path because a crash after provider acceptance has an ambiguous outcome.
+
+alter table public.invoices
+  add column if not exists pdf_workflow_revision bigint;
+
+create table if not exists public.invoice_delivery_audit (
+  id uuid primary key default gen_random_uuid(),
+  request_id uuid not null unique,
+  invoice_id uuid not null references public.invoices(id) on delete restrict,
+  channel text not null check (channel in ('email', 'sms')),
+  destination_hash text not null check (destination_hash ~ '^[0-9a-f]{64}$'),
+  pdf_sha256 text not null check (pdf_sha256 ~ '^[0-9a-f]{64}$'),
+  workflow_revision bigint not null check (workflow_revision >= 0),
+  status text not null default 'processing'
+    check (status in ('processing', 'accepted', 'failed', 'delivery_unknown')),
+  claim_token uuid not null unique default gen_random_uuid(),
+  provider text check (provider is null or provider in ('resend', 'sendgrid', 'twilio')),
+  provider_message_id text check (
+    provider_message_id is null
+    or (
+      char_length(provider_message_id) between 1 and 256
+      and provider_message_id ~ '^[a-zA-Z0-9_.:-]+$'
+    )
+  ),
+  provider_status text check (
+    provider_status is null
+    or (
+      char_length(provider_status) between 1 and 80
+      and provider_status ~ '^[a-zA-Z0-9_.:-]+$'
+    )
+  ),
+  error_code text check (
+    error_code is null
+    or (
+      char_length(error_code) between 1 and 80
+      and error_code ~ '^[a-zA-Z0-9_-]+$'
+    )
+  ),
+  requested_by uuid not null references public.allowed_users(id) on delete restrict,
+  claimed_at timestamptz not null default statement_timestamp(),
+  accepted_at timestamptz,
+  failed_at timestamptz,
+  delivery_unknown_at timestamptz,
+  created_at timestamptz not null default statement_timestamp(),
+  updated_at timestamptz not null default statement_timestamp(),
+  constraint invoice_delivery_provider_channel_check check (
+    provider is null
+    or (channel = 'email' and provider in ('resend', 'sendgrid'))
+    or (channel = 'sms' and provider = 'twilio')
+  ),
+  constraint invoice_delivery_outcome_check check (
+    (
+      status = 'processing'
+      and provider is null
+      and provider_message_id is null
+      and provider_status is null
+      and error_code is null
+      and accepted_at is null
+      and failed_at is null
+      and delivery_unknown_at is null
+    )
+    or (
+      status = 'accepted'
+      and provider is not null
+      and provider_message_id is not null
+      and error_code is null
+      and accepted_at is not null
+      and failed_at is null
+      and delivery_unknown_at is null
+    )
+    or (
+      status = 'failed'
+      and provider is not null
+      and provider_message_id is null
+      and error_code is not null
+      and accepted_at is null
+      and failed_at is not null
+      and delivery_unknown_at is null
+    )
+    or (
+      status = 'delivery_unknown'
+      and provider is not null
+      and provider_message_id is null
+      and error_code is not null
+      and accepted_at is null
+      and failed_at is null
+      and delivery_unknown_at is not null
+    )
+  ),
+  constraint invoice_delivery_timestamp_check check (
+    claimed_at >= created_at
+    and updated_at >= created_at
+    and (accepted_at is null or accepted_at >= claimed_at)
+    and (failed_at is null or failed_at >= claimed_at)
+    and (delivery_unknown_at is null or delivery_unknown_at >= claimed_at)
+  )
+);
+
+create index if not exists invoice_delivery_audit_invoice_created_idx
+  on public.invoice_delivery_audit(invoice_id, created_at desc);
+
+create or replace function public.protect_invoice_delivery_audit()
+returns trigger
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Invoice delivery audit rows can only be written by the protected server.' using errcode = '42501';
+  end if;
+
+  if tg_op = 'DELETE' then
+    raise exception 'Invoice delivery audit rows cannot be deleted.' using errcode = '42501';
+  end if;
+
+  if tg_op = 'INSERT' then
+    if new.status <> 'processing'
+      or new.provider is not null
+      or new.provider_message_id is not null
+      or new.provider_status is not null
+      or new.error_code is not null
+      or new.accepted_at is not null
+      or new.failed_at is not null
+      or new.delivery_unknown_at is not null then
+      raise exception 'New invoice delivery claims must begin in processing status.' using errcode = '23514';
+    end if;
+    new.created_at := statement_timestamp();
+    new.claimed_at := new.created_at;
+    new.updated_at := new.created_at;
+    return new;
+  end if;
+
+  if new.id is distinct from old.id
+    or new.request_id is distinct from old.request_id
+    or new.invoice_id is distinct from old.invoice_id
+    or new.channel is distinct from old.channel
+    or new.destination_hash is distinct from old.destination_hash
+    or new.pdf_sha256 is distinct from old.pdf_sha256
+    or new.workflow_revision is distinct from old.workflow_revision
+    or new.claim_token is distinct from old.claim_token
+    or new.requested_by is distinct from old.requested_by
+    or new.claimed_at is distinct from old.claimed_at
+    or new.created_at is distinct from old.created_at then
+    raise exception 'Invoice delivery claim identity is immutable.' using errcode = '42501';
+  end if;
+
+  if old.status <> 'processing'
+    or new.status not in ('accepted', 'failed', 'delivery_unknown') then
+    raise exception 'Invoice delivery audit status cannot be retried or rewritten.' using errcode = '42501';
+  end if;
+
+  new.updated_at := statement_timestamp();
+  return new;
+end;
+$$;
+
+drop trigger if exists invoice_delivery_10_protect_audit on public.invoice_delivery_audit;
+create trigger invoice_delivery_10_protect_audit
+before insert or update or delete on public.invoice_delivery_audit
+for each row execute function public.protect_invoice_delivery_audit();
+
+create or replace function public.claim_invoice_delivery(
+  p_request_id uuid,
+  p_invoice_id uuid,
+  p_channel text,
+  p_destination_hash text,
+  p_pdf_sha256 text,
+  p_workflow_revision bigint,
+  p_requested_by uuid
+)
+returns table (
+  audit_id uuid,
+  decision text,
+  delivery_status text,
+  completion_token uuid,
+  delivery_provider text,
+  delivery_provider_message_id text,
+  delivery_provider_status text,
+  delivery_error_code text,
+  claimed_at timestamptz,
+  completed_at timestamptz
+)
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  normalized_channel text := lower(trim(coalesce(p_channel, '')));
+  normalized_destination_hash text := lower(trim(coalesce(p_destination_hash, '')));
+  normalized_pdf_sha256 text := lower(trim(coalesce(p_pdf_sha256, '')));
+  invoice_job_id uuid;
+  invoice_row public.invoices%rowtype;
+  job_row public.jobs%rowtype;
+  requested_user public.allowed_users%rowtype;
+  audit_row public.invoice_delivery_audit%rowtype;
+  claim_decision text;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Only the service role can claim invoice delivery.' using errcode = '42501';
+  end if;
+  if p_request_id is null or p_invoice_id is null or p_workflow_revision is null or p_requested_by is null then
+    raise exception 'Invoice delivery request, invoice, workflow revision, and requester are required.' using errcode = '22004';
+  end if;
+  if p_workflow_revision < 0 then
+    raise exception 'Invoice delivery workflow revision is invalid.' using errcode = '22023';
+  end if;
+  if normalized_channel not in ('email', 'sms') then
+    raise exception 'Invoice delivery channel is invalid.' using errcode = '22023';
+  end if;
+  if normalized_destination_hash !~ '^[0-9a-f]{64}$'
+    or normalized_pdf_sha256 !~ '^[0-9a-f]{64}$' then
+    raise exception 'Invoice delivery hashes are invalid.' using errcode = '22023';
+  end if;
+
+  select invoice.job_id into invoice_job_id
+  from public.invoices invoice
+  where invoice.id = p_invoice_id;
+  if not found then
+    raise exception 'Invoice not found.' using errcode = 'P0002';
+  end if;
+
+  select * into job_row
+  from public.jobs job
+  where job.id = invoice_job_id
+  for share;
+  if not found or job_row.workflow_revision is distinct from p_workflow_revision then
+    raise exception 'Job evidence changed before invoice delivery was claimed.' using errcode = '40001';
+  end if;
+
+  select * into invoice_row
+  from public.invoices invoice
+  where invoice.id = p_invoice_id
+  for share;
+  if not found or invoice_row.job_id is distinct from job_row.id then
+    raise exception 'Invoice job changed before delivery was claimed.' using errcode = '40001';
+  end if;
+  if invoice_row.status = 'cancelled' then
+    raise exception 'A cancelled invoice cannot be delivered.' using errcode = '42501';
+  end if;
+  if invoice_row.pdf_storage_path is null
+    or invoice_row.pdf_generated_at is null
+    or lower(coalesce(invoice_row.pdf_sha256, '')) is distinct from normalized_pdf_sha256
+    or invoice_row.pdf_workflow_revision is distinct from p_workflow_revision then
+    raise exception 'The signed invoice PDF or workflow revision changed before delivery was claimed.' using errcode = '40001';
+  end if;
+
+  select * into requested_user
+  from public.allowed_users allowed_user
+  where allowed_user.id = p_requested_by
+    and allowed_user.active;
+  if not found or requested_user.role not in ('owner', 'tech') then
+    raise exception 'Requester is not allowed to deliver invoices.' using errcode = '42501';
+  end if;
+
+  if requested_user.role <> 'owner' and job_row.assigned_tech_id is distinct from requested_user.id then
+    raise exception 'Technicians can only deliver invoices for assigned jobs.' using errcode = '42501';
+  end if;
+
+  insert into public.invoice_delivery_audit (
+    request_id,
+    invoice_id,
+    channel,
+    destination_hash,
+    pdf_sha256,
+    workflow_revision,
+    status,
+    requested_by
+  ) values (
+    p_request_id,
+    p_invoice_id,
+    normalized_channel,
+    normalized_destination_hash,
+    normalized_pdf_sha256,
+    p_workflow_revision,
+    'processing',
+    p_requested_by
+  )
+  on conflict (request_id) do nothing
+  returning * into audit_row;
+
+  if found then
+    return query select
+      audit_row.id,
+      'send'::text,
+      audit_row.status,
+      audit_row.claim_token,
+      audit_row.provider,
+      audit_row.provider_message_id,
+      audit_row.provider_status,
+      audit_row.error_code,
+      audit_row.claimed_at,
+      null::timestamptz;
+    return;
+  end if;
+
+  select * into audit_row
+  from public.invoice_delivery_audit delivery
+  where delivery.request_id = p_request_id
+  for update;
+  if not found then
+    raise exception 'Invoice delivery claim could not be resolved.' using errcode = '40001';
+  end if;
+  if audit_row.invoice_id is distinct from p_invoice_id
+    or audit_row.channel is distinct from normalized_channel
+    or audit_row.destination_hash is distinct from normalized_destination_hash
+    or audit_row.pdf_sha256 is distinct from normalized_pdf_sha256
+    or audit_row.workflow_revision is distinct from p_workflow_revision
+    or audit_row.requested_by is distinct from p_requested_by then
+    raise exception 'Invoice delivery request ID was already used for different delivery details.' using errcode = '23505';
+  end if;
+
+  claim_decision := case audit_row.status
+    when 'accepted' then 'already_accepted'
+    when 'processing' then 'in_flight'
+    when 'failed' then 'already_failed'
+    else 'delivery_unknown'
+  end;
+
+  return query select
+    audit_row.id,
+    claim_decision,
+    audit_row.status,
+    null::uuid,
+    audit_row.provider,
+    audit_row.provider_message_id,
+    audit_row.provider_status,
+    audit_row.error_code,
+    audit_row.claimed_at,
+    coalesce(audit_row.accepted_at, audit_row.failed_at, audit_row.delivery_unknown_at);
+end;
+$$;
+
+create or replace function public.record_invoice_delivery_result(
+  p_request_id uuid,
+  p_claim_token uuid,
+  p_status text,
+  p_provider text,
+  p_provider_message_id text default null,
+  p_provider_status text default null,
+  p_error_code text default null
+)
+returns public.invoice_delivery_audit
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  normalized_status text := lower(trim(coalesce(p_status, '')));
+  normalized_provider text := lower(trim(coalesce(p_provider, '')));
+  normalized_message_id text := nullif(trim(coalesce(p_provider_message_id, '')), '');
+  normalized_provider_status text := nullif(trim(coalesce(p_provider_status, '')), '');
+  normalized_error_code text := nullif(trim(coalesce(p_error_code, '')), '');
+  audit_row public.invoice_delivery_audit%rowtype;
+  completed_at timestamptz := statement_timestamp();
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Only the service role can complete invoice delivery.' using errcode = '42501';
+  end if;
+  if p_request_id is null or p_claim_token is null then
+    raise exception 'Invoice delivery request and completion token are required.' using errcode = '22004';
+  end if;
+  if normalized_status not in ('accepted', 'failed', 'delivery_unknown') then
+    raise exception 'Invoice delivery result status is invalid.' using errcode = '22023';
+  end if;
+  if normalized_provider not in ('resend', 'sendgrid', 'twilio') then
+    raise exception 'Invoice delivery provider is invalid.' using errcode = '22023';
+  end if;
+  if normalized_message_id is not null and (
+    char_length(normalized_message_id) > 256
+    or normalized_message_id !~ '^[a-zA-Z0-9_.:-]+$'
+  ) then
+    raise exception 'Invoice delivery provider message ID is invalid.' using errcode = '22023';
+  end if;
+  if normalized_provider_status is not null and (
+    char_length(normalized_provider_status) > 80
+    or normalized_provider_status !~ '^[a-zA-Z0-9_.:-]+$'
+  ) then
+    raise exception 'Invoice delivery provider status is invalid.' using errcode = '22023';
+  end if;
+  if normalized_error_code is not null and (
+    char_length(normalized_error_code) > 80
+    or normalized_error_code !~ '^[a-zA-Z0-9_-]+$'
+  ) then
+    raise exception 'Invoice delivery error code is invalid.' using errcode = '22023';
+  end if;
+
+  select * into audit_row
+  from public.invoice_delivery_audit delivery
+  where delivery.request_id = p_request_id
+  for update;
+  if not found then
+    raise exception 'Invoice delivery claim not found.' using errcode = 'P0002';
+  end if;
+  if audit_row.claim_token is distinct from p_claim_token then
+    raise exception 'Invoice delivery completion token is stale.' using errcode = '40001';
+  end if;
+  if (audit_row.channel = 'email' and normalized_provider not in ('resend', 'sendgrid'))
+    or (audit_row.channel = 'sms' and normalized_provider <> 'twilio') then
+    raise exception 'Invoice delivery provider does not match its channel.' using errcode = '22023';
+  end if;
+  if normalized_status = 'accepted' and normalized_message_id is null then
+    raise exception 'Accepted invoice delivery requires a provider message ID.' using errcode = '22023';
+  end if;
+  if normalized_status = 'accepted' and normalized_error_code is not null then
+    raise exception 'Accepted invoice delivery cannot include an error code.' using errcode = '22023';
+  end if;
+  if normalized_status in ('failed', 'delivery_unknown')
+    and (normalized_message_id is not null or normalized_error_code is null) then
+    raise exception 'Failed or unknown invoice delivery requires only a safe error code.' using errcode = '22023';
+  end if;
+
+  if audit_row.status <> 'processing' then
+    if audit_row.status = normalized_status
+      and audit_row.provider = normalized_provider
+      and audit_row.provider_message_id is not distinct from normalized_message_id
+      and audit_row.provider_status is not distinct from normalized_provider_status
+      and audit_row.error_code is not distinct from normalized_error_code then
+      return audit_row;
+    end if;
+    raise exception 'Invoice delivery result was already finalized.' using errcode = '40001';
+  end if;
+
+  update public.invoice_delivery_audit delivery
+  set status = normalized_status,
+      provider = normalized_provider,
+      provider_message_id = case when normalized_status = 'accepted' then normalized_message_id else null end,
+      provider_status = normalized_provider_status,
+      error_code = case when normalized_status = 'accepted' then null else normalized_error_code end,
+      accepted_at = case when normalized_status = 'accepted' then completed_at else null end,
+      failed_at = case when normalized_status = 'failed' then completed_at else null end,
+      delivery_unknown_at = case when normalized_status = 'delivery_unknown' then completed_at else null end
+  where delivery.id = audit_row.id
+  returning * into audit_row;
+
+  return audit_row;
+end;
+$$;
+
+alter table public.invoice_delivery_audit enable row level security;
+
+drop policy if exists "owner assigned tech read invoice delivery audit" on public.invoice_delivery_audit;
+create policy "owner assigned tech read invoice delivery audit"
+on public.invoice_delivery_audit for select to authenticated
+using (
+  public.is_owner()
+  or exists (
+    select 1
+    from public.invoices invoice
+    join public.jobs job on job.id = invoice.job_id
+    where invoice.id = invoice_delivery_audit.invoice_id
+      and job.assigned_tech_id = public.current_allowed_user_id()
+  )
+);
+
+drop policy if exists "no direct invoice delivery audit inserts" on public.invoice_delivery_audit;
+create policy "no direct invoice delivery audit inserts"
+on public.invoice_delivery_audit for insert to authenticated
+with check (false);
+
+drop policy if exists "no direct invoice delivery audit updates" on public.invoice_delivery_audit;
+create policy "no direct invoice delivery audit updates"
+on public.invoice_delivery_audit for update to authenticated
+using (false)
+with check (false);
+
+drop policy if exists "no direct invoice delivery audit deletes" on public.invoice_delivery_audit;
+create policy "no direct invoice delivery audit deletes"
+on public.invoice_delivery_audit for delete to authenticated
+using (false);
+
+revoke all on table public.invoice_delivery_audit from public, anon, authenticated, service_role;
+grant select (
+  id,
+  request_id,
+  invoice_id,
+  channel,
+  destination_hash,
+  pdf_sha256,
+  workflow_revision,
+  status,
+  provider,
+  provider_message_id,
+  provider_status,
+  error_code,
+  requested_by,
+  claimed_at,
+  accepted_at,
+  failed_at,
+  delivery_unknown_at,
+  created_at,
+  updated_at
+) on table public.invoice_delivery_audit to authenticated;
+grant select, insert, update on table public.invoice_delivery_audit to service_role;
+
+revoke all on function public.claim_invoice_delivery(uuid, uuid, text, text, text, bigint, uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function public.claim_invoice_delivery(uuid, uuid, text, text, text, bigint, uuid)
+  to service_role;
+
+revoke all on function public.record_invoice_delivery_result(uuid, uuid, text, text, text, text, text)
+  from public, anon, authenticated, service_role;
+grant execute on function public.record_invoice_delivery_result(uuid, uuid, text, text, text, text, text)
+  to service_role;
+-- Add an immutable payment ledger for Stripe Checkout, cash, and check
+-- receipts. Invoice payment totals remain derived server-side from succeeded
+-- ledger rows so provider retries and manual collection cannot double count.
+
+alter table public.invoices
+  add column if not exists pdf_workflow_revision bigint;
+
+create table if not exists public.invoice_payments (
+  id uuid primary key,
+  invoice_id uuid not null references public.invoices(id) on delete restrict,
+  method text not null check (method in ('card', 'cash', 'check', 'other')),
+  status text not null check (status in ('pending', 'succeeded', 'failed', 'cancelled', 'partially_refunded', 'refunded')),
+  amount numeric(12,2) not null check (amount > 0),
+  refunded_amount numeric(12,2) not null default 0 check (refunded_amount >= 0 and refunded_amount <= amount),
+  currency text not null default 'usd' check (currency ~ '^[a-z]{3}$'),
+  reference text check (reference is null or char_length(trim(reference)) between 1 and 120),
+  note text check (note is null or char_length(trim(note)) between 1 and 500),
+  request_id uuid not null unique,
+  request_fingerprint text not null check (request_fingerprint ~ '^[0-9a-f]{64}$'),
+  stripe_checkout_session_id text unique,
+  stripe_payment_intent_id text unique,
+  stripe_checkout_url text,
+  provider_status text,
+  recorded_by uuid references public.allowed_users(id) on delete set null,
+  expires_at timestamptz,
+  succeeded_at timestamptz,
+  failed_at timestamptz,
+  refunded_at timestamptz,
+  refunded_by uuid references public.allowed_users(id) on delete set null,
+  reversal_reason text check (reversal_reason is null or char_length(trim(reversal_reason)) between 3 and 300),
+  created_at timestamptz not null default statement_timestamp(),
+  updated_at timestamptz not null default statement_timestamp(),
+  constraint invoice_payments_method_provider_check check (
+    (method = 'card' and status <> 'succeeded')
+    or (method = 'card' and stripe_checkout_session_id is not null)
+    or method <> 'card'
+  ),
+  constraint invoice_payments_timestamps_check check (
+    (succeeded_at is null or succeeded_at >= created_at)
+    and (failed_at is null or failed_at >= created_at)
+    and (refunded_at is null or refunded_at >= created_at)
+    and (expires_at is null or expires_at > created_at)
+  )
+);
+
+create index if not exists invoice_payments_invoice_created_idx
+  on public.invoice_payments(invoice_id, created_at desc);
+
+create unique index if not exists invoice_payments_one_pending_card_idx
+  on public.invoice_payments(invoice_id)
+  where method = 'card' and status = 'pending';
+
+create or replace function public.assert_invoice_payment_reservations()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  selected_total numeric(12,2);
+  reserved_total numeric(12,2);
+  has_pending_card boolean;
+begin
+  select
+    coalesce(sum(
+      case
+        when payment.status in ('succeeded', 'partially_refunded') then payment.amount - payment.refunded_amount
+        when payment.status = 'pending' and payment.method = 'card' then payment.amount
+        else 0
+      end
+    ), 0),
+    coalesce(bool_or(payment.status = 'pending' and payment.method = 'card'), false)
+  into reserved_total, has_pending_card
+  from public.invoice_payments payment
+  where payment.invoice_id = new.id;
+
+  selected_total := case new.selected_tier
+    when 'standard' then new.total_standard
+    when 'good' then new.total_good
+    when 'better' then new.total_better
+    when 'best' then new.total_best
+    else null
+  end;
+
+  if has_pending_card and (
+    new.selected_tier is distinct from old.selected_tier
+    or new.tax_rate is distinct from old.tax_rate
+    or new.total_standard is distinct from old.total_standard
+    or new.total_good is distinct from old.total_good
+    or new.total_better is distinct from old.total_better
+    or new.total_best is distinct from old.total_best
+    or new.status = 'cancelled'
+    or new.payment_status = 'void'
+  ) then
+    raise exception 'Finish or expire the open card checkout before changing the invoice price, scope, or status.' using errcode = '55000';
+  end if;
+
+  if reserved_total > 0 and (selected_total is null or reserved_total > selected_total) then
+    raise exception 'Invoice changes cannot reduce the total below collected or reserved payments.' using errcode = '22003';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists invoice_30_assert_payment_reservations on public.invoices;
+create trigger invoice_30_assert_payment_reservations
+before update on public.invoices
+for each row execute function public.assert_invoice_payment_reservations();
+
+revoke all on function public.assert_invoice_payment_reservations() from public, anon, authenticated;
+
+create or replace function public.protect_invoice_payment_summary()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if (new.amount_paid is distinct from old.amount_paid or new.payment_status is distinct from old.payment_status)
+    and coalesce(current_setting('fasttrack.invoice_payment_sync', true), '') <> 'on' then
+    raise exception 'Invoice payment totals are derived from the immutable payment ledger.' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists invoice_15_protect_payment_summary on public.invoices;
+create trigger invoice_15_protect_payment_summary
+before update of amount_paid, payment_status on public.invoices
+for each row execute function public.protect_invoice_payment_summary();
+
+revoke all on function public.protect_invoice_payment_summary() from public, anon, authenticated;
+
+-- Preserve any legacy amount that was recorded before the ledger existed.
+-- These rows are intentionally marked as imported rather than guessed as cash
+-- or check payments.
+insert into public.invoice_payments (
+  id,
+  invoice_id,
+  method,
+  status,
+  amount,
+  refunded_amount,
+  currency,
+  reference,
+  note,
+  request_id,
+  request_fingerprint,
+  recorded_by,
+  succeeded_at,
+  refunded_at,
+  refunded_by,
+  reversal_reason,
+  created_at,
+  updated_at
+)
+select
+  gen_random_uuid(),
+  invoice.id,
+  'other',
+  case when invoice.payment_status = 'refunded' then 'refunded' else 'succeeded' end,
+  invoice.amount_paid,
+  case when invoice.payment_status = 'refunded' then invoice.amount_paid else 0 end,
+  'usd',
+  'Legacy invoice balance',
+  'Imported from the pre-ledger invoice payment record.',
+  gen_random_uuid(),
+  encode(digest(invoice.id::text || ':legacy-payment', 'sha256'), 'hex'),
+  invoice.created_by,
+  case when invoice.payment_status = 'refunded' then null else coalesce(invoice.updated_at, invoice.created_at) end,
+  case when invoice.payment_status = 'refunded' then coalesce(invoice.updated_at, invoice.created_at) else null end,
+  case when invoice.payment_status = 'refunded' then invoice.created_by else null end,
+  case when invoice.payment_status = 'refunded' then 'Imported legacy refund state.' else null end,
+  coalesce(invoice.updated_at, invoice.created_at),
+  coalesce(invoice.updated_at, invoice.created_at)
+from public.invoices invoice
+where invoice.amount_paid > 0
+  and not exists (
+    select 1 from public.invoice_payments payment where payment.invoice_id = invoice.id
+  );
+
+create table if not exists public.stripe_webhook_events (
+  id text primary key,
+  event_type text not null,
+  payload_sha256 text not null check (payload_sha256 ~ '^[0-9a-f]{64}$'),
+  status text not null default 'processing' check (status in ('processing', 'processed', 'ignored', 'failed')),
+  error_message text,
+  claim_token uuid not null default gen_random_uuid(),
+  attempt_count integer not null default 1 check (attempt_count > 0),
+  last_attempt_at timestamptz not null default statement_timestamp(),
+  received_at timestamptz not null default statement_timestamp(),
+  processed_at timestamptz,
+  constraint stripe_webhook_events_processed_check check (
+    (status = 'processing' and processed_at is null)
+    or (status <> 'processing' and processed_at is not null)
+  )
+);
+
+create table if not exists public.stripe_payment_refunds (
+  id text primary key check (id ~ '^re_[a-zA-Z0-9_]+$'),
+  payment_id uuid not null references public.invoice_payments(id) on delete restrict,
+  stripe_payment_intent_id text not null,
+  amount numeric(12,2) not null check (amount > 0),
+  currency text not null check (currency = 'usd'),
+  status text not null check (status in ('pending', 'succeeded', 'failed', 'cancelled')),
+  provider_status text not null,
+  failure_reason text,
+  provider_created_at timestamptz not null,
+  created_at timestamptz not null default statement_timestamp(),
+  updated_at timestamptz not null default statement_timestamp()
+);
+
+create index if not exists stripe_payment_refunds_payment_idx
+  on public.stripe_payment_refunds(payment_id, provider_created_at);
+
+alter table public.invoice_payments enable row level security;
+alter table public.stripe_webhook_events enable row level security;
+alter table public.stripe_payment_refunds enable row level security;
+
+drop policy if exists "owner assigned tech read invoice payments" on public.invoice_payments;
+create policy "owner assigned tech read invoice payments"
+on public.invoice_payments for select to authenticated
+using (
+  public.is_owner()
+  or exists (
+    select 1
+    from public.invoices invoice
+    join public.jobs job on job.id = invoice.job_id
+    where invoice.id = invoice_payments.invoice_id
+      and job.assigned_tech_id = public.current_allowed_user_id()
+  )
+);
+
+drop policy if exists "no direct invoice payment inserts" on public.invoice_payments;
+create policy "no direct invoice payment inserts"
+on public.invoice_payments for insert to authenticated
+with check (false);
+
+drop policy if exists "no direct invoice payment updates" on public.invoice_payments;
+create policy "no direct invoice payment updates"
+on public.invoice_payments for update to authenticated
+using (false)
+with check (false);
+
+drop policy if exists "no direct invoice payment deletes" on public.invoice_payments;
+create policy "no direct invoice payment deletes"
+on public.invoice_payments for delete to authenticated
+using (false);
+
+revoke all on public.invoice_payments from public, anon, authenticated;
+grant select on public.invoice_payments to authenticated;
+grant all on public.invoice_payments to service_role;
+
+revoke all on public.stripe_webhook_events from public, anon, authenticated;
+grant all on public.stripe_webhook_events to service_role;
+
+drop policy if exists "owner assigned tech read stripe refunds" on public.stripe_payment_refunds;
+create policy "owner assigned tech read stripe refunds"
+on public.stripe_payment_refunds for select to authenticated
+using (
+  public.is_owner()
+  or exists (
+    select 1
+    from public.invoice_payments payment
+    join public.invoices invoice on invoice.id = payment.invoice_id
+    join public.jobs job on job.id = invoice.job_id
+    where payment.id = stripe_payment_refunds.payment_id
+      and job.assigned_tech_id = public.current_allowed_user_id()
+  )
+);
+
+revoke all on public.stripe_payment_refunds from public, anon, authenticated;
+grant select on public.stripe_payment_refunds to authenticated;
+grant all on public.stripe_payment_refunds to service_role;
+
+create or replace function public.claim_stripe_webhook_event(
+  p_event_id text,
+  p_event_type text,
+  p_payload_sha256 text
+)
+returns table(decision text, completion_token uuid)
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  event_row public.stripe_webhook_events%rowtype;
+  new_token uuid;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Only the service role can claim Stripe events.' using errcode = '42501';
+  end if;
+  if nullif(trim(coalesce(p_event_id, '')), '') is null
+    or nullif(trim(coalesce(p_event_type, '')), '') is null
+    or lower(trim(coalesce(p_payload_sha256, ''))) !~ '^[0-9a-f]{64}$' then
+    raise exception 'Stripe event identity is invalid.' using errcode = '22023';
+  end if;
+
+  insert into public.stripe_webhook_events (
+    id, event_type, payload_sha256, status
+  ) values (
+    p_event_id, p_event_type, lower(trim(p_payload_sha256)), 'processing'
+  )
+  on conflict (id) do nothing
+  returning claim_token into new_token;
+  if found then
+    return query select 'process'::text, new_token;
+    return;
+  end if;
+
+  select * into event_row
+  from public.stripe_webhook_events stripe_event
+  where stripe_event.id = p_event_id
+  for update;
+  if event_row.event_type is distinct from p_event_type
+    or event_row.payload_sha256 is distinct from lower(trim(p_payload_sha256)) then
+    raise exception 'Stripe event identity conflict.' using errcode = '23505';
+  end if;
+  if event_row.status in ('processed', 'ignored') then
+    return query select 'duplicate'::text, null::uuid;
+    return;
+  end if;
+  if event_row.status = 'processing'
+    and event_row.last_attempt_at > statement_timestamp() - interval '5 minutes' then
+    return query select 'in_flight'::text, null::uuid;
+    return;
+  end if;
+
+  new_token := gen_random_uuid();
+  update public.stripe_webhook_events stripe_event
+  set status = 'processing',
+      error_message = null,
+      processed_at = null,
+      claim_token = new_token,
+      attempt_count = stripe_event.attempt_count + 1,
+      last_attempt_at = statement_timestamp()
+  where stripe_event.id = p_event_id;
+  return query select 'process'::text, new_token;
+end;
+$$;
+
+create or replace function public.complete_stripe_webhook_event(
+  p_event_id text,
+  p_claim_token uuid,
+  p_status text,
+  p_error_message text default null
+)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  normalized_status text := lower(trim(coalesce(p_status, '')));
+  affected integer;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Only the service role can complete Stripe events.' using errcode = '42501';
+  end if;
+  if p_claim_token is null or normalized_status not in ('processed', 'ignored', 'failed') then
+    raise exception 'Stripe event completion is invalid.' using errcode = '22023';
+  end if;
+  update public.stripe_webhook_events stripe_event
+  set status = normalized_status,
+      error_message = case when normalized_status = 'failed' then left(coalesce(p_error_message, 'Unknown Stripe processing error.'), 500) else null end,
+      processed_at = statement_timestamp()
+  where stripe_event.id = p_event_id
+    and stripe_event.claim_token = p_claim_token
+    and stripe_event.status = 'processing';
+  get diagnostics affected = row_count;
+  if affected <> 1 then
+    raise exception 'Stripe event completion token is stale.' using errcode = '40001';
+  end if;
+end;
+$$;
+
+revoke all on function public.claim_stripe_webhook_event(text, text, text)
+  from public, anon, authenticated, service_role;
+grant execute on function public.claim_stripe_webhook_event(text, text, text)
+  to service_role;
+revoke all on function public.complete_stripe_webhook_event(text, uuid, text, text)
+  from public, anon, authenticated, service_role;
+grant execute on function public.complete_stripe_webhook_event(text, uuid, text, text)
+  to service_role;
+
+create or replace function public.protect_invoice_payment_ledger()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_invoice public.invoices;
+  selected_total numeric(12,2);
+  succeeded_total numeric(12,2);
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Invoice payments can only be written by the protected server.' using errcode = '42501';
+  end if;
+
+  if tg_op = 'DELETE' then
+    raise exception 'Invoice payment audit rows cannot be deleted.' using errcode = '42501';
+  end if;
+
+  select * into target_invoice
+  from public.invoices
+  where id = new.invoice_id
+  for update;
+
+  if not found then
+    raise exception 'Invoice not found.' using errcode = 'P0002';
+  end if;
+  if target_invoice.status = 'cancelled' or target_invoice.payment_status = 'void' then
+    raise exception 'A void invoice cannot accept a payment.' using errcode = '42501';
+  end if;
+
+  if tg_op = 'UPDATE' then
+    if new.id is distinct from old.id
+      or new.invoice_id is distinct from old.invoice_id
+      or new.method is distinct from old.method
+      or new.amount is distinct from old.amount
+      or new.currency is distinct from old.currency
+      or new.request_id is distinct from old.request_id
+      or new.request_fingerprint is distinct from old.request_fingerprint
+      or new.recorded_by is distinct from old.recorded_by
+      or new.created_at is distinct from old.created_at then
+      raise exception 'Invoice payment identity, amount, method, and recorder are immutable.' using errcode = '42501';
+    end if;
+
+    if new.status is distinct from old.status and not (
+      (old.status = 'pending' and new.status in ('succeeded', 'failed', 'cancelled', 'partially_refunded', 'refunded'))
+      or (old.status = 'succeeded' and new.status in ('partially_refunded', 'refunded'))
+      or (old.status = 'partially_refunded' and new.status in ('partially_refunded', 'refunded'))
+      or (old.status in ('failed', 'cancelled') and new.status in ('succeeded', 'partially_refunded', 'refunded'))
+    ) then
+      raise exception 'The invoice payment status transition is not allowed.' using errcode = '42501';
+    end if;
+    if new.refunded_amount < old.refunded_amount then
+      raise exception 'A recorded refund amount cannot decrease.' using errcode = '42501';
+    end if;
+    if old.refunded_by is not null and new.refunded_by is distinct from old.refunded_by then
+      raise exception 'The payment reversal actor is immutable.' using errcode = '42501';
+    end if;
+  end if;
+
+  if new.method = 'card' and new.status = 'pending' and exists (
+    select 1
+    from public.invoice_payments payment
+    where payment.invoice_id = new.invoice_id
+      and payment.method = 'card'
+      and payment.status = 'pending'
+      and payment.id <> new.id
+  ) then
+    raise exception 'A card checkout is already open for this invoice.' using errcode = '23505';
+  end if;
+
+  if tg_op = 'INSERT' and new.method in ('cash', 'check', 'other') and new.status <> 'succeeded' then
+    raise exception 'Manual payment records must be succeeded when recorded.' using errcode = '23514';
+  end if;
+
+  if tg_op = 'INSERT' and new.method in ('cash', 'check', 'other') and exists (
+    select 1
+    from public.invoice_payments payment
+    where payment.invoice_id = new.invoice_id
+      and payment.method = 'card'
+      and payment.status = 'pending'
+  ) then
+    raise exception 'Wait for the open card checkout to finish or expire before recording cash or check.' using errcode = '55000';
+  end if;
+
+  if new.status = 'partially_refunded' and (new.refunded_amount <= 0 or new.refunded_amount >= new.amount) then
+    raise exception 'A partial refund must be greater than zero and below the payment amount.' using errcode = '23514';
+  end if;
+  if new.status = 'refunded' and new.refunded_amount <> new.amount then
+    raise exception 'A fully refunded payment must record the full refunded amount.' using errcode = '23514';
+  end if;
+  if new.status not in ('partially_refunded', 'refunded') and new.refunded_amount <> 0 then
+    raise exception 'Only refunded payments can record a refunded amount.' using errcode = '23514';
+  end if;
+  if new.method in ('cash', 'check', 'other') and new.status = 'refunded'
+    and (new.refunded_by is null or nullif(trim(coalesce(new.reversal_reason, '')), '') is null) then
+    raise exception 'Manual payment reversals require an actor and reason.' using errcode = '23514';
+  end if;
+
+  selected_total := case target_invoice.selected_tier
+    when 'standard' then target_invoice.total_standard
+    when 'good' then target_invoice.total_good
+    when 'better' then target_invoice.total_better
+    when 'best' then target_invoice.total_best
+    else null
+  end;
+  if selected_total is null or selected_total <= 0 then
+    raise exception 'Select non-empty approved work before collecting payment.' using errcode = '42501';
+  end if;
+
+  select coalesce(sum(payment.amount - payment.refunded_amount), 0)
+  into succeeded_total
+  from public.invoice_payments payment
+  where payment.invoice_id = new.invoice_id
+    and payment.status in ('succeeded', 'partially_refunded')
+    and payment.id <> new.id;
+
+  if new.status in ('succeeded', 'partially_refunded') then
+    succeeded_total := succeeded_total + (new.amount - new.refunded_amount);
+  end if;
+
+  if succeeded_total > selected_total then
+    raise exception 'The payment would exceed the invoice balance.' using errcode = '22003';
+  end if;
+  if new.method = 'card' and new.status = 'pending' and new.amount > selected_total - succeeded_total then
+    raise exception 'The card checkout exceeds the invoice balance.' using errcode = '22003';
+  end if;
+
+  if new.status = 'succeeded' and new.succeeded_at is null then
+    new.succeeded_at := statement_timestamp();
+  end if;
+  if new.status = 'failed' and new.failed_at is null then
+    new.failed_at := statement_timestamp();
+  end if;
+  if new.status in ('partially_refunded', 'refunded') and new.refunded_at is null then
+    new.refunded_at := statement_timestamp();
+  end if;
+  new.updated_at := statement_timestamp();
+  return new;
+end;
+$$;
+
+drop trigger if exists invoice_payment_10_protect_ledger on public.invoice_payments;
+create trigger invoice_payment_10_protect_ledger
+before insert or update or delete on public.invoice_payments
+for each row execute function public.protect_invoice_payment_ledger();
+
+create or replace function public.claim_invoice_payment(
+  p_request_id uuid,
+  p_invoice_id uuid,
+  p_method text,
+  p_amount numeric,
+  p_currency text,
+  p_reference text,
+  p_note text,
+  p_request_fingerprint text,
+  p_recorded_by uuid,
+  p_expires_at timestamptz default null
+)
+returns public.invoice_payments
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  normalized_method text := lower(trim(coalesce(p_method, '')));
+  normalized_currency text := lower(trim(coalesce(p_currency, '')));
+  normalized_reference text := nullif(trim(coalesce(p_reference, '')), '');
+  normalized_note text := nullif(trim(coalesce(p_note, '')), '');
+  normalized_fingerprint text := lower(trim(coalesce(p_request_fingerprint, '')));
+  requested_user public.allowed_users%rowtype;
+  assigned_tech_id uuid;
+  payment_row public.invoice_payments%rowtype;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Only the protected server can claim invoice payments.' using errcode = '42501';
+  end if;
+  if p_request_id is null or p_invoice_id is null or p_recorded_by is null then
+    raise exception 'Payment request, invoice, and recorder are required.' using errcode = '22004';
+  end if;
+  if normalized_fingerprint !~ '^[0-9a-f]{64}$' then
+    raise exception 'Payment request fingerprint is invalid.' using errcode = '22023';
+  end if;
+
+  select * into requested_user
+  from public.allowed_users allowed_user
+  where allowed_user.id = p_recorded_by
+    and allowed_user.active;
+  if not found or requested_user.role not in ('owner', 'tech') then
+    raise exception 'Recorder is not allowed to collect invoice payments.' using errcode = '42501';
+  end if;
+
+  -- Serialize by idempotency key and resolve an existing request before any
+  -- invoice-balance, pending-checkout, or trigger validation can reject an
+  -- otherwise exact replay after the invoice has moved on.
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_request_id::text, 0));
+  select * into payment_row
+  from public.invoice_payments payment
+  where payment.request_id = p_request_id
+  for update;
+  if found then
+    if payment_row.invoice_id is distinct from p_invoice_id
+      or payment_row.request_fingerprint is distinct from normalized_fingerprint
+      or payment_row.recorded_by is distinct from p_recorded_by then
+      raise exception 'Payment request ID was already used for different payment details.' using errcode = '23505';
+    end if;
+    return payment_row;
+  end if;
+
+  if normalized_method not in ('card', 'cash', 'check') then
+    raise exception 'Payment method is invalid.' using errcode = '22023';
+  end if;
+  if normalized_currency <> 'usd' then
+    raise exception 'Only USD invoice payments are supported.' using errcode = '22023';
+  end if;
+  if p_amount is null or p_amount <= 0 or round(p_amount, 2) <> p_amount then
+    raise exception 'Payment amount is invalid.' using errcode = '22023';
+  end if;
+  if normalized_method = 'check' and normalized_reference is null then
+    raise exception 'Check payments require a reference.' using errcode = '22023';
+  end if;
+  if normalized_method = 'card' and (p_expires_at is null or p_expires_at <= statement_timestamp() + interval '30 minutes') then
+    raise exception 'Card checkout expiry must be more than 30 minutes in the future.' using errcode = '22023';
+  end if;
+
+  select job.assigned_tech_id into assigned_tech_id
+  from public.invoices invoice
+  join public.jobs job on job.id = invoice.job_id
+  where invoice.id = p_invoice_id;
+  if not found then
+    raise exception 'Invoice not found.' using errcode = 'P0002';
+  end if;
+  if requested_user.role = 'tech' and assigned_tech_id is distinct from requested_user.id then
+    raise exception 'Technicians can only collect payments for assigned jobs.' using errcode = '42501';
+  end if;
+
+  insert into public.invoice_payments (
+    id,
+    invoice_id,
+    method,
+    status,
+    amount,
+    currency,
+    reference,
+    note,
+    request_id,
+    request_fingerprint,
+    recorded_by,
+    expires_at,
+    succeeded_at,
+    provider_status
+  ) values (
+    p_request_id,
+    p_invoice_id,
+    normalized_method,
+    case when normalized_method = 'card' then 'pending' else 'succeeded' end,
+    p_amount,
+    normalized_currency,
+    normalized_reference,
+    normalized_note,
+    p_request_id,
+    normalized_fingerprint,
+    p_recorded_by,
+    case when normalized_method = 'card' then p_expires_at else null end,
+    case when normalized_method = 'card' then null else statement_timestamp() end,
+    case when normalized_method = 'card' then 'creating' else null end
+  )
+  returning * into payment_row;
+
+  return payment_row;
+end;
+$$;
+
+revoke all on function public.claim_invoice_payment(uuid, uuid, text, numeric, text, text, text, text, uuid, timestamptz)
+  from public, anon, authenticated, service_role;
+grant execute on function public.claim_invoice_payment(uuid, uuid, text, numeric, text, text, text, text, uuid, timestamptz)
+  to service_role;
+
+create or replace function public.sync_invoice_payment_totals(p_invoice_id uuid)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  target_invoice public.invoices;
+  selected_total numeric(12,2);
+  paid_total numeric(12,2);
+  has_refund boolean;
+  next_payment_status text;
+  next_invoice_status text;
+  previous_payment_sync_setting text := current_setting('fasttrack.invoice_payment_sync', true);
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Invoice payment totals can only be synchronized by the protected server.' using errcode = '42501';
+  end if;
+
+  select * into target_invoice
+  from public.invoices
+  where id = p_invoice_id
+  for update;
+  if not found then return; end if;
+
+  selected_total := case target_invoice.selected_tier
+    when 'standard' then target_invoice.total_standard
+    when 'good' then target_invoice.total_good
+    when 'better' then target_invoice.total_better
+    when 'best' then target_invoice.total_best
+    else null
+  end;
+
+  select
+    coalesce(sum(payment.amount - payment.refunded_amount) filter (where payment.status in ('succeeded', 'partially_refunded')), 0),
+    coalesce(bool_or(payment.refunded_amount > 0), false)
+  into paid_total, has_refund
+  from public.invoice_payments payment
+  where payment.invoice_id = p_invoice_id;
+
+  if target_invoice.status = 'cancelled' or target_invoice.payment_status = 'void' then
+    next_payment_status := 'void';
+    next_invoice_status := 'cancelled';
+  elsif paid_total = 0 and has_refund then
+    next_payment_status := 'refunded';
+    next_invoice_status := case when target_invoice.sent_at is null then 'draft' else 'sent' end;
+  elsif paid_total = 0 then
+    next_payment_status := 'unpaid';
+    next_invoice_status := case when target_invoice.sent_at is null then 'draft' else 'sent' end;
+  elsif selected_total is not null and paid_total = selected_total then
+    next_payment_status := 'paid';
+    next_invoice_status := 'paid';
+  else
+    next_payment_status := 'partially_paid';
+    next_invoice_status := case when target_invoice.sent_at is null then 'draft' else 'sent' end;
+  end if;
+
+  perform set_config('fasttrack.invoice_payment_sync', 'on', true);
+  update public.invoices invoice
+  set
+    amount_paid = paid_total,
+    payment_status = next_payment_status,
+    status = next_invoice_status,
+    pdf_storage_path = case
+      when invoice.amount_paid is distinct from paid_total or invoice.payment_status is distinct from next_payment_status then null
+      else invoice.pdf_storage_path
+    end,
+    pdf_generated_at = case
+      when invoice.amount_paid is distinct from paid_total or invoice.payment_status is distinct from next_payment_status then null
+      else invoice.pdf_generated_at
+    end,
+    pdf_sha256 = case
+      when invoice.amount_paid is distinct from paid_total or invoice.payment_status is distinct from next_payment_status then null
+      else invoice.pdf_sha256
+    end,
+    pdf_size_bytes = case
+      when invoice.amount_paid is distinct from paid_total or invoice.payment_status is distinct from next_payment_status then null
+      else invoice.pdf_size_bytes
+    end,
+    pdf_workflow_revision = case
+      when invoice.amount_paid is distinct from paid_total or invoice.payment_status is distinct from next_payment_status then null
+      else invoice.pdf_workflow_revision
+    end,
+    updated_at = statement_timestamp()
+  where invoice.id = p_invoice_id;
+  perform set_config(
+    'fasttrack.invoice_payment_sync',
+    coalesce(previous_payment_sync_setting, ''),
+    true
+  );
+end;
+$$;
+
+revoke all on function public.sync_invoice_payment_totals(uuid) from public, anon, authenticated;
+grant execute on function public.sync_invoice_payment_totals(uuid) to service_role;
+
+create or replace function public.after_invoice_payment_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' and new.status not in ('succeeded', 'partially_refunded', 'refunded') then
+    return new;
+  end if;
+  if tg_op = 'UPDATE'
+    and new.status is not distinct from old.status
+    and new.amount is not distinct from old.amount
+    and new.refunded_amount is not distinct from old.refunded_amount then
+    return new;
+  end if;
+
+  perform public.sync_invoice_payment_totals(new.invoice_id);
+  return new;
+end;
+$$;
+
+drop trigger if exists invoice_payment_20_sync_invoice on public.invoice_payments;
+create trigger invoice_payment_20_sync_invoice
+after insert or update on public.invoice_payments
+for each row execute function public.after_invoice_payment_change();
+
+create or replace function public.protect_stripe_payment_refund()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Stripe refunds can only be written by the protected server.' using errcode = '42501';
+  end if;
+  if tg_op = 'DELETE' then
+    raise exception 'Stripe refund audit rows cannot be deleted.' using errcode = '42501';
+  end if;
+  if tg_op = 'UPDATE' then
+    if new.id is distinct from old.id
+      or new.payment_id is distinct from old.payment_id
+      or new.stripe_payment_intent_id is distinct from old.stripe_payment_intent_id
+      or new.amount is distinct from old.amount
+      or new.currency is distinct from old.currency
+      or new.provider_created_at is distinct from old.provider_created_at
+      or new.created_at is distinct from old.created_at then
+      raise exception 'Stripe refund identity and amount are immutable.' using errcode = '42501';
+    end if;
+    if old.status = 'succeeded' and new.status <> 'succeeded' then
+      raise exception 'A succeeded Stripe refund cannot regress.' using errcode = '42501';
+    end if;
+  end if;
+  new.updated_at := statement_timestamp();
+  return new;
+end;
+$$;
+
+drop trigger if exists stripe_refund_10_protect on public.stripe_payment_refunds;
+create trigger stripe_refund_10_protect
+before insert or update or delete on public.stripe_payment_refunds
+for each row execute function public.protect_stripe_payment_refund();
+
+create or replace function public.record_stripe_payment_refund(
+  p_refund_id text,
+  p_payment_id uuid,
+  p_payment_intent_id text,
+  p_amount numeric,
+  p_currency text,
+  p_status text,
+  p_provider_status text,
+  p_failure_reason text,
+  p_provider_created_at timestamptz
+)
+returns public.stripe_payment_refunds
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  normalized_status text := lower(trim(coalesce(p_status, '')));
+  normalized_provider_status text := left(trim(coalesce(p_provider_status, 'unknown')), 80);
+  normalized_failure_reason text := nullif(left(trim(coalesce(p_failure_reason, '')), 300), '');
+  payment_row public.invoice_payments%rowtype;
+  refund_row public.stripe_payment_refunds%rowtype;
+  succeeded_refunds numeric(12,2);
+  next_payment_status text;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Only the protected server can record Stripe refunds.' using errcode = '42501';
+  end if;
+  if p_refund_id !~ '^re_[a-zA-Z0-9_]+$'
+    or p_payment_id is null
+    or nullif(trim(coalesce(p_payment_intent_id, '')), '') is null
+    or p_provider_created_at is null then
+    raise exception 'Stripe refund identity is invalid.' using errcode = '22023';
+  end if;
+  if p_amount is null or p_amount <= 0 or round(p_amount, 2) <> p_amount or lower(trim(coalesce(p_currency, ''))) <> 'usd' then
+    raise exception 'Stripe refund amount or currency is invalid.' using errcode = '22023';
+  end if;
+  if normalized_status not in ('pending', 'succeeded', 'failed', 'cancelled') then
+    raise exception 'Stripe refund status is invalid.' using errcode = '22023';
+  end if;
+
+  select * into payment_row
+  from public.invoice_payments payment
+  where payment.id = p_payment_id
+  for update;
+  if not found or payment_row.method <> 'card' then
+    raise exception 'Stripe refund payment was not found.' using errcode = 'P0002';
+  end if;
+  if payment_row.stripe_payment_intent_id is not null
+    and payment_row.stripe_payment_intent_id is distinct from p_payment_intent_id then
+    raise exception 'Stripe refund payment intent does not match the ledger.' using errcode = '23505';
+  end if;
+
+  insert into public.stripe_payment_refunds (
+    id, payment_id, stripe_payment_intent_id, amount, currency, status,
+    provider_status, failure_reason, provider_created_at
+  ) values (
+    p_refund_id, p_payment_id, p_payment_intent_id, p_amount, 'usd', normalized_status,
+    normalized_provider_status, normalized_failure_reason, p_provider_created_at
+  )
+  on conflict (id) do nothing
+  returning * into refund_row;
+
+  if not found then
+    select * into refund_row
+    from public.stripe_payment_refunds refund
+    where refund.id = p_refund_id
+    for update;
+    if refund_row.payment_id is distinct from p_payment_id
+      or refund_row.stripe_payment_intent_id is distinct from p_payment_intent_id
+      or refund_row.amount is distinct from p_amount
+      or refund_row.currency <> 'usd' then
+      raise exception 'Stripe refund ID was reused with different details.' using errcode = '23505';
+    end if;
+
+    if refund_row.status <> 'succeeded' and (
+      normalized_status = 'succeeded'
+      or refund_row.status = 'pending'
+    ) then
+      update public.stripe_payment_refunds refund
+      set status = normalized_status,
+          provider_status = normalized_provider_status,
+          failure_reason = normalized_failure_reason
+      where refund.id = p_refund_id
+      returning * into refund_row;
+    end if;
+  end if;
+
+  select coalesce(sum(refund.amount) filter (where refund.status = 'succeeded'), 0)
+  into succeeded_refunds
+  from public.stripe_payment_refunds refund
+  where refund.payment_id = p_payment_id;
+  if succeeded_refunds > payment_row.amount then
+    raise exception 'Stripe refunds exceed the original card payment.' using errcode = '22003';
+  end if;
+
+  next_payment_status := case
+    when succeeded_refunds = 0 then payment_row.status
+    when succeeded_refunds = payment_row.amount then 'refunded'
+    else 'partially_refunded'
+  end;
+  update public.invoice_payments payment
+  set stripe_payment_intent_id = coalesce(payment.stripe_payment_intent_id, p_payment_intent_id),
+      status = next_payment_status,
+      refunded_amount = succeeded_refunds,
+      provider_status = case
+        when succeeded_refunds = payment.amount then 'refunded'
+        when succeeded_refunds > 0 then 'partially_refunded'
+        else payment.provider_status
+      end,
+      succeeded_at = case when succeeded_refunds > 0 then coalesce(payment.succeeded_at, statement_timestamp()) else payment.succeeded_at end,
+      refunded_at = case when succeeded_refunds > 0 then statement_timestamp() else payment.refunded_at end
+  where payment.id = p_payment_id;
+
+  return refund_row;
+end;
+$$;
+
+revoke all on function public.record_stripe_payment_refund(text, uuid, text, numeric, text, text, text, text, timestamptz)
+  from public, anon, authenticated, service_role;
+grant execute on function public.record_stripe_payment_refund(text, uuid, text, numeric, text, text, text, text, timestamptz)
+  to service_role;
+
+revoke all on function public.protect_invoice_payment_ledger() from public, anon, authenticated;
+revoke all on function public.after_invoice_payment_change() from public, anon, authenticated;
+revoke all on function public.protect_stripe_payment_refund() from public, anon, authenticated;
+
+-- One business-wide schedule configuration. Working hours guide presets and
+-- dispatch display; they are not database restrictions on job appointment times.
+
+create table if not exists public.business_scheduling_settings (
+  id smallint primary key default 1,
+  time_zone text not null default 'America/New_York',
+  default_arrival_window_minutes integer not null default 180,
+  business_day_start_time time without time zone not null default time '08:00',
+  business_day_end_time time without time zone not null default time '17:00',
+  scheduling_increment_minutes integer not null default 15,
+  updated_at timestamptz not null default statement_timestamp(),
+  updated_by uuid references public.allowed_users(id) on delete restrict,
+  constraint business_scheduling_settings_singleton_check check (id = 1),
+  constraint business_scheduling_settings_time_zone_check check (
+    char_length(time_zone) between 1 and 100
+    and time_zone ~ '^[A-Za-z0-9_+./-]+$'
+  ),
+  constraint business_scheduling_settings_arrival_window_check check (
+    default_arrival_window_minutes between 15 and 720
+  ),
+  constraint business_scheduling_settings_increment_check check (
+    scheduling_increment_minutes in (5, 10, 15, 30, 60)
+  ),
+  constraint business_scheduling_settings_window_increment_check check (
+    mod(default_arrival_window_minutes, scheduling_increment_minutes) = 0
+  ),
+  constraint business_scheduling_settings_day_order_check check (
+    business_day_end_time > business_day_start_time
+  ),
+  constraint business_scheduling_settings_whole_minute_check check (
+    extract(second from business_day_start_time) = 0
+    and extract(second from business_day_end_time) = 0
+  )
+);
+
+insert into public.business_scheduling_settings (
+  id,
+  time_zone,
+  default_arrival_window_minutes,
+  business_day_start_time,
+  business_day_end_time,
+  scheduling_increment_minutes
+)
+values (1, 'America/New_York', 180, time '08:00', time '17:00', 15)
+on conflict (id) do nothing;
+
+create or replace function public.touch_business_scheduling_settings_updated_at()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.updated_at := statement_timestamp();
+  return new;
+end;
+$$;
+
+drop trigger if exists business_scheduling_settings_touch_updated_at
+  on public.business_scheduling_settings;
+create trigger business_scheduling_settings_touch_updated_at
+before update on public.business_scheduling_settings
+for each row execute function public.touch_business_scheduling_settings_updated_at();
+
+revoke all on function public.touch_business_scheduling_settings_updated_at() from public, anon, authenticated;
+
+alter table public.business_scheduling_settings enable row level security;
+
+drop policy if exists "active users read business scheduling settings"
+  on public.business_scheduling_settings;
+create policy "active users read business scheduling settings"
+on public.business_scheduling_settings for select to authenticated
+using (public.current_allowed_user_id() is not null);
+
+revoke all on public.business_scheduling_settings from public, anon, authenticated;
+grant select on public.business_scheduling_settings to authenticated;
+grant all on public.business_scheduling_settings to service_role;

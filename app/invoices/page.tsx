@@ -94,13 +94,15 @@ export default function InvoicesPage() {
               const job = data.jobs.find((candidate) => candidate.id === invoice.jobId);
               const customer = data.customers.find((candidate) => candidate.id === job?.customerId);
               const total = invoice.selectedTier ? selectedTotal(invoice) : undefined;
-              const deliveryIssue = Boolean(invoice.pdfStoragePath && !invoice.sentAt && !customer?.email);
+              const emailReady = Boolean(customer?.emailNotificationsEnabled && customer.email);
+              const smsReady = Boolean(customer?.smsConsentStatus === "opted_in" && customer.phoneDigits.length === 10);
+              const deliveryIssue = Boolean(invoice.pdfStoragePath && !invoice.sentAt && !emailReady && !smsReady);
               return (
                 <Link key={invoice.id} href={`/invoices/${invoice.id}`} className={styles.row} role="row">
                   <span className={styles.invoiceCell} role="cell" data-label="Customer and invoice">
                     <strong>{customer?.name ?? "Unknown customer"}</strong>
                     <small>{invoice.invoiceNumber} · {invoiceOptionLabels[invoice.optionLabel]}</small>
-                    {deliveryIssue ? <span className={styles.deliveryIssue}><AlertCircle size={13} aria-hidden="true" /> Customer email required</span> : null}
+                    {deliveryIssue ? <span className={styles.deliveryIssue}><AlertCircle size={13} aria-hidden="true" /> Delivery contact or consent required</span> : null}
                   </span>
                   <span className={styles.moneyCell} role="cell" data-label="Balance"><strong>{total === undefined ? "—" : money(Math.max(0, total - invoice.amountPaid))}</strong><small>{total === undefined ? "Select approved work" : `${money(total)} total`}</small></span>
                   <span role="cell" data-label="Next step"><span className={styles.status} data-status={displayStatus(invoice)}>{invoiceNextStep(invoice)}</span></span>
@@ -133,7 +135,7 @@ function invoiceNextStep(invoice: Invoice) {
   if (invoice.paymentStatus === "paid") return "Paid";
   if (invoice.paymentStatus === "partially_paid") return "Record balance";
   if (invoice.sentAt) return "Record payment";
-  if (invoice.pdfStoragePath) return "Email invoice";
+  if (invoice.pdfStoragePath) return "Deliver invoice";
   if (invoice.approvalStatus === "signed") return "Generate PDF";
   return "Review draft";
 }

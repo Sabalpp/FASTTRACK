@@ -35,7 +35,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     ]);
     if (authorizationError || signatureError || afterPhotoError) throw new HttpError(503, "The field-work evidence could not be checked.");
     if (!authorization) throw new HttpError(409, "Collect customer work authorization before completing this job.");
-    if (!afterPhotoCount) throw new HttpError(409, "Save at least one after photo before completing this job.");
+    if (!afterPhotoCount && !(job.afterPhotosSkippedAt && job.afterPhotosSkippedBy)) {
+      throw new HttpError(409, "Save an after photo or explicitly skip it before completing this job.");
+    }
     const authorizationBinding = workAuthorizationBindingFromSignatureRow(authorization);
     if (signature) {
       assertCompletionAuthorizationBinding(signature, authorizationBinding);

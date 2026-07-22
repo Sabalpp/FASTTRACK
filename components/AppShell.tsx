@@ -10,6 +10,7 @@ import {
   Package,
   RefreshCw,
   RotateCcw,
+  Settings,
   ShieldCheck,
   Users
 } from "lucide-react";
@@ -35,6 +36,7 @@ const navItems: NavItem[] = [
 ];
 
 const secondaryNavItems: NavItem[] = [
+  { href: "/settings/scheduling", label: "Scheduling", roles: ["owner"], Icon: Settings },
   { href: "/parts", label: "Parts catalog", roles: ["owner"], Icon: Package },
   { href: "/admin/users", label: "Team access", roles: ["owner"], Icon: ShieldCheck }
 ];

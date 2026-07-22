@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { InvoicePdfDocument, invoicePdfDocumentState } from "@/components/InvoicePdfDocument";
 import { generateProtectedInvoicePdf, loadProtectedInvoicePdf } from "@/lib/invoices-client";
 import { demoMode } from "@/lib/runtime";
-import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem } from "@/lib/types";
+import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem, JobPhoto } from "@/lib/types";
 import styles from "./InvoiceWorkspace.module.css";
 
 export type InvoiceWorkspacePdfProps = {
@@ -14,6 +14,7 @@ export type InvoiceWorkspacePdfProps = {
   job: Job;
   customer: Customer;
   items: JobLineItem[];
+  photos?: JobPhoto[];
   signatures: InvoiceSignature[];
   canGenerate: boolean;
   generationRequest?: number;
@@ -26,6 +27,7 @@ export function InvoiceWorkspacePdf({
   job,
   customer,
   items,
+  photos = [],
   signatures,
   canGenerate,
   generationRequest = 0,
@@ -99,6 +101,7 @@ export function InvoiceWorkspacePdf({
     job.serviceAddress,
     job.description,
     job.notes,
+    photos.map((photo) => [photo.id, photo.kind, photo.caption, photo.uploadedAt, photo.storagePath]),
     items.map((item) => [item.id, item.tier, item.description, item.quantity, item.unitPrice, item.sortOrder])
   ]);
 
@@ -145,7 +148,7 @@ export function InvoiceWorkspacePdf({
     setPdfError(null);
     try {
       const blob = draftPreview || demoMode
-        ? await pdf(<InvoicePdfDocument invoice={invoice} job={job} customer={customer} items={items} signatures={signatures} draft={draftPreview} />).toBlob()
+        ? await pdf(<InvoicePdfDocument invoice={invoice} job={job} customer={customer} items={items} photos={photos} signatures={signatures} draft={draftPreview} />).toBlob()
         : await generateProtectedInvoicePdf(invoice.id);
       if (!showBlob(blob, requestVersion)) return;
       if (!draftPreview) await onGenerated?.();
@@ -156,7 +159,7 @@ export function InvoiceWorkspacePdf({
     } finally {
       if (requestVersion === pdfRequestVersion.current) setGenerating(false);
     }
-  }, [customer, draftPreview, generating, invoice, items, job, onGenerated, showBlob, signatures]);
+  }, [customer, draftPreview, generating, invoice, items, job, onGenerated, photos, showBlob, signatures]);
 
   useEffect(() => {
     if (generationRequest <= 0 || generationRequest === handledGenerationRequest.current) return;

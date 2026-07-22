@@ -4,20 +4,23 @@ import { CheckCircle2, Clock3 } from "lucide-react";
 import { branding } from "@/lib/branding";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { balanceDue, firstPopulatedTier, invoiceOptionLabels, selectedSubtotal, selectedTotal } from "@/lib/invoice";
+import { displayJobPhotoCaption } from "@/lib/job-photos";
 import { money, percent } from "@/lib/money";
-import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem } from "@/lib/types";
+import type { Customer, Invoice, InvoiceSignature, Job, JobLineItem, JobPhoto } from "@/lib/types";
 
 export function InvoicePreview({
   invoice,
   job,
   customer,
   items,
+  photos = [],
   signatures = []
 }: {
   invoice: Invoice;
   job: Job;
   customer: Customer;
   items: JobLineItem[];
+  photos?: JobPhoto[];
   signatures?: InvoiceSignature[];
 }) {
   const selectedTier = firstPopulatedTier(invoice);
@@ -31,6 +34,7 @@ export function InvoicePreview({
   const completionOverride = !completion && job.completionSignatureOverrideAt && job.completionSignatureOverrideReason
     ? { at: job.completionSignatureOverrideAt, reason: job.completionSignatureOverrideReason }
     : undefined;
+  const skippedPhotoCheckpoints = jobPhotoCheckpointSkips(job);
 
   return (
     <article className="invoice-preview invoice-review-preview" aria-label="Invoice review preview">
@@ -103,6 +107,46 @@ export function InvoicePreview({
           </div>
         </div>
 
+        {photos.length > 0 || skippedPhotoCheckpoints.length > 0 ? (
+          <section className="invoice-photo-record" aria-labelledby="invoice-photo-record-heading">
+            <div className="invoice-photo-record-heading">
+              <div>
+                <p className="eyebrow">Job photo record</p>
+                <h3 id="invoice-photo-record-heading">Before, after, and supporting photos</h3>
+              </div>
+              <span>{photoRecordCountLabel(photos.length, skippedPhotoCheckpoints.length)}</span>
+            </div>
+            {skippedPhotoCheckpoints.length > 0 ? (
+              <div className="invoice-photo-skip-list">
+                {skippedPhotoCheckpoints.map((checkpoint) => (
+                  <div key={checkpoint.kind} className="invoice-photo-skip">
+                    <strong>{checkpoint.kind === "before" ? "Before photo skipped" : "After photo skipped"}</strong>
+                    <span>Audited field decision recorded {formatDateTime(checkpoint.at)}.</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {photos.length > 0 ? <div className="invoice-photo-grid">
+              {sortPhotos(photos).map((photo) => {
+                const renderable = /^(data:image\/|https?:\/\/|blob:)/i.test(photo.storagePath);
+                const caption = displayJobPhotoCaption(photo.caption);
+                return (
+                  <figure key={photo.id} className="invoice-photo-card">
+                    {renderable
+                      ? <img src={photo.storagePath} alt={`${photoKindLabel(photo.kind)}: ${caption}`} />
+                      : <div className="invoice-photo-unavailable">Photo preview unavailable</div>}
+                    <figcaption>
+                      <strong>{photoKindLabel(photo.kind)}</strong>
+                      <span>{caption}</span>
+                      <small>{formatDateTime(photo.uploadedAt)}</small>
+                    </figcaption>
+                  </figure>
+                );
+              })}
+            </div> : <p className="muted">No image was stored for the audited skipped checkpoint.</p>}
+          </section>
+        ) : null}
+
         <div className="invoice-signature-grid">
           <FieldSignaturePreview
             title="Authorization of repair"
@@ -113,12 +157,41 @@ export function InvoicePreview({
             title="Completion of work"
             signature={completion}
             override={completionOverride}
-            pending="Collect after the repair and after photo."
+            pending="Collect after the repair and after photo or audited skip."
           />
         </div>
       </div>
     </article>
   );
+}
+
+function sortPhotos(photos: JobPhoto[]) {
+  const order = { before: 0, after: 1, other: 2 } as const;
+  return [...photos].sort((left, right) => (
+    order[left.kind] - order[right.kind]
+    || Date.parse(left.uploadedAt) - Date.parse(right.uploadedAt)
+    || left.id.localeCompare(right.id)
+  ));
+}
+
+function photoKindLabel(kind: JobPhoto["kind"]) {
+  if (kind === "before") return "Before work";
+  if (kind === "after") return "After work";
+  return "Job photo";
+}
+
+function jobPhotoCheckpointSkips(job: Job) {
+  const checkpoints: Array<{ kind: "before" | "after"; at: string }> = [];
+  if (job.beforePhotosSkippedAt && job.beforePhotosSkippedBy) checkpoints.push({ kind: "before", at: job.beforePhotosSkippedAt });
+  if (job.afterPhotosSkippedAt && job.afterPhotosSkippedBy) checkpoints.push({ kind: "after", at: job.afterPhotosSkippedAt });
+  return checkpoints;
+}
+
+function photoRecordCountLabel(photoCount: number, skipCount: number) {
+  const labels = [];
+  if (photoCount > 0) labels.push(`${photoCount} photo${photoCount === 1 ? "" : "s"}`);
+  if (skipCount > 0) labels.push(`${skipCount} audited skip${skipCount === 1 ? "" : "s"}`);
+  return labels.join(" · ");
 }
 
 function FieldSignaturePreview({

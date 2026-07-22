@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PhotoUploader } from "@/components/PhotoUploader";
 import type { PhotoKind } from "@/lib/types";
 
-const harness = vi.hoisted(() => ({ addPhoto: vi.fn() }));
+const harness = vi.hoisted(() => ({ addPhoto: vi.fn(), createPhotoPreview: vi.fn() }));
 
 vi.mock("@/lib/data-store", () => ({
   useAppData: () => harness,
@@ -11,7 +11,7 @@ vi.mock("@/lib/data-store", () => ({
 }));
 
 vi.mock("@/lib/photo-preview", () => ({
-  createPhotoPreview: vi.fn(async () => "data:image/jpeg;base64,cGhvdG8=")
+  createPhotoPreview: harness.createPhotoPreview
 }));
 
 vi.mock("@/lib/runtime", () => ({ demoMode: true }));
@@ -20,6 +20,8 @@ describe("photo checkpoint uploader", () => {
   beforeEach(() => {
     harness.addPhoto.mockReset();
     harness.addPhoto.mockResolvedValue({});
+    harness.createPhotoPreview.mockReset();
+    harness.createPhotoPreview.mockResolvedValue("data:image/jpeg;base64,cGhvdG8=");
   });
 
   it.each([
@@ -47,9 +49,12 @@ describe("photo checkpoint uploader", () => {
       jobId: "job-1",
       uploadedBy: "tech-1",
       kind: kind as PhotoKind,
-      caption: `${label} evidence`,
-      file
+      caption: `${label} evidence`
     }));
+    const uploadedFile = harness.addPhoto.mock.calls[0][0].file as File;
+    expect(uploadedFile).not.toBe(file);
+    expect(uploadedFile.name).toBe(`${kind}.jpg`);
+    expect(uploadedFile.type).toBe("image/jpeg");
     await waitFor(() => expect(screen.getByText("Photo saved")).toBeTruthy());
   });
 
@@ -107,5 +112,88 @@ describe("photo checkpoint uploader", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Private photo upload failed."));
     expect(screen.getByAltText("Selected job photo preview")).toBeTruthy();
     expect(screen.queryByText("Photo saved")).toBeNull();
+  });
+
+  it("uploads the prepared JPEG bytes with a compatible filename for non-JPEG camera sources", async () => {
+    const { container } = render(<PhotoUploader jobId="job-1" uploadedBy="tech-1" lockedKind="before" />);
+    const original = new File(["heic-source"], "equipment.heic", { type: "image/heic" });
+    const input = container.querySelector('input[type="file"]');
+    if (!(input instanceof HTMLInputElement)) throw new Error("Photo file input is required.");
+
+    fireEvent.change(input, { target: { files: [original] } });
+    await waitFor(() => expect(screen.getByAltText("Selected job photo preview")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Save photo" }));
+
+    await waitFor(() => expect(harness.addPhoto).toHaveBeenCalledOnce());
+    const uploadedFile = harness.addPhoto.mock.calls[0][0].file as File;
+    expect(uploadedFile.name).toBe("equipment.jpg");
+    expect(uploadedFile.type).toBe("image/jpeg");
+    expect(uploadedFile.size).toBe(5);
+  });
+
+  it("refuses an unsupported camera original when JPEG conversion fails", async () => {
+    harness.createPhotoPreview.mockResolvedValueOnce("data:image/heic;base64,aGVpYw==");
+    const { container } = render(<PhotoUploader jobId="job-1" uploadedBy="tech-1" lockedKind="after" />);
+    const original = new File(["heic"], "equipment.heic", { type: "image/heic" });
+    const input = container.querySelector('input[type="file"]');
+    if (!(input instanceof HTMLInputElement)) throw new Error("Photo file input is required.");
+
+    fireEvent.change(input, { target: { files: [original] } });
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("could not be converted to JPEG"));
+    expect(harness.addPhoto).not.toHaveBeenCalled();
+    expect(screen.queryByAltText("Selected job photo preview")).toBeNull();
+  });
+
+  it("requires an explicit second action before recording a skipped checkpoint", async () => {
+    const onSkipCheckpoint = vi.fn().mockResolvedValue(undefined);
+    const view = render(
+      <PhotoUploader
+        jobId="job-1"
+        uploadedBy="tech-1"
+        lockedKind="before"
+        onSkipCheckpoint={onSkipCheckpoint}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Skip before photo" }));
+    expect(onSkipCheckpoint).not.toHaveBeenCalled();
+    expect(screen.getByRole("group", { name: "Confirm skip before photo" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm skip" }));
+    await waitFor(() => expect(onSkipCheckpoint).toHaveBeenCalledOnce());
+
+    view.rerender(
+      <PhotoUploader
+        jobId="job-1"
+        uploadedBy="tech-1"
+        lockedKind="before"
+        checkpointSkipped
+        checkpointSkipSummary="Recorded July 22 by Taylor Tech."
+        onSkipCheckpoint={onSkipCheckpoint}
+      />
+    );
+    expect(screen.getByRole("status", { name: "Before photo skipped" })).toBeTruthy();
+    expect(screen.getByText("Recorded July 22 by Taylor Tech.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Skip before photo" })).toBeNull();
+    expect(view.container.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it("keeps the confirmation open and reports a failed skip for retry", async () => {
+    const onSkipCheckpoint = vi.fn().mockRejectedValue(new Error("The checkpoint audit could not be saved."));
+    render(
+      <PhotoUploader
+        jobId="job-1"
+        uploadedBy="tech-1"
+        lockedKind="after"
+        onSkipCheckpoint={onSkipCheckpoint}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Skip after photo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm skip" }));
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("checkpoint audit could not be saved"));
+    expect(screen.getByRole("group", { name: "Confirm skip after photo" })).toBeTruthy();
   });
 });

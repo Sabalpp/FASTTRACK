@@ -30,7 +30,7 @@ describe("arrival-window acceptance", () => {
     );
   });
 
-  it("asks for date and start only, then communicates the derived end explicitly", () => {
+  it("uses native start and end controls and communicates the customer promise", () => {
     const value: ArrivalWindowDraft = {
       localDate: "2026-07-21",
       localStartTime: "09:00",
@@ -43,7 +43,8 @@ describe("arrival-window acceptance", () => {
     expect(withinText(fieldset, "Customer arrival window")).toBeTruthy();
     expect(screen.getByLabelText("Date").getAttribute("type")).toBe("date");
     expect(screen.getByLabelText("Starts at").getAttribute("type")).toBe("time");
-    expect(screen.queryByLabelText(/window ends?/i)).toBeNull();
+    expect(screen.getByLabelText("Ends at").getAttribute("type")).toBe("time");
+    expect(screen.getByLabelText("Ends at")).toHaveProperty("value", "12:00");
     expect(screen.queryByText(/service duration/i)).toBeNull();
     expect(screen.getByText(/9:00 AM–12:00 PM/)).toBeTruthy();
     expect(screen.getByText(/Eastern time \(EDT\) · 3 hours/)).toBeTruthy();
@@ -55,7 +56,14 @@ describe("arrival-window acceptance", () => {
     expect(onChange).toHaveBeenCalledWith({
       localDate: "2026-07-21",
       localStartTime: "10:15",
-      durationMinutes: 180
+      durationMinutes: 105
+    });
+
+    fireEvent.change(screen.getByLabelText("Ends at"), { target: { value: "13:00" } });
+    expect(onChange).toHaveBeenCalledWith({
+      localDate: "2026-07-21",
+      localStartTime: "09:00",
+      durationMinutes: 240
     });
   });
 
@@ -86,7 +94,7 @@ describe("arrival-window acceptance", () => {
     );
 
     expect(css).toMatch(/\.fieldset\s*\{[^}]*container-type:\s*inline-size/s);
-    expect(css).toMatch(/\.controls\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.15fr\)\s+minmax\(9\.5rem,\s*0\.85fr\)/s);
+    expect(css).toMatch(/\.controls\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.15fr\)\s+repeat\(2,\s*minmax\(8\.5rem,\s*0\.75fr\)\)/s);
     expect(css).toMatch(/@container\s*\(max-width:\s*42rem\)[\s\S]*?\.controls\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
     expect(css).toMatch(/\.field input\s*\{[^}]*box-sizing:\s*border-box[^}]*min-width:\s*0[^}]*max-width:\s*100%/s);
     expect(css).toMatch(/\.field input\s*\{[^}]*min-height:\s*4[48]px[^}]*font-size:\s*16px/s);

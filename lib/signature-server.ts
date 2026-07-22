@@ -291,7 +291,9 @@ async function resolveTarget(
     actor.supabase.from("invoice_signatures").select("id,document_sha256,selected_tier,authorization_terms_version,authorization_subtotal,authorization_tax_rate,authorization_tax_amount,authorization_total,audit_metadata").eq("job_id", job.id).eq("purpose", "work_authorization").eq("status", "active").maybeSingle()
   ]);
   if (photoError || itemError || authorizationError) throw new HttpError(503, "The completed work evidence could not be verified.");
-  if (!afterPhotoCount) throw new HttpError(409, "Save at least one after photo before collecting the completion signature.");
+  if (!afterPhotoCount && !(job.afterPhotosSkippedAt && job.afterPhotosSkippedBy)) {
+    throw new HttpError(409, "Save an after photo or explicitly skip it before collecting the completion signature.");
+  }
   if (!authorization) throw new HttpError(409, "Collect customer work authorization before completing the job.");
   const authorizedTier = readTier(authorization.selected_tier)
     ?? readTier((authorization.audit_metadata as Record<string, unknown> | null)?.selectedTier);

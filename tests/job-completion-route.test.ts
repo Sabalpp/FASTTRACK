@@ -61,6 +61,37 @@ describe("atomic job completion route", () => {
     expect(database.query.update).not.toHaveBeenCalled();
   });
 
+  it("accepts an audited after-photo skip when no after photo exists", async () => {
+    const job = arrivedJob({
+      afterPhotosSkippedAt: "2026-07-21T13:55:00.000Z",
+      afterPhotosSkippedBy: TECH_ID
+    });
+    const database = createDatabase({ signature: completionSignature(job), afterPhotoCount: 0 });
+    completionHarness.requireServerActor.mockResolvedValue(actor(database.client, "tech"));
+    completionHarness.loadJobForActor.mockResolvedValue(job);
+
+    const response = await POST(request(), context());
+
+    expect(response.status).toBe(200);
+    expect(database.rpc).toHaveBeenCalledOnce();
+  });
+
+  it("rejects completion when neither an after photo nor a complete skip audit exists", async () => {
+    const job = arrivedJob({ afterPhotosSkippedAt: "2026-07-21T13:55:00.000Z" });
+    const database = createDatabase({ signature: completionSignature(job), afterPhotoCount: 0 });
+    completionHarness.requireServerActor.mockResolvedValue(actor(database.client, "tech"));
+    completionHarness.loadJobForActor.mockResolvedValue(job);
+
+    const response = await POST(request(), context());
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: "Save an after photo or explicitly skip it before completing this job."
+    });
+    expect(database.rpc).not.toHaveBeenCalled();
+  });
+
   it("passes a validated owner override through the same atomic RPC when no signature exists", async () => {
     const job = arrivedJob({ assignedTechId: undefined });
     const database = createDatabase({ signature: null, overrideBy: OWNER_ID });
@@ -163,6 +194,7 @@ function actor(client: SupabaseClient, role: Role) {
 
 function createDatabase(input: {
   signature: { id: string; document_sha256: string; selected_tier: string; authorization_signature_id: string } | null;
+  afterPhotoCount?: number;
   overrideBy?: string;
   rpcError?: { message: string } | null;
 }) {
@@ -187,7 +219,7 @@ function createDatabase(input: {
       maybeSingle: vi.fn(),
       update: query.update,
       then: (resolve: (value: unknown) => void) => resolve({
-        count: table === "job_photos" ? 1 : null,
+        count: table === "job_photos" ? input.afterPhotoCount ?? 1 : null,
         error: null
       })
     };

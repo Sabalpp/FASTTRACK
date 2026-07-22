@@ -92,6 +92,10 @@ export type JobRow = {
   originating_call_id: string | null;
   created_at: string;
   completed_at: string | null;
+  before_photos_skipped_at?: string | null;
+  before_photos_skipped_by?: string | null;
+  after_photos_skipped_at?: string | null;
+  after_photos_skipped_by?: string | null;
   completion_signature_override_at?: string | null;
   completion_signature_override_by?: string | null;
   completion_signature_override_reason?: string | null;
@@ -156,6 +160,7 @@ export type InvoiceRow = {
   pdf_generated_at?: string | null;
   pdf_sha256?: string | null;
   pdf_size_bytes?: number | null;
+  pdf_workflow_revision?: number | null;
   sent_to_email: string | null;
   sent_at: string | null;
   created_at: string;
@@ -352,6 +357,10 @@ export function jobFromRow(row: JobRow): Job {
     originatingCallId: row.originating_call_id ?? undefined,
     createdAt: row.created_at,
     completedAt: row.completed_at ?? undefined,
+    beforePhotosSkippedAt: row.before_photos_skipped_at ?? undefined,
+    beforePhotosSkippedBy: row.before_photos_skipped_by ?? undefined,
+    afterPhotosSkippedAt: row.after_photos_skipped_at ?? undefined,
+    afterPhotosSkippedBy: row.after_photos_skipped_by ?? undefined,
     completionSignatureOverrideAt: row.completion_signature_override_at ?? undefined,
     completionSignatureOverrideBy: row.completion_signature_override_by ?? undefined,
     completionSignatureOverrideReason: row.completion_signature_override_reason ?? undefined
@@ -513,6 +522,7 @@ export function invoiceFromRow(row: InvoiceRow): Invoice {
     pdfGeneratedAt: row.pdf_generated_at ?? undefined,
     pdfSha256: row.pdf_sha256 ?? undefined,
     pdfSizeBytes: row.pdf_size_bytes ?? undefined,
+    pdfWorkflowRevision: row.pdf_workflow_revision ?? undefined,
     sentToEmail: row.sent_to_email ?? undefined,
     sentAt: row.sent_at ?? undefined,
     createdAt: row.created_at,
@@ -548,6 +558,7 @@ export function invoiceToRow(invoice: Invoice): DbPayload {
     pdf_generated_at: invoice.pdfGeneratedAt || null,
     pdf_sha256: invoice.pdfSha256 || null,
     pdf_size_bytes: invoice.pdfSizeBytes ?? null,
+    pdf_workflow_revision: invoice.pdfWorkflowRevision ?? null,
     sent_to_email: invoice.sentToEmail || null,
     sent_at: invoice.sentAt || null,
     created_at: invoice.createdAt,
@@ -581,6 +592,7 @@ export function invoicePatchToRow(input: Partial<Invoice>): DbPayload {
   if (input.pdfGeneratedAt !== undefined) row.pdf_generated_at = input.pdfGeneratedAt || null;
   if (input.pdfSha256 !== undefined) row.pdf_sha256 = input.pdfSha256 || null;
   if (input.pdfSizeBytes !== undefined) row.pdf_size_bytes = input.pdfSizeBytes ?? null;
+  if (input.pdfWorkflowRevision !== undefined) row.pdf_workflow_revision = input.pdfWorkflowRevision ?? null;
   if (input.sentToEmail !== undefined) row.sent_to_email = input.sentToEmail || null;
   if (input.sentAt !== undefined) row.sent_at = input.sentAt || null;
   if (input.createdBy !== undefined) row.created_by = input.createdBy || null;

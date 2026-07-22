@@ -12,7 +12,6 @@ export type InvoiceWorkspaceActionId =
   | "generate_pdf"
   | "record_sent"
   | "open_payment"
-  | "save_payment"
   | "view_pdf"
   | "return_to_job";
 
@@ -54,6 +53,7 @@ export function invoiceReadinessBlockers(input: {
 
 export function resolveInvoiceWorkspaceAction(input: {
   canManageInvoice: boolean;
+  canCollectPayment: boolean;
   selectedSaved: boolean;
   reviewDirty: boolean;
   fieldSignaturesReady: boolean;
@@ -67,7 +67,7 @@ export function resolveInvoiceWorkspaceAction(input: {
       id: "preview_draft_pdf",
       label: "Preview draft PDF",
       title: "Authorized scope conflict",
-      helper: "The bill remains available for review, but its draft PDF is marked with the scope conflict and cannot be finalized or emailed."
+      helper: "The bill remains available for review, but its draft PDF is marked with the scope conflict and cannot be finalized or delivered."
     };
   }
 
@@ -88,21 +88,12 @@ export function resolveInvoiceWorkspaceAction(input: {
     };
   }
 
-  if (input.paymentEditorOpen && input.canManageInvoice) {
-    return {
-      id: "save_payment",
-      label: "Save payment record",
-      title: "Confirm the payment record",
-      helper: "This records a payment status only; it does not charge the customer."
-    };
-  }
-
   if (!input.fieldSignaturesReady) {
     return {
       id: "preview_draft_pdf",
       label: "Preview draft PDF",
       title: "Signatures are still pending",
-      helper: "Preview the complete bill now. The PDF is visibly marked as a draft and is not saved, finalized, or emailed."
+      helper: "Preview the complete bill now. The PDF is visibly marked as a draft and is not saved, finalized, or delivered."
     };
   }
 
@@ -126,26 +117,26 @@ export function resolveInvoiceWorkspaceAction(input: {
     }
     return {
       id: "record_sent",
-      label: "Email invoice PDF",
+      label: "Deliver invoice",
       title: "Send the final invoice",
-      helper: "Email the saved signed PDF to the customer. The invoice is marked sent only after the provider accepts it."
+      helper: "Send the saved signed PDF by transactional email or an allowed text link. The invoice is marked sent only after the provider accepts it."
     };
   }
 
   if (input.paymentStatus === "unpaid" || input.paymentStatus === "partially_paid") {
-    if (!input.canManageInvoice) {
+    if (!input.canCollectPayment) {
       return {
         id: "view_pdf",
         label: "View final PDF",
         title: "Delivery recorded",
-        helper: "An owner can record payments against this invoice."
+        helper: "An owner or the assigned technician can collect payment against this invoice."
       };
     }
     return {
       id: "open_payment",
-      label: "Record payment",
+      label: input.paymentEditorOpen ? "Payment options open" : "Collect payment",
       title: "Payment is still due",
-      helper: "Record cash, check, bank, or another payment received outside this app."
+      helper: "Use secure Stripe Checkout for cards, or record cash and checks in the audited payment ledger."
     };
   }
 

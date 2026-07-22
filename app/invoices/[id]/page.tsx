@@ -16,7 +16,8 @@ import {
   PenLine,
   RotateCw,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { InvoicePaymentsPanel } from "@/components/InvoicePaymentsPanel";
 import { InvoicePreview } from "@/components/InvoicePreview";
 import { SignatureDialog } from "@/components/SignatureDialog";
 import { SignatureStatusCard } from "@/components/SignatureStatusCard";
@@ -25,25 +26,30 @@ import { canSendInvoices, canViewInvoice } from "@/lib/access";
 import { useAuth } from "@/lib/auth";
 import { tierLabels, useAppData } from "@/lib/data-store";
 import { formatDateTime } from "@/lib/date";
-import { balanceDue, firstPopulatedTier, invoiceOptionLabels, selectedTotal } from "@/lib/invoice";
+import { balanceDue, firstPopulatedTier, invoiceOptionLabels } from "@/lib/invoice";
 import {
   loadProtectedInvoice,
   markProtectedInvoiceSent,
-  saveProtectedInvoicePayment,
   saveProtectedInvoiceReview
 } from "@/lib/invoices-client";
 import { money } from "@/lib/money";
+import { createId } from "@/lib/id";
 import { demoMode } from "@/lib/runtime";
 import { loadSignatures, rejectSignature, saveSignature } from "@/lib/signatures-client";
 import type {
   Invoice,
   InvoiceOptionLabel,
-  InvoicePaymentStatus,
   InvoiceSignature,
   SignaturePurpose,
   SignatureSignerRole,
   Tier
 } from "@/lib/types";
+import type { InvoiceDeliveryChannel } from "@/lib/invoice-delivery";
+import {
+  clearPendingInvoiceDeliveryAttempt,
+  readPendingInvoiceDeliveryAttempt,
+  savePendingInvoiceDeliveryAttempt
+} from "@/lib/invoice-delivery-client";
 import {
   invoiceReadinessBlockers,
   invoiceWorkspaceStatus,
@@ -82,16 +88,20 @@ export default function InvoiceDetailPage() {
     () => invoice ? data.jobLineItems.filter((item) => item.jobId === invoice.jobId).sort((left, right) => left.sortOrder - right.sortOrder) : [],
     [data.jobLineItems, invoice]
   );
+  const photos = useMemo(
+    () => job ? data.jobPhotos.filter((photo) => photo.jobId === job.id) : [],
+    [data.jobPhotos, job]
+  );
   const [selectedTier, setSelectedTier] = useState<Tier | undefined>();
   const [optionLabel, setOptionLabel] = useState<InvoiceOptionLabel>("approved_work");
   const [notes, setNotes] = useState("");
   const [email, setEmail] = useState("");
-  const [paymentStatus, setPaymentStatus] = useState<InvoicePaymentStatus>("unpaid");
-  const [amountPaid, setAmountPaid] = useState("0");
+  const [deliveryChannel, setDeliveryChannel] = useState<InvoiceDeliveryChannel>("email");
+  const [deliveryRequestId, setDeliveryRequestId] = useState(() => createId());
+  const [deliveryAttemptNeedsReview, setDeliveryAttemptNeedsReview] = useState(false);
   const [detailLoading, setDetailLoading] = useState(!demoMode);
   const [detailError, setDetailError] = useState<string | undefined>();
   const [reviewBusy, setReviewBusy] = useState(false);
-  const [paymentBusy, setPaymentBusy] = useState(false);
   const [sendBusy, setSendBusy] = useState(false);
   const [message, setMessage] = useState<string | undefined>();
   const [actionError, setActionError] = useState<string | undefined>();
@@ -103,15 +113,16 @@ export default function InvoiceDetailPage() {
   const [paymentEditorOpen, setPaymentEditorOpen] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfGenerationRequest, setPdfGenerationRequest] = useState(0);
+  const deliveryInitializedInvoiceId = useRef<string | undefined>(undefined);
 
-  function replaceInvoice(nextInvoice: Invoice) {
+  const replaceInvoice = useCallback((nextInvoice: Invoice) => {
     data.setState((current) => ({
       ...current,
       invoices: current.invoices.some((candidate) => candidate.id === nextInvoice.id)
         ? current.invoices.map((candidate) => candidate.id === nextInvoice.id ? nextInvoice : candidate)
         : [nextInvoice, ...current.invoices]
     }));
-  }
+  }, [data.setState]);
 
   async function refreshInvoice(showLoading = false) {
     if (demoMode || !invoiceId) return invoice;
@@ -154,11 +165,30 @@ export default function InvoiceDetailPage() {
     setSelectedTier(firstPopulatedTier(invoice));
     setOptionLabel(invoice.optionLabel);
     setNotes(invoice.notes);
-    setPaymentStatus(invoice.paymentStatus);
-    setAmountPaid(String(invoice.amountPaid));
-    setEmail(preferredInvoiceDeliveryEmail(invoice.sentToEmail, customer?.email));
+    if (deliveryInitializedInvoiceId.current !== invoice.id) {
+      deliveryInitializedInvoiceId.current = invoice.id;
+      const pending = demoMode ? undefined : readPendingInvoiceDeliveryAttempt(window.localStorage, invoice.id);
+      if (pending) {
+        setDeliveryRequestId(pending.requestId);
+        setDeliveryChannel(pending.channel);
+        if (pending.channel === "email") setEmail(pending.destination);
+        else setEmail(preferredInvoiceDeliveryEmail(invoice.sentToEmail, customer?.email));
+        setDeliveryAttemptNeedsReview(true);
+      } else {
+        setDeliveryRequestId(createId());
+        setEmail(preferredInvoiceDeliveryEmail(invoice.sentToEmail, customer?.email));
+        setDeliveryChannel(
+          customer?.emailNotificationsEnabled && customer.email
+            ? "email"
+            : customer?.smsConsentStatus === "opted_in" && customer.phoneDigits.length === 10
+              ? "sms"
+              : "email"
+        );
+        setDeliveryAttemptNeedsReview(false);
+      }
+    }
     setPaymentEditorOpen(false);
-  }, [customer?.email, invoice?.id, invoice?.updatedAt]);
+  }, [customer?.email, customer?.emailNotificationsEnabled, customer?.phoneDigits, customer?.smsConsentStatus, invoice?.id, invoice?.updatedAt]);
 
   async function refreshSignatures() {
     if (!job?.id || !invoiceId) return;
@@ -230,7 +260,10 @@ export default function InvoiceDetailPage() {
 
   const invoiceRecord = invoice;
   const jobRecord = job;
+  const customerRecord = customer;
   const canEdit = canSendInvoices(currentUser.role);
+  const canCollectPayments = currentUser.role === "owner"
+    || (currentUser.role === "tech" && job.assignedTechId === currentUser.id);
   const previewInvoice: Invoice = { ...invoice, selectedTier, optionLabel, notes };
   const totalByTier = {
     standard: invoice.totalStandard ?? 0,
@@ -252,6 +285,7 @@ export default function InvoiceDetailPage() {
   const deliveryRecorded = Boolean(invoice.sentAt);
   const primaryAction = resolveInvoiceWorkspaceAction({
     canManageInvoice: canEdit,
+    canCollectPayment: canCollectPayments,
     selectedSaved,
     reviewDirty,
     fieldSignaturesReady,
@@ -282,7 +316,7 @@ export default function InvoiceDetailPage() {
         throw new Error("The invoice scope does not match the customer's authorized work. Refresh the invoice draft.");
       }
       const next = demoMode
-        ? { ...invoiceRecord, selectedTier: reviewTier, optionLabel, notes: notes.trim(), updatedAt: new Date().toISOString(), pdfStoragePath: undefined, pdfGeneratedAt: undefined, pdfSha256: undefined, pdfSizeBytes: undefined }
+        ? { ...invoiceRecord, selectedTier: reviewTier, optionLabel, notes: notes.trim(), updatedAt: new Date().toISOString(), pdfStoragePath: undefined, pdfGeneratedAt: undefined, pdfSha256: undefined, pdfSizeBytes: undefined, pdfWorkflowRevision: undefined }
         : await saveProtectedInvoiceReview(invoiceRecord.id, { selectedTier: reviewTier, optionLabel, notes: notes.trim() });
       if (demoMode) data.updateInvoice(invoiceRecord.id, next);
       replaceInvoice(next);
@@ -294,43 +328,53 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  async function savePayment() {
-    setPaymentBusy(true);
-    setMessage(undefined);
-    setActionError(undefined);
-    try {
-      const requestedAmount = Number(amountPaid);
-      const next = demoMode
-        ? demoPaymentInvoice(invoiceRecord, paymentStatus, requestedAmount)
-        : await saveProtectedInvoicePayment(invoiceRecord.id, { paymentStatus, amountPaid: requestedAmount });
-      if (demoMode) data.updateInvoice(invoiceRecord.id, next);
-      replaceInvoice(next);
-      setAmountPaid(String(next.amountPaid));
-      setPaymentEditorOpen(false);
-      setMessage("Payment record saved. This did not charge the customer. Generate an updated PDF for the final record.");
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Payment status could not be saved.");
-    } finally {
-      setPaymentBusy(false);
-    }
-  }
-
   async function sendInvoicePdf() {
     setSendBusy(true);
     setMessage(undefined);
     setActionError(undefined);
     try {
       const now = new Date().toISOString();
-      const next = demoMode
-        ? { ...invoiceRecord, status: invoiceRecord.paymentStatus === "paid" ? "paid" as const : "sent" as const, sentToEmail: email.trim(), sentAt: now, updatedAt: now }
-        : await markProtectedInvoiceSent(invoiceRecord.id, email);
+      let next: Invoice;
+      let acceptedMessage: string | undefined;
+      if (demoMode) {
+        next = {
+          ...invoiceRecord,
+          status: invoiceRecord.paymentStatus === "paid" ? "paid" : "sent",
+          sentToEmail: deliveryChannel === "email" ? email.trim() : invoiceRecord.sentToEmail,
+          sentAt: now,
+          updatedAt: now
+        };
+      } else {
+        if (!invoiceRecord.pdfSha256) throw new Error("Generate the signed PDF before sending.");
+        const destination = deliveryChannel === "email" ? email.trim().toLowerCase() : customerRecord.phone;
+        savePendingInvoiceDeliveryAttempt(window.localStorage, {
+          invoiceId: invoiceRecord.id,
+          requestId: deliveryRequestId,
+          channel: deliveryChannel,
+          destination,
+          pdfSha256: invoiceRecord.pdfSha256,
+          createdAt: new Date().toISOString()
+        });
+        setDeliveryAttemptNeedsReview(true);
+        const result = await markProtectedInvoiceSent(invoiceRecord.id, {
+          channel: deliveryChannel,
+          email: deliveryChannel === "email" ? email : undefined,
+          phone: deliveryChannel === "sms" ? customerRecord.phone : undefined
+        }, deliveryRequestId);
+        next = result.invoice;
+        acceptedMessage = `Invoice ${deliveryChannel === "email" ? "email" : "text"} accepted by ${result.delivery.provider} for ${result.delivery.destination}.`;
+      }
       if (demoMode) data.updateInvoice(invoiceRecord.id, next);
       replaceInvoice(next);
+      if (!demoMode) clearPendingInvoiceDeliveryAttempt(window.localStorage, invoiceRecord.id);
+      setDeliveryRequestId(createId());
+      setDeliveryAttemptNeedsReview(false);
       setMessage(demoMode
-        ? `Demo mode: invoice email simulated for ${email.trim()}. No external email was sent.`
-        : `Invoice email accepted by the delivery provider for ${email.trim()}.`);
+        ? `Demo mode: invoice ${deliveryChannel === "email" ? `email to ${email.trim()}` : `text to ${customerRecord.phone}`} simulated. No external message was sent.`
+        : acceptedMessage);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "The invoice PDF could not be emailed. It remains unsent.");
+      setActionError(error instanceof Error ? error.message : "The invoice could not be delivered. It remains unsent.");
+      setDeliveryAttemptNeedsReview(true);
     } finally {
       setSendBusy(false);
     }
@@ -361,6 +405,7 @@ export default function InvoiceDetailPage() {
       pdfGeneratedAt: undefined,
       pdfSha256: undefined,
       pdfSizeBytes: undefined,
+      pdfWorkflowRevision: undefined,
       updatedAt: saved.signedAt
     };
     replaceInvoice(next);
@@ -382,6 +427,7 @@ export default function InvoiceDetailPage() {
       pdfGeneratedAt: undefined,
       pdfSha256: undefined,
       pdfSizeBytes: undefined,
+      pdfWorkflowRevision: undefined,
       updatedAt: rejectedAt
     };
     replaceInvoice(next);
@@ -434,10 +480,6 @@ export default function InvoiceDetailPage() {
   function openPaymentEditor() {
     setActionError(undefined);
     setMessage(undefined);
-    if (invoiceRecord.paymentStatus === "unpaid") {
-      setPaymentStatus("paid");
-      setAmountPaid(String(displayTotal));
-    }
     setPaymentEditorOpen(true);
   }
 
@@ -460,9 +502,6 @@ export default function InvoiceDetailPage() {
       case "open_payment":
         openPaymentEditor();
         return;
-      case "save_payment":
-        await savePayment();
-        return;
       case "view_pdf":
         setDocumentView("pdf");
         return;
@@ -472,16 +511,18 @@ export default function InvoiceDetailPage() {
   }
 
   const customerEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-  const primaryBusy = reviewBusy || paymentBusy || sendBusy || pdfBusy;
+  const customerPhoneValid = customer.phoneDigits.length === 10;
+  const emailDeliveryReady = customer.emailNotificationsEnabled && customerEmailValid;
+  const smsDeliveryReady = customer.smsConsentStatus === "opted_in" && customerPhoneValid;
+  const deliveryReady = deliveryChannel === "email" ? emailDeliveryReady : smsDeliveryReady;
+  const primaryBusy = reviewBusy || sendBusy || pdfBusy;
   const primaryDisabled = primaryBusy
     || (primaryAction.id === "save_review" && (!canEdit || !selectedTier || tierConflict))
     || (primaryAction.id === "generate_pdf" && !readyToFinalize)
-    || (primaryAction.id === "record_sent" && (!canEdit || !customerEmailValid))
-    || (primaryAction.id === "save_payment" && (!canEdit || !selectedSaved));
+    || (primaryAction.id === "record_sent" && (!canEdit || !deliveryReady || deliveryAttemptNeedsReview));
   const primaryLabel = primaryBusy
     ? reviewBusy ? "Saving invoice details..."
-      : paymentBusy ? "Saving payment record..."
-        : sendBusy ? "Sending invoice PDF..."
+      : sendBusy ? "Sending invoice PDF..."
           : primaryAction.id === "preview_draft_pdf" ? "Creating draft PDF..." : "Generating signed PDF..."
     : primaryAction.label;
 
@@ -509,6 +550,21 @@ export default function InvoiceDetailPage() {
         {detailError ? <p className={styles.warningNote}>Using the loaded draft. Refresh warning: {detailError}</p> : null}
         {message ? <p className={styles.successNote}>{message}</p> : null}
         {actionError ? <p className={styles.errorNote} role="alert">{actionError}</p> : null}
+        {deliveryAttemptNeedsReview ? (
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            onClick={() => {
+              if (!demoMode) clearPendingInvoiceDeliveryAttempt(window.localStorage, invoiceRecord.id);
+              setDeliveryRequestId(createId());
+              setDeliveryAttemptNeedsReview(false);
+              setActionError(undefined);
+              setMessage("A new delivery attempt is ready. Confirm provider activity first if the earlier outcome was unknown.");
+            }}
+          >
+            Prepare a new delivery attempt
+          </button>
+        ) : null}
       </div>
 
       {!fieldSignaturesReady ? (
@@ -581,7 +637,7 @@ export default function InvoiceDetailPage() {
               aria-labelledby="invoice-preview-tab"
               hidden={documentView !== "invoice"}
             >
-              <InvoicePreview invoice={previewInvoice} job={job} customer={customer} items={items} signatures={signatures} />
+              <InvoicePreview invoice={previewInvoice} job={job} customer={customer} items={items} photos={photos} signatures={signatures} />
             </div>
             {documentView === "pdf" ? (
               <div
@@ -595,6 +651,7 @@ export default function InvoiceDetailPage() {
                   job={job}
                   customer={customer}
                   items={items}
+                  photos={photos}
                   signatures={signatures}
                   canGenerate={readyToFinalize}
                   generationRequest={pdfGenerationRequest}
@@ -607,6 +664,7 @@ export default function InvoiceDetailPage() {
                         pdfStoragePath: `demo/${invoice.id}.pdf`,
                         pdfVersion: invoice.pdfVersion + 1,
                         pdfGeneratedAt: now,
+                        pdfWorkflowRevision: job.workflowRevision ?? 0,
                         updatedAt: now
                       };
                       data.updateInvoice(invoice.id, next);
@@ -614,7 +672,7 @@ export default function InvoiceDetailPage() {
                     } else {
                       await refreshInvoice();
                     }
-                    setMessage("Signed PDF created and saved. It has not been emailed yet.");
+                    setMessage("Signed PDF created and saved. It has not been delivered yet.");
                   }}
                 />
               </div>
@@ -660,44 +718,45 @@ export default function InvoiceDetailPage() {
               {primaryAction.id === "record_sent" ? (
                 <div className={styles.deliveryEditor}>
                   <label className={styles.field}>
-                    <span>Email invoice to</span>
-                    <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" disabled={!canEdit} />
+                    <span>Delivery channel</span>
+                    <select value={deliveryChannel} onChange={(event) => setDeliveryChannel(event.target.value as InvoiceDeliveryChannel)} disabled={!canEdit || sendBusy || deliveryAttemptNeedsReview}>
+                      <option value="email" disabled={!customer.emailNotificationsEnabled}>Email signed PDF</option>
+                      <option value="sms" disabled={customer.smsConsentStatus !== "opted_in"}>Text private PDF link</option>
+                    </select>
                   </label>
-                  <p className={styles.truthNote}>The signed PDF will be attached. The invoice stays unsent unless the email provider accepts it.</p>
-                  {email.trim() && !customerEmailValid ? <p className={styles.errorNote}>Enter a valid customer email before sending.</p> : null}
-                  <button className={styles.textButton} type="button" onClick={openPaymentEditor} disabled={!canEdit}>
-                    Payment already received? Record it without emailing first
+                  {deliveryChannel === "email" ? (
+                    <label className={styles.field}>
+                      <span>Email invoice to</span>
+                      <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" disabled={!canEdit || sendBusy || deliveryAttemptNeedsReview} />
+                    </label>
+                  ) : (
+                    <div className={styles.truthNote}>
+                      Text the customer's current number, {customer.phone}. The private signed link is time-limited.
+                    </div>
+                  )}
+                  <p className={styles.truthNote}>
+                    {deliveryChannel === "email" ? "The signed PDF will be attached." : "The text identifies itself as a transactional invoice message and is never promotional."} The invoice stays unsent unless the provider accepts it.
+                  </p>
+                  {deliveryChannel === "email" && !customer.emailNotificationsEnabled ? <p className={styles.errorNote}>Transactional email updates are disabled for this customer.</p> : null}
+                  {deliveryChannel === "email" && email.trim() && !customerEmailValid ? <p className={styles.errorNote}>Enter a valid customer email before sending.</p> : null}
+                  {deliveryChannel === "sms" && customer.smsConsentStatus !== "opted_in" ? <p className={styles.errorNote}>Transactional SMS consent is required. This does not grant marketing consent.</p> : null}
+                  <button className={styles.textButton} type="button" onClick={openPaymentEditor} disabled={!canCollectPayments}>
+                    Payment already received? Record it without delivering first
                   </button>
                 </div>
               ) : null}
 
               {paymentEditorOpen ? (
-                <div className={styles.paymentEditor}>
-                  <label className={styles.field}>
-                    <span>Payment status</span>
-                    <select value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value as InvoicePaymentStatus)} disabled={!canEdit}>
-                      <option value="unpaid">Unpaid</option>
-                      <option value="partially_paid">Partially paid</option>
-                      <option value="paid">Paid</option>
-                      <option value="refunded">Refunded</option>
-                      <option value="void">Void</option>
-                    </select>
-                  </label>
-                  <label className={styles.field}>
-                    <span>Amount paid</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={paymentStatus === "paid" && selectedTier ? displayTotal : amountPaid}
-                      onChange={(event) => setAmountPaid(event.target.value)}
-                      disabled={!canEdit || paymentStatus !== "partially_paid"}
-                    />
-                  </label>
-                  <p className={styles.truthNote}>This records payment received elsewhere. No card or bank account is charged.</p>
-                  <div className={styles.inlineUtilityRow}>
-                    <button className={styles.textButton} type="button" onClick={() => setPaymentEditorOpen(false)} disabled={paymentBusy}>Cancel payment edit</button>
-                  </div>
+                <div className={styles.paymentEditor} data-testid="invoice-payment-ledger">
+                  <InvoicePaymentsPanel
+                    invoice={invoice}
+                    role={currentUser.role}
+                    canCollect={canCollectPayments && selectedSaved}
+                    onInvoiceUpdated={replaceInvoice}
+                  />
+                  <button className={styles.textButton} type="button" onClick={() => setPaymentEditorOpen(false)}>
+                    Close payment options
+                  </button>
                 </div>
               ) : null}
 
@@ -713,8 +772,8 @@ export default function InvoiceDetailPage() {
                     {primaryLabel}
                   </button>
                 )}
-                {primaryAction.id === "record_sent" && !customerEmailValid ? (
-                  <span className={styles.primaryHint}>A valid customer email is required to send the PDF.</span>
+                {primaryAction.id === "record_sent" && !deliveryReady ? (
+                  <span className={styles.primaryHint}>{deliveryChannel === "email" ? "An enabled, valid customer email is required." : "Current transactional SMS opt-in and a valid customer phone are required."}</span>
                 ) : null}
               </div>
             </section>
@@ -818,8 +877,8 @@ export default function InvoiceDetailPage() {
                     <div className={styles.identityRow}>
                       <Mail size={18} aria-hidden="true" />
                       <div>
-                        <strong>{invoice.sentAt ? `Email accepted for ${invoice.sentToEmail}` : "Invoice email not sent"}</strong>
-                        <span>{invoice.sentAt ? formatDateTime(invoice.sentAt) : "Generate the signed PDF, then send it from the main action."}</span>
+                        <strong>{invoice.sentAt ? "Invoice delivery accepted" : "Invoice not delivered"}</strong>
+                        <span>{invoice.sentAt ? `${formatDateTime(invoice.sentAt)}${invoice.sentToEmail ? ` · last email ${invoice.sentToEmail}` : ""}` : "Generate the signed PDF, then send it from the main action."}</span>
                       </div>
                     </div>
                     <div className={styles.identityRow}>
@@ -835,21 +894,30 @@ export default function InvoiceDetailPage() {
                   {canEdit && invoice.sentAt ? (
                     <>
                       <label className={styles.field}>
-                        <span>Send invoice again to</span>
-                        <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" />
+                        <span>Send invoice again by</span>
+                        <select value={deliveryChannel} onChange={(event) => setDeliveryChannel(event.target.value as InvoiceDeliveryChannel)} disabled={sendBusy || deliveryAttemptNeedsReview}>
+                          <option value="email" disabled={!customer.emailNotificationsEnabled}>Email signed PDF</option>
+                          <option value="sms" disabled={customer.smsConsentStatus !== "opted_in"}>Text private PDF link</option>
+                        </select>
                       </label>
-                      <p className={styles.truthNote}>This sends the same signed PDF. The audit record updates only after provider acceptance.</p>
-                      <button className={styles.secondaryButton} type="button" onClick={() => void sendInvoicePdf()} disabled={!generated || !fieldSignaturesReady || !customerEmailValid || sendBusy}>
+                      {deliveryChannel === "email" ? (
+                        <label className={styles.field}>
+                          <span>Send invoice again to</span>
+                          <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" disabled={sendBusy || deliveryAttemptNeedsReview} />
+                        </label>
+                      ) : <p className={styles.truthNote}>Text the time-limited private PDF link to {customer.phone}.</p>}
+                      <p className={styles.truthNote}>This sends the same signed PDF as a transactional message. Marketing consent is separate. The audit record updates only after provider acceptance.</p>
+                      <button className={styles.secondaryButton} type="button" onClick={() => void sendInvoicePdf()} disabled={!generated || !fieldSignaturesReady || !deliveryReady || sendBusy || deliveryAttemptNeedsReview}>
                         <Mail size={17} aria-hidden="true" />
-                        {sendBusy ? "Sending invoice..." : "Email invoice PDF"}
+                        {sendBusy ? "Sending invoice..." : deliveryChannel === "email" ? "Email invoice PDF" : "Text invoice link"}
                       </button>
                     </>
                   ) : null}
 
-                  {canEdit && invoice.sentAt ? (
-                    <button className={styles.secondaryButton} type="button" onClick={openPaymentEditor} disabled={paymentBusy}>
+                  {canCollectPayments && selectedSaved ? (
+                    <button className={styles.secondaryButton} type="button" onClick={openPaymentEditor}>
                       <CircleDollarSign size={17} aria-hidden="true" />
-                      Edit payment record
+                      Collect or review payment
                     </button>
                   ) : null}
                 </div>
@@ -916,34 +984,11 @@ function PrimaryActionIcon({ action }: { action: InvoiceWorkspaceActionId }) {
   if (action === "save_review") return <FileCheck2 size={18} aria-hidden="true" />;
   if (action === "preview_draft_pdf" || action === "generate_pdf" || action === "view_pdf") return <FileText size={18} aria-hidden="true" />;
   if (action === "record_sent") return <Mail size={18} aria-hidden="true" />;
-  if (action === "open_payment" || action === "save_payment") return <CircleDollarSign size={18} aria-hidden="true" />;
+  if (action === "open_payment") return <CircleDollarSign size={18} aria-hidden="true" />;
   if (action === "return_to_job") return <ArrowLeft size={18} aria-hidden="true" />;
   return <CheckCircle2 size={18} aria-hidden="true" />;
 }
 
 function humanizeState(value: string) {
   return value.replaceAll("_", " ");
-}
-
-function demoPaymentInvoice(invoice: Invoice, status: InvoicePaymentStatus, requestedAmount: number): Invoice {
-  if (!invoice.selectedTier) throw new Error("Select approved work before recording payment.");
-  const total = selectedTotal(invoice);
-  let amountPaid = 0;
-  if (status === "paid") amountPaid = total;
-  if (status === "partially_paid") {
-    amountPaid = Math.round((requestedAmount + Number.EPSILON) * 100) / 100;
-    if (!Number.isFinite(amountPaid) || amountPaid <= 0 || amountPaid >= total) throw new Error("Enter a partial payment below the invoice total.");
-  }
-  const now = new Date().toISOString();
-  return {
-    ...invoice,
-    paymentStatus: status,
-    amountPaid,
-    status: status === "paid" ? "paid" : invoice.sentAt ? "sent" : "draft",
-    pdfStoragePath: undefined,
-    pdfGeneratedAt: undefined,
-    pdfSha256: undefined,
-    pdfSizeBytes: undefined,
-    updatedAt: now
-  };
 }

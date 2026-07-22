@@ -1,0 +1,45 @@
+.panel { display: grid; gap: 16px; }
+.header { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
+.header > div:first-child { min-width: 0; }
+.header span { color: #c45818; font-size: .68rem; font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
+.header h3 { margin: 3px 0 5px; color: #172b3a; font-size: 1rem; }
+.header p { margin: 0; color: #667783; font-size: .78rem; line-height: 1.45; }
+.balance { display: grid; flex: 0 0 auto; gap: 3px; text-align: right; }
+.balance span { color: #667783; font-size: .65rem; }
+.balance strong { color: #172b3a; font-size: 1.2rem; }
+.collector { display: grid; gap: 11px; padding: 13px; border: 1px solid #d9e2e8; border-radius: 13px; background: #f7fafb; }
+.methodTabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; padding: 4px; border: 1px solid #d9e2e8; border-radius: 11px; background: #edf2f4; }
+.methodTabs button { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 8px; color: #667783; background: transparent; font: inherit; font-size: .76rem; font-weight: 850; cursor: pointer; }
+.methodTabs button[data-selected="true"] { color: #1f4358; background: #fff; box-shadow: 0 3px 10px rgba(23,43,58,.08); }
+.field { display: grid; gap: 6px; color: #3c5361; font-size: .73rem; font-weight: 800; }
+.field small { color: #7c8b94; font-weight: 650; }
+.field input { width: 100%; min-height: 44px; border: 1px solid #cbd8de; border-radius: 9px; padding: 9px 11px; color: #172b3a; background: #fff; font: inherit; font-size: .86rem; }
+.collectButton { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 10px; padding: 10px 14px; color: #fff; background: #1f5b74; font: inherit; font-size: .82rem; font-weight: 900; cursor: pointer; }
+.collectButton:disabled { cursor: not-allowed; opacity: .55; }
+.providerNote { margin: -2px 0 0; color: #667783; font-size: .7rem; line-height: 1.4; }
+.openCheckout { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px; border: 1px solid #efd5a8; border-radius: 10px; background: #fff8ea; }
+.openCheckout > div { display: grid; gap: 3px; }
+.openCheckout strong { color: #744815; font-size: .8rem; }
+.openCheckout span { color: #866536; font-size: .7rem; }
+.openCheckout a, .openCheckout button { display: inline-flex; min-height: 38px; align-items: center; gap: 6px; border: 1px solid #9a5a18; border-radius: 8px; padding: 8px 10px; color: #fff; background: #9a5a18; font: inherit; font-size: .72rem; font-weight: 850; text-decoration: none; cursor: pointer; }
+.checkoutActions { display: flex !important; grid-auto-flow: column; flex-wrap: wrap; justify-content: flex-end; }
+.checkoutActions button:last-child { color: #744815; background: #fff; }
+.message, .error { margin: 0; border-radius: 9px; padding: 10px 11px; font-size: .75rem; line-height: 1.4; }
+.message { border: 1px solid #bddfce; color: #26734d; background: #edf8f2; }
+.error { border: 1px solid #eccdca; color: #8a3f35; background: #fbf2f1; }
+.history { display: grid; gap: 8px; }
+.historyHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.historyHeading > strong { color: #172b3a; font-size: .82rem; }
+.historyHeading button { display: inline-flex; align-items: center; gap: 5px; border: 0; color: #1f5b74; background: transparent; font: inherit; font-size: .7rem; font-weight: 850; cursor: pointer; }
+.empty { display: flex; align-items: center; gap: 7px; margin: 0; padding: 13px; border: 1px dashed #ccd8de; border-radius: 10px; color: #667783; font-size: .75rem; }
+.paymentRow { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px; border: 1px solid #d9e2e8; border-radius: 10px; background: #fff; }
+.paymentIcon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; color: #1f5b74; background: #edf6f9; }
+.paymentRow > div:nth-child(2) { display: grid; gap: 2px; min-width: 0; }
+.paymentRow strong { color: #172b3a; font-size: .78rem; }
+.paymentRow div span, .paymentRow small { overflow-wrap: anywhere; color: #667783; font-size: .68rem; line-height: 1.35; }
+.paymentState { display: grid; justify-items: end; gap: 5px; }
+.paymentState > span { border-radius: 999px; padding: 4px 7px; color: #26734d !important; background: #edf8f2; font-weight: 850; text-transform: capitalize; }
+.paymentRow[data-status="pending"] .paymentState > span { color: #9a5a18 !important; background: #fff8ea; }
+.paymentRow[data-status="failed"] .paymentState > span, .paymentRow[data-status="cancelled"] .paymentState > span, .paymentRow[data-status="partially_refunded"] .paymentState > span, .paymentRow[data-status="refunded"] .paymentState > span { color: #667783 !important; background: #edf2f4; }
+.paymentState button { border: 0; color: #8a3f35; background: transparent; font: inherit; font-size: .65rem; font-weight: 850; cursor: pointer; }
+@media (max-width: 680px) { .header { align-items: stretch; flex-direction: column; } .balance { text-align: left; } .methodTabs { grid-template-columns: 1fr; } .paymentRow { grid-template-columns: 34px minmax(0, 1fr); } .paymentState { grid-column: 2; justify-items: start; } .openCheckout { align-items: stretch; flex-direction: column; } }

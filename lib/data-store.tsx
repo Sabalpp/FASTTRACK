@@ -8,6 +8,7 @@ import { demoState } from "@/lib/demo-data";
 import { buildInvoiceDraft, invoiceNumber, totalsForItems } from "@/lib/invoice";
 import { normalizePhone } from "@/lib/phone";
 import { createId } from "@/lib/id";
+import { normalizeJobPhotoCaption } from "@/lib/job-photos";
 import { demoMode } from "@/lib/runtime";
 import { defaultServiceWindowEndAt } from "@/lib/service-window";
 import { compactDemoStateForStorage, persistDemoState } from "@/lib/demo-storage";
@@ -25,6 +26,7 @@ import {
   invoicePatchToRow,
   invoiceToRow,
   jobFromRow,
+  type JobRow,
   jobPatchToRow,
   jobPhotoFromRow,
   jobPhotoToRow,
@@ -57,7 +59,18 @@ const SESSION_REFRESH_TIMEOUT_MS = 12_000;
 
 type NewCustomerInput = Omit<Customer, "id" | "phoneDigits" | "createdAt" | "emailNotificationsEnabled" | "smsConsentStatus" | "smsConsentAt" | "smsConsentSource"> &
   Partial<Pick<Customer, "emailNotificationsEnabled" | "smsConsentStatus" | "smsConsentAt" | "smsConsentSource">>;
-type NewJobInput = Omit<Job, "id" | "status" | "createdAt" | "arrivedAt" | "completedAt"> & { status?: JobStatus };
+type NewJobInput = Omit<
+  Job,
+  | "id"
+  | "status"
+  | "createdAt"
+  | "arrivedAt"
+  | "completedAt"
+  | "beforePhotosSkippedAt"
+  | "beforePhotosSkippedBy"
+  | "afterPhotosSkippedAt"
+  | "afterPhotosSkippedBy"
+> & { status?: JobStatus };
 type NewPartInput = Omit<Part, "id" | "createdAt" | "active"> & { active?: boolean };
 type NewLineItemInput = Omit<JobLineItem, "id" | "sortOrder">;
 type NewPhotoInput = Omit<JobPhoto, "id" | "uploadedAt"> & { file?: File };
@@ -77,6 +90,7 @@ type AppDataContextValue = AppState & {
   updateJob: (id: string, input: Partial<Job>) => Promise<void>;
   markJobEnRoute: (id: string) => Promise<void>;
   markJobArrived: (id: string) => Promise<void>;
+  skipPhotoCheckpoint: (id: string, kind: Extract<PhotoKind, "before" | "after">) => Promise<Job>;
   addPhoto: (input: NewPhotoInput) => Promise<JobPhoto>;
   addLineItem: (input: NewLineItemInput) => Promise<JobLineItem>;
   updateLineItem: (id: string, input: Partial<JobLineItem>) => Promise<void>;
@@ -462,6 +476,72 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       }));
     }
 
+    async function skipPhotoCheckpoint(id: string, kind: Extract<PhotoKind, "before" | "after">) {
+      const existingJob = state.jobs.find((job) => job.id === id);
+      if (!existingJob) throw new Error("The job could not be found.");
+
+      if (demoMode) {
+        const actor = auth?.currentUser;
+        if (!actor || actor.role === "call_center") {
+          throw new Error("Only an owner or assigned technician can skip a job photo.");
+        }
+        if (actor.role === "tech" && existingJob.assignedTechId !== actor.id) {
+          throw new Error("Only the assigned technician can skip this job photo.");
+        }
+        if (!existingJob.arrivedAt || existingJob.status !== "in_progress") {
+          throw new Error("Record arrival before skipping a job photo.");
+        }
+
+        const skippedAt = kind === "before" ? existingJob.beforePhotosSkippedAt : existingJob.afterPhotosSkippedAt;
+        const skippedBy = kind === "before" ? existingJob.beforePhotosSkippedBy : existingJob.afterPhotosSkippedBy;
+        if (skippedAt && skippedBy) return existingJob;
+        if (state.jobPhotos.some((photo) => photo.jobId === id && photo.kind === kind)) {
+          throw new Error(`A saved ${kind} photo already satisfies this checkpoint.`);
+        }
+
+        const signatures = await loadSignatures({ type: "job", id });
+        if (signatures.some((signature) => signature.status === "active" && signature.purpose === "work_completion")) {
+          throw new Error("The photo checkpoint is locked by the customer completion signature.");
+        }
+        if (kind === "after" && !signatures.some((signature) => (
+          signature.status === "active" && signature.purpose === "work_authorization"
+        ))) {
+          throw new Error("Collect customer work authorization before skipping the after photo.");
+        }
+
+        const recordedAt = new Date().toISOString();
+        const persistedJob: Job = kind === "before"
+          ? { ...existingJob, beforePhotosSkippedAt: recordedAt, beforePhotosSkippedBy: actor.id }
+          : { ...existingJob, afterPhotosSkippedAt: recordedAt, afterPhotosSkippedBy: actor.id };
+        setState((current) => ({
+          ...current,
+          jobs: current.jobs.map((job) => job.id === id ? persistedJob : job)
+        }));
+        return persistedJob;
+      }
+
+      if (!supabase) throw new Error("Supabase credentials are not configured.");
+      const requestWorkspaceKey = activeWorkspaceKeyRef.current;
+      const { data, error } = await supabase
+        .rpc("skip_job_photo_checkpoint", { p_job_id: id, p_kind: kind })
+        .single();
+      if (error) {
+        if (activeWorkspaceKeyRef.current === requestWorkspaceKey) setLastError(error.message);
+        throw error;
+      }
+      if (!data) throw new Error("The photo checkpoint could not be skipped. Refresh and confirm your access.");
+      if (activeWorkspaceKeyRef.current !== requestWorkspaceKey) {
+        throw new Error("The signed-in account changed before the photo checkpoint was saved.");
+      }
+      const persistedJob = jobFromRow(data as unknown as JobRow);
+      setState((current) => ({
+        ...current,
+        jobs: current.jobs.map((job) => job.id === id ? persistedJob : job)
+      }));
+      setLastError(undefined);
+      return persistedJob;
+    }
+
     async function addPhoto(input: NewPhotoInput) {
       const requestWorkspaceKey = activeWorkspaceKeyRef.current;
       const photoId = createId();
@@ -472,7 +552,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         jobId: input.jobId,
         storagePath: input.storagePath,
         kind: input.kind,
-        caption: input.caption,
+        caption: normalizeJobPhotoCaption(input.caption),
         uploadedBy: input.uploadedBy,
         uploadedAt
       };
@@ -485,6 +565,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           || targetJob?.completedAt
           || targetJob?.completionSignatureOverrideAt
         );
+        const skippedCheckpoint = input.kind === "before"
+          ? Boolean(targetJob?.beforePhotosSkippedAt && targetJob.beforePhotosSkippedBy)
+          : input.kind === "after"
+            ? Boolean(targetJob?.afterPhotosSkippedAt && targetJob.afterPhotosSkippedBy)
+            : false;
+        if (skippedCheckpoint) {
+          throw new Error(`A ${input.kind} photo cannot be added after that checkpoint was explicitly skipped.`);
+        }
         if (input.kind === "after" && completedWorkflow) {
           throw new Error("After-work evidence is locked because this job has already been completed.");
         }
@@ -758,6 +846,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       updateJob,
       markJobEnRoute,
       markJobArrived,
+      skipPhotoCheckpoint,
       addPhoto,
       addLineItem,
       updateLineItem,
@@ -769,7 +858,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       createAllowedUser,
       updateAllowedUser
     };
-  }, [state, loaded, lastError, loadError, supabase]);
+  }, [state, loaded, lastError, loadError, supabase, auth?.currentUser.id, auth?.currentUser.role]);
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 }
