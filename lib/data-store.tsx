@@ -86,6 +86,7 @@ type AppDataContextValue = AppState & {
   searchCustomers: (query: string, visibleCustomers?: Customer[]) => Promise<Customer[]>;
   createCustomer: (input: NewCustomerInput) => Promise<Customer>;
   updateCustomer: (id: string, input: Partial<Customer>) => Promise<void>;
+  deleteCustomer: (id: string) => Promise<void>;
   createJob: (input: NewJobInput) => Promise<Job>;
   updateJob: (id: string, input: Partial<Job>) => Promise<void>;
   markJobEnRoute: (id: string) => Promise<void>;
@@ -321,6 +322,38 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         ...current,
         customers: current.customers.map((customer) => customer.id === id ? persistedCustomer : customer)
       }));
+      setLastError(undefined);
+    }
+
+    async function deleteCustomer(id: string) {
+      if (demoMode) {
+        setState((current) => ({
+          ...current,
+          customers: current.customers.filter((customer) => customer.id !== id),
+          jobs: current.jobs.filter((job) => job.customerId !== id),
+          invoices: current.invoices.filter((invoice) => {
+            const job = current.jobs.find((candidate) => candidate.id === invoice.jobId);
+            return job?.customerId !== id;
+          })
+        }));
+        return;
+      }
+
+      if (!supabase) throw new Error("Supabase credentials are not configured.");
+      const { error } = await supabase.from("customers").delete().eq("id", id);
+      if (error) {
+        setLastError(error.message);
+        throw error;
+      }
+      setState((current) => {
+        const customerJobIds = new Set(current.jobs.filter((job) => job.customerId === id).map((job) => job.id));
+        return {
+          ...current,
+          customers: current.customers.filter((customer) => customer.id !== id),
+          jobs: current.jobs.filter((job) => job.customerId !== id),
+          invoices: current.invoices.filter((invoice) => !customerJobIds.has(invoice.jobId))
+        };
+      });
       setLastError(undefined);
     }
 
@@ -842,6 +875,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       searchCustomers,
       createCustomer,
       updateCustomer,
+      deleteCustomer,
       createJob,
       updateJob,
       markJobEnRoute,

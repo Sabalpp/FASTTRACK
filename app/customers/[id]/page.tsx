@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/data-store";
-import { canEditCustomers, canScheduleJobs, canViewCustomer, canViewJob } from "@/lib/access";
+import { canDeleteCustomers, canEditCustomers, canScheduleJobs, canViewCustomer, canViewJob } from "@/lib/access";
 import { formatDateTime } from "@/lib/date";
 import { formatPhone, formatPhoneInput, normalizePhone } from "@/lib/phone";
 import { formatServiceWindow } from "@/lib/service-window";
@@ -77,6 +77,7 @@ export default function CustomerDetailPage() {
 
   const editable = canEditCustomers(currentUser.role);
   const customerId = customer.id;
+  const customerName = customer.name;
   const phoneChanged = normalizePhone(draft.phone) !== customer.phoneDigits;
   const serviceAddress = [
     customer.addressLine1,
@@ -133,6 +134,23 @@ export default function CustomerDetailPage() {
     }
   }
 
+  async function deleteCustomer() {
+    const confirmed = window.confirm(
+      `Delete ${customerName}? This permanently removes the customer and all of their jobs, invoices, photos, and service history.`
+    );
+    if (!confirmed) return;
+
+    setSaveBusy(true);
+    setSaveError(undefined);
+    try {
+      await data.deleteCustomer(customerId);
+      window.location.assign("/customers");
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "The customer could not be deleted.");
+      setSaveBusy(false);
+    }
+  }
+
   return (
     <main className="page-shell">
       <PageHeader
@@ -150,7 +168,10 @@ export default function CustomerDetailPage() {
                 <Button onClick={saveCustomer} disabled={saveBusy}>{saveBusy ? "Saving..." : "Save changes"}</Button>
               </div>
             ) : (
-              <Button variant="secondary" onClick={() => setEditing(true)}>Edit</Button>
+              <div className="action-row">
+                <Button variant="secondary" onClick={() => setEditing(true)}>Edit</Button>
+                {canDeleteCustomers(currentUser.role) ? <Button variant="danger" onClick={deleteCustomer} disabled={saveBusy}>Delete customer</Button> : null}
+              </div>
             )
           ) : null}
         </div>
