@@ -9,6 +9,9 @@ export const branding = {
   licenseNumber: "VA License #PLACEHOLDER",
   address: "13817 Fount Beattie Ct., Centreville, VA 20121",
   logoPath: "/brand/fast-track-logo.avif",
-  invoiceLogoPath: "/brand/fast-track-logo-pdf.png",
+  // JPEG keeps the invoice logo compatible with react-pdf's server renderer
+  // across Vercel and local PDF generation (indexed/transparent PNGs can drop
+  // out of the rendered document).
+  invoiceLogoPath: "/brand/fast-track-logo-pdf.jpg",
   taxRate: 0.06
 };
