@@ -88,6 +88,7 @@ type AppDataContextValue = AppState & {
   updateCustomer: (id: string, input: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => Promise<void>;
   createJob: (input: NewJobInput) => Promise<Job>;
+  deleteJob: (id: string) => Promise<void>;
   updateJob: (id: string, input: Partial<Job>) => Promise<void>;
   markJobEnRoute: (id: string) => Promise<void>;
   markJobArrived: (id: string) => Promise<void>;
@@ -386,6 +387,34 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       setState((current) => ({ ...current, jobs: [persistedJob, ...current.jobs] }));
       setLastError(undefined);
       return persistedJob;
+    }
+
+    async function deleteJob(id: string) {
+      if (demoMode) {
+        setState((current) => ({
+          ...current,
+          jobs: current.jobs.filter((job) => job.id !== id),
+          jobPhotos: current.jobPhotos.filter((photo) => photo.jobId !== id),
+          jobLineItems: current.jobLineItems.filter((item) => item.jobId !== id),
+          invoices: current.invoices.filter((invoice) => invoice.jobId !== id)
+        }));
+        return;
+      }
+
+      if (!supabase) throw new Error("Supabase credentials are not configured.");
+      const { error } = await supabase.from("jobs").delete().eq("id", id);
+      if (error) {
+        setLastError(error.message);
+        throw error;
+      }
+      setState((current) => ({
+        ...current,
+        jobs: current.jobs.filter((job) => job.id !== id),
+        jobPhotos: current.jobPhotos.filter((photo) => photo.jobId !== id),
+        jobLineItems: current.jobLineItems.filter((item) => item.jobId !== id),
+        invoices: current.invoices.filter((invoice) => invoice.jobId !== id)
+      }));
+      setLastError(undefined);
     }
 
     async function updateJob(id: string, input: Partial<Job>) {
@@ -877,6 +906,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       updateCustomer,
       deleteCustomer,
       createJob,
+      deleteJob,
       updateJob,
       markJobEnRoute,
       markJobArrived,

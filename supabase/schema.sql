@@ -487,6 +487,7 @@ drop policy if exists "owner call center tech create customers" on public.custom
 drop policy if exists "owner call center update customers" on public.customers;
 drop policy if exists "owner deletes customers" on public.customers;
 drop policy if exists "owner and tech delete customers" on public.customers;
+drop policy if exists "owner call center tech delete customers" on public.customers;
 drop policy if exists "read permitted jobs" on public.jobs;
 drop policy if exists "owner and call center create jobs" on public.jobs;
 drop policy if exists "owner call center tech update jobs" on public.jobs;
@@ -526,7 +527,7 @@ create policy "owner call center tech create customers" on public.customers for 
   or (public.is_tech() and created_by = public.current_allowed_user_id())
 );
 create policy "owner call center update customers" on public.customers for update using (public.is_owner() or public.is_call_center()) with check (public.is_owner() or public.is_call_center());
-create policy "owner and tech delete customers" on public.customers for delete using (public.is_owner() or public.is_tech());
+create policy "owner call center tech delete customers" on public.customers for delete using (public.is_owner() or public.is_call_center() or public.is_tech());
 
 -- jobs
 create policy "read permitted jobs" on public.jobs for select using (

@@ -33,7 +33,11 @@ export function canEditCustomers(role: Role): boolean {
 }
 
 export function canDeleteCustomers(role: Role): boolean {
-  return role === "owner" || role === "tech";
+  return role === "owner" || role === "call_center" || role === "tech";
+}
+
+export function canDeleteJobs(role: Role): boolean {
+  return role === "owner" || role === "call_center" || role === "tech";
 }
 
 export function canManageUsers(role: Role): boolean {

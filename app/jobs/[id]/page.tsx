@@ -17,7 +17,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { tierLabels, tierOptions, useAppData } from "@/lib/data-store";
-import { canScheduleJobs, canSeeMoney, canSeePhotos, canViewJob } from "@/lib/access";
+import { canDeleteJobs, canScheduleJobs, canSeeMoney, canSeePhotos, canViewJob } from "@/lib/access";
 import { formatDateTime } from "@/lib/date";
 import { money } from "@/lib/money";
 import { subtotalForTier } from "@/lib/invoice";
@@ -295,6 +295,7 @@ export default function JobDetailPage() {
   const items = data.jobLineItems.filter((item) => item.jobId === job.id).sort((a, b) => a.sortOrder - b.sortOrder);
   const invoice = data.invoices.find((candidate) => candidate.jobId === job.id);
   const jobId = job.id;
+  const canDeleteService = canDeleteJobs(currentUser.role);
   const authorizationSignature = jobSignatures.find((signature) => signature.status === "active" && signature.purpose === "work_authorization");
   const rejectedAuthorizationSignature = jobSignatures.find((signature) => signature.status === "rejected" && signature.purpose === "work_authorization");
   const completionSignature = jobSignatures.find((signature) => signature.status === "active" && signature.purpose === "work_completion");
@@ -327,6 +328,23 @@ export default function JobDetailPage() {
     && status !== "complete"
     && status !== "cancelled";
   const ownerOverrideReady = currentUser.role === "owner" && overrideConfirmed && overrideReason.trim().length >= 10;
+
+  async function deleteService() {
+    const confirmed = window.confirm(
+      `Delete this service for ${customer?.name ?? "this customer"}? This permanently removes the job, invoice, photos, signatures, and service history for this visit.`
+    );
+    if (!confirmed) return;
+
+    setSaveBusy(true);
+    setSaveError(undefined);
+    try {
+      await data.deleteJob(jobId);
+      router.replace("/jobs");
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "The service could not be deleted.");
+      setSaveBusy(false);
+    }
+  }
 
   function openWorkAuthorization() {
     const requestedTier = selectedAuthorizationItems.length > 0
@@ -697,6 +715,7 @@ export default function JobDetailPage() {
           </div>
           <div className={styles.headerActions}>
             {invoice ? <Link href={`/invoices/${invoice.id}`} className={styles.headerLink}><FileText size={17} aria-hidden="true" />Open invoice</Link> : null}
+            {canDeleteService ? <button type="button" className={styles.deleteDispatchAction} onClick={() => void deleteService()} disabled={saveBusy}>Delete service</button> : null}
             {canEditDispatch ? (
               <button type="button" className={styles.editDispatchAction} aria-expanded={dispatchEditing} onClick={() => setDispatchEditing((open) => !open)}>
                 {dispatchEditing ? "Close editor" : "Edit dispatch"}

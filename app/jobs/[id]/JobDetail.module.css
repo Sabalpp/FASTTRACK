@@ -160,6 +160,25 @@
   transition: border-color 140ms ease, background-color 140ms ease, transform 120ms ease;
 }
 
+.deleteDispatchAction {
+  min-height: 36px;
+  border: 1px solid #e6b8b1;
+  border-radius: 9px;
+  padding: 8px 12px;
+  color: #a33b2f;
+  background: #fff6f4;
+  font: inherit;
+  font-size: .76rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.deleteDispatchAction:hover,
+.deleteDispatchAction:focus-visible {
+  border-color: #c65b4f;
+  background: #ffebe8;
+}
+
 .editDispatchAction:hover,
 .editDispatchAction:focus-visible {
   border-color: #859ba7;

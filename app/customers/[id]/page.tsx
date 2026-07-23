@@ -166,6 +166,7 @@ export default function CustomerDetailPage() {
               <div className="action-row">
                 <Button variant="secondary" onClick={() => cancelEditing(customer)} disabled={saveBusy}>Cancel</Button>
                 <Button onClick={saveCustomer} disabled={saveBusy}>{saveBusy ? "Saving..." : "Save changes"}</Button>
+                {canDeleteCustomers(currentUser.role) ? <Button variant="danger" onClick={deleteCustomer} disabled={saveBusy}>Delete customer</Button> : null}
               </div>
             ) : (
               <div className="action-row">
