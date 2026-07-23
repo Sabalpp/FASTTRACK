@@ -95,18 +95,23 @@ export function buildAppointmentConfirmation(
     `<tr><td style="padding:12px 0;border-bottom:1px solid #e6ecef;color:#66747c;font-size:13px;width:34%;">Arrival window</td><td style="padding:12px 0;border-bottom:1px solid #e6ecef;color:#17252d;font-weight:700;font-size:14px;">${escapeHtml(windowLabel)}</td></tr>`,
     serviceAddress ? `<tr><td style="padding:12px 0;color:#66747c;font-size:13px;vertical-align:top;">Service address</td><td style="padding:12px 0;color:#17252d;font-weight:700;font-size:14px;">${escapeHtml(serviceAddress)}</td></tr>` : ""
   ].filter(Boolean).join("");
+  const logoUrl = "https://static.wixstatic.com/media/a7cacc_5857978799014085807c2c8f3ec39954~mv2.png";
+  const footerPhone = businessPhone ? `Phone: ${escapeHtml(businessPhone)}` : "";
   const html = [
-    `<div style="margin:0;padding:32px 16px;background:#f4f7f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#17252d;">`,
-    `<div style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #dce5e8;border-radius:16px;overflow:hidden;">`,
-    `<div style="padding:24px 28px;background:#123f4a;color:#ffffff;"><div style="font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;opacity:.78;">${escapeHtml(businessName)}</div><h1 style="margin:10px 0 0;font-size:26px;line-height:1.2;font-weight:800;">Appointment ${actionLabel}</h1></div>`,
-    `<div style="padding:28px;">`,
-    `<p style="margin:0 0 18px;font-size:16px;line-height:1.6;">Hi ${escapeHtml(customerName)},</p>`,
-    `<p style="margin:0 0 20px;font-size:16px;line-height:1.6;">Your service appointment with <strong>${escapeHtml(businessName)}</strong> is ${actionLabel}.</p>`,
-    `<div style="margin:0 0 22px;padding:4px 18px;border-radius:10px;background:${statusBackground};border-left:4px solid ${statusColor};"><table role="presentation" style="width:100%;border-collapse:collapse;">${detailRows}</table></div>`,
-    `<div style="margin:0 0 22px;padding:16px 18px;border-radius:10px;background:#f5f8f9;"><div style="margin:0 0 6px;color:#66747c;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">Important</div><p style="margin:0;color:#35454d;font-size:14px;line-height:1.6;">${escapeHtml(policyText)}</p></div>`,
-    businessPhone ? `<p style="margin:0;color:#35454d;font-size:14px;line-height:1.6;">Questions or changes? Call <strong>${escapeHtml(businessPhone)}</strong>.</p>` : "",
-    `</div><div style="padding:16px 28px;border-top:1px solid #e6ecef;color:#728087;font-size:12px;line-height:1.5;">Please keep this email for your appointment details.</div>`,
-    `</div></div>`
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0;background-color:#f4f6f8;font-family:Arial,Helvetica,sans-serif;"><tr><td align="center" style="padding:24px 12px;">`,
+    `<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.06);">`,
+    `<tr><td align="center" style="padding:28px 20px 20px;background:#ffffff;border-bottom:3px solid #f5b921;"><img src="${logoUrl}" alt="${escapeHtml(businessName)}" width="220" style="display:block;width:220px;max-width:80%;height:auto;"></td></tr>`,
+    `<tr><td align="center" style="padding:14px 20px;background:#1a2a4f;color:#ffffff;font-size:16px;font-weight:bold;letter-spacing:.5px;">Your Appointment ${isCancellation ? "Update" : "Reminder"}</td></tr>`,
+    `<tr><td style="padding:32px 32px 16px;color:#333333;font-size:15px;line-height:24px;">`,
+    `<p style="margin:0 0 16px;">Hi ${escapeHtml(customerName)},</p>`,
+    `<p style="margin:0 0 24px;">Your service appointment with <strong>${escapeHtml(businessName)}</strong> is ${actionLabel}. We look forward to serving you.</p>`,
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;border-radius:6px;border-left:4px solid #f5b921;"><tr><td style="padding:16px 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:22px;color:#333333;">${detailRows}</table></td></tr></table>`,
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:24px 0 12px;"><div style="padding:14px 16px;border-radius:6px;background:${statusBackground};border-left:4px solid ${statusColor};"><div style="margin-bottom:5px;color:#1a2a4f;font-size:12px;font-weight:bold;letter-spacing:.08em;text-transform:uppercase;">Important</div><div style="color:#444444;font-size:14px;line-height:22px;">${escapeHtml(policyText)}</div></div></td></tr></table>`,
+    businessPhone ? `<p style="margin:16px 0 0;font-size:14px;line-height:22px;text-align:center;color:#666666;">Need to reschedule? Call us at <a href="tel:${escapeHtml(businessPhone.replace(/\D/g, ""))}" style="color:#1a2a4f;text-decoration:none;font-weight:bold;">${escapeHtml(businessPhone)}</a></p>` : "",
+    `</td></tr>`,
+    `<tr><td style="padding:8px 32px 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #eeeeee;"><tr><td align="center" style="padding:20px 8px 0;font-size:12px;color:#888888;line-height:18px;">&#10003; Licensed Technicians &nbsp;&nbsp;&bull;&nbsp;&nbsp; &#10003; Transparent Pricing &nbsp;&nbsp;&bull;&nbsp;&nbsp; &#10003; Reliable Service</td></tr></table></td></tr>`,
+    `<tr><td style="padding:24px 32px;background:#1a2a4f;text-align:center;"><div style="font-size:14px;font-weight:bold;color:#ffffff;margin-bottom:6px;">${escapeHtml(businessName)}</div><div style="font-size:12px;color:#cdd8e3;line-height:20px;">${footerPhone}</div><div style="font-size:11px;color:#8ba3ba;margin-top:16px;">&copy; ${new Date().getFullYear()} ${escapeHtml(businessName)}. All rights reserved.</div></td></tr>`,
+    `</table></td></tr></table>`
   ].join("");
 
   const smsParts = [
