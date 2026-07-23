@@ -193,6 +193,7 @@ export function InvoicePdfDocument({ invoice, job, customer, items, photos = [],
                 <ContinuationHeading title="Approved work continued" invoice={invoice} />
               )}
               <LineItemsTable items={pageItems} />
+              {index === 0 && itemPages.length === 1 ? <InvoiceTotalsStrip model={viewModel} /> : null}
               <DocumentFooter invoice={invoice} pageNumber={index + 1} totalPages={totalPages} draft={documentState.isDraft} />
             </Page>
           ))}
@@ -342,6 +343,29 @@ function LineItemsTable({ items }: { items: JobLineItem[] }) {
       )) : (
         <View style={styles.emptyRow}><Text style={styles.emptyText}>No approved work items are selected.</Text></View>
       )}
+    </View>
+  );
+}
+
+function InvoiceTotalsStrip({ model }: { model: InvoiceViewModel }) {
+  return (
+    <View style={styles.invoiceTotalsStrip} wrap={false}>
+      <View style={styles.invoiceTotalsCell}>
+        <Text style={styles.invoiceTotalsLabel}>SUBTOTAL</Text>
+        <Text style={styles.invoiceTotalsValue}>{money(model.subtotal)}</Text>
+      </View>
+      <View style={styles.invoiceTotalsCell}>
+        <Text style={styles.invoiceTotalsLabel}>TAX</Text>
+        <Text style={styles.invoiceTotalsValue}>{money(model.tax)}</Text>
+      </View>
+      <View style={styles.invoiceTotalsCell}>
+        <Text style={styles.invoiceTotalsLabel}>TOTAL</Text>
+        <Text style={styles.invoiceTotalsValue}>{money(model.total)}</Text>
+      </View>
+      <View style={[styles.invoiceTotalsCell, styles.invoiceTotalsCellLast]}>
+        <Text style={styles.invoiceTotalsLabel}>BALANCE DUE</Text>
+        <Text style={styles.invoiceTotalsBalance}>{money(balanceDue(model.invoice))}</Text>
+      </View>
     </View>
   );
 }
@@ -646,6 +670,12 @@ const styles = StyleSheet.create({
   tableRowAlternate: { backgroundColor: colors.soft },
   tableCell: { color: colors.ink, fontSize: 7.7, paddingRight: 7 },
   numericCell: { textAlign: "right", paddingRight: 0 },
+  invoiceTotalsStrip: { flexDirection: "row", marginBottom: 8, borderWidth: 1, borderColor: colors.line, borderRadius: 6, backgroundColor: colors.soft, overflow: "hidden" },
+  invoiceTotalsCell: { width: "25%", paddingVertical: 6, paddingHorizontal: 8, borderRightWidth: 1, borderRightColor: colors.line },
+  invoiceTotalsCellLast: { borderRightWidth: 0, backgroundColor: colors.brand },
+  invoiceTotalsLabel: { color: colors.muted, fontSize: 6.1, fontWeight: 700, letterSpacing: 0.35, marginBottom: 2 },
+  invoiceTotalsValue: { color: colors.ink, fontSize: 8.2, fontWeight: 700 },
+  invoiceTotalsBalance: { color: colors.white, fontSize: 8.2, fontWeight: 700 },
   descriptionColumn: { width: "56%" },
   qtyColumn: { width: "10%", textAlign: "right" },
   rateColumn: { width: "17%", textAlign: "right" },
