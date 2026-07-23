@@ -89,13 +89,25 @@ export function buildAppointmentConfirmation(
     businessPhone ? `Questions or changes? Call ${businessPhone}.` : undefined
   ].filter((line): line is string => line !== undefined);
 
+  const statusColor = isCancellation ? "#a33b2f" : isReschedule ? "#8a5a14" : "#176b55";
+  const statusBackground = isCancellation ? "#fff1ef" : isReschedule ? "#fff8e8" : "#edf8f3";
   const detailRows = [
-    `<p><strong>Arrival window:</strong> ${escapeHtml(windowLabel)}</p>`,
-    serviceAddress ? `<p><strong>Service address:</strong> ${escapeHtml(serviceAddress)}</p>` : ""
+    `<tr><td style="padding:12px 0;border-bottom:1px solid #e6ecef;color:#66747c;font-size:13px;width:34%;">Arrival window</td><td style="padding:12px 0;border-bottom:1px solid #e6ecef;color:#17252d;font-weight:700;font-size:14px;">${escapeHtml(windowLabel)}</td></tr>`,
+    serviceAddress ? `<tr><td style="padding:12px 0;color:#66747c;font-size:13px;vertical-align:top;">Service address</td><td style="padding:12px 0;color:#17252d;font-weight:700;font-size:14px;">${escapeHtml(serviceAddress)}</td></tr>` : ""
   ].filter(Boolean).join("");
-  const phoneHtml = businessPhone
-    ? `<p>Questions or changes? Call ${escapeHtml(businessPhone)}.</p>`
-    : "";
+  const html = [
+    `<div style="margin:0;padding:32px 16px;background:#f4f7f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#17252d;">`,
+    `<div style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #dce5e8;border-radius:16px;overflow:hidden;">`,
+    `<div style="padding:24px 28px;background:#123f4a;color:#ffffff;"><div style="font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;opacity:.78;">${escapeHtml(businessName)}</div><h1 style="margin:10px 0 0;font-size:26px;line-height:1.2;font-weight:800;">Appointment ${actionLabel}</h1></div>`,
+    `<div style="padding:28px;">`,
+    `<p style="margin:0 0 18px;font-size:16px;line-height:1.6;">Hi ${escapeHtml(customerName)},</p>`,
+    `<p style="margin:0 0 20px;font-size:16px;line-height:1.6;">Your service appointment with <strong>${escapeHtml(businessName)}</strong> is ${actionLabel}.</p>`,
+    `<div style="margin:0 0 22px;padding:4px 18px;border-radius:10px;background:${statusBackground};border-left:4px solid ${statusColor};"><table role="presentation" style="width:100%;border-collapse:collapse;">${detailRows}</table></div>`,
+    `<div style="margin:0 0 22px;padding:16px 18px;border-radius:10px;background:#f5f8f9;"><div style="margin:0 0 6px;color:#66747c;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">Important</div><p style="margin:0;color:#35454d;font-size:14px;line-height:1.6;">${escapeHtml(policyText)}</p></div>`,
+    businessPhone ? `<p style="margin:0;color:#35454d;font-size:14px;line-height:1.6;">Questions or changes? Call <strong>${escapeHtml(businessPhone)}</strong>.</p>` : "",
+    `</div><div style="padding:16px 28px;border-top:1px solid #e6ecef;color:#728087;font-size:12px;line-height:1.5;">Please keep this email for your appointment details.</div>`,
+    `</div></div>`
+  ].join("");
 
   const smsParts = [
     `${businessName}: Your service appointment is ${actionLabel} for ${windowLabel}.`,
@@ -108,13 +120,7 @@ export function buildAppointmentConfirmation(
   return {
     subject,
     text: textLines.join("\n"),
-    html: [
-      `<p>Hi ${escapeHtml(customerName)},</p>`,
-      `<p>Your service appointment with ${escapeHtml(businessName)} is ${actionLabel}.</p>`,
-      detailRows,
-      `<p><strong>Policy:</strong> ${escapeHtml(policyText)}</p>`,
-      phoneHtml
-    ].join(""),
+    html,
     sms: smsParts.join(" "),
     windowLabel
   };
