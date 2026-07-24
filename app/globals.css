@@ -703,6 +703,24 @@ img {
   gap: 6px;
 }
 
+.invoice-brand-logo {
+  display: block;
+  width: 168px;
+  max-width: 72%;
+  height: auto;
+  margin: 0 0 12px;
+}
+
+.invoice-thank-you {
+  margin: 24px 0 0;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: center;
+}
+
 .invoice-billto > div,
 .invoice-options > div {
   display: grid;

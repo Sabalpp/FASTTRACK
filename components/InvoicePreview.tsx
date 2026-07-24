@@ -40,6 +40,11 @@ export function InvoicePreview({
     <article className="invoice-preview invoice-review-preview" aria-label="Invoice review preview">
       <div className="invoice-top">
         <div>
+          <img
+            className="invoice-brand-logo"
+            src={branding.invoiceLogoPath}
+            alt={branding.businessName}
+          />
           <p className="eyebrow">Invoice preview</p>
           <h2>{branding.businessName}</h2>
           <p>{branding.address}</p>
@@ -160,6 +165,7 @@ export function InvoicePreview({
             pending="Collect after the repair and after photo or audited skip."
           />
         </div>
+        <p className="invoice-thank-you">Thank you for choosing us.</p>
       </div>
     </article>
   );

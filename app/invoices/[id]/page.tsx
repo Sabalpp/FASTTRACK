@@ -544,6 +544,20 @@ export default function InvoiceDetailPage() {
             </span>
           </div>
         </div>
+        <nav className={styles.quickActions} aria-label="Invoice quick actions">
+          <button type="button" className={styles.quickAction} onClick={() => setDocumentView("invoice")}>
+            <FileText size={17} aria-hidden="true" />
+            View invoice
+          </button>
+          <button type="button" className={styles.quickAction} onClick={openPaymentEditor} disabled={!canCollectPayments}>
+            <CircleDollarSign size={17} aria-hidden="true" />
+            Payment
+          </button>
+          <button type="button" className={styles.quickAction} onClick={() => setDocumentView("pdf")}>
+            <FileCheck2 size={17} aria-hidden="true" />
+            PDF / draft
+          </button>
+        </nav>
       </header>
 
       <div aria-live="polite">
